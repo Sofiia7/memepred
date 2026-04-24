@@ -1,0 +1,258 @@
+:root {
+  --bg:       #0a0a0a;
+  --bg2:      #111111;
+  --bg3:      #1a1a1a;
+  --border:   #2a2a2a;
+  --text:     #e0e0e0;
+  --text2:    #888888;
+  --green:    #00ff88;
+  --green-bg: rgba(0,255,136,0.08);
+  --red:      #ff3355;
+  --red-bg:   rgba(255,51,85,0.08);
+  --yellow:   #ffdd00;
+  --font:     'JetBrains Mono', monospace;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+}
+
+a { color: var(--green); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+button {
+  font-family: var(--font);
+  cursor: pointer;
+  border: none;
+  outline: none;
+}
+
+/* ── NAV ─────────────────────────────────── */
+.nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg2);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.nav-logo {
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  color: var(--green);
+  text-transform: uppercase;
+}
+
+.nav-links {
+  display: flex;
+  gap: 16px;
+}
+
+.nav-links a {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--text2);
+  transition: color 0.15s;
+}
+.nav-links a:hover, .nav-links a.active {
+  color: var(--green);
+  text-decoration: none;
+}
+
+.connect-btn {
+  padding: 6px 14px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  background: var(--green);
+  color: #000;
+  border-radius: 4px;
+  transition: opacity 0.15s;
+}
+.connect-btn:hover { opacity: 0.85; }
+
+/* ── MARKET CARD ─────────────────────────── */
+.market-card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  transition: border-color 0.15s;
+}
+.market-card:hover { border-color: var(--green); }
+
+.market-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.market-card-symbol {
+  font-size: 14px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.market-card-badge {
+  font-size: 9px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+.badge-open   { background: var(--green-bg); color: var(--green); }
+.badge-closed { background: rgba(255,221,0,0.1); color: var(--yellow); }
+.badge-resolved { background: var(--green-bg); color: var(--green); }
+.badge-refunded { background: var(--red-bg); color: var(--red); }
+
+/* ── PROB BAR ────────────────────────────── */
+.prob-bar {
+  display: flex;
+  height: 28px;
+  border-radius: 4px;
+  overflow: hidden;
+  margin: 12px 0;
+}
+.prob-up {
+  background: linear-gradient(90deg, var(--green), rgba(0,255,136,0.6));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 800;
+  color: #000;
+  transition: width 0.3s ease;
+}
+.prob-down {
+  background: linear-gradient(90deg, rgba(255,51,85,0.6), var(--red));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 800;
+  color: #fff;
+  transition: width 0.3s ease;
+}
+
+/* ── BET BUTTONS ─────────────────────────── */
+.bet-btn {
+  flex: 1;
+  padding: 12px;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: .06em;
+  border-radius: 6px;
+  text-transform: uppercase;
+  transition: transform 0.1s, box-shadow 0.15s;
+}
+.bet-btn:active { transform: scale(0.97); }
+.bet-up {
+  background: var(--green);
+  color: #000;
+  box-shadow: 0 0 20px rgba(0,255,136,0.2);
+}
+.bet-up:hover { box-shadow: 0 0 30px rgba(0,255,136,0.35); }
+.bet-down {
+  background: var(--red);
+  color: #fff;
+  box-shadow: 0 0 20px rgba(255,51,85,0.2);
+}
+.bet-down:hover { box-shadow: 0 0 30px rgba(255,51,85,0.35); }
+
+/* ── GRID ────────────────────────────────── */
+.markets-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 12px;
+  padding: 20px;
+}
+
+/* ── PAGE ────────────────────────────────── */
+.page { max-width: 1200px; margin: 0 auto; padding: 20px; }
+.page-title {
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  margin-bottom: 20px;
+  color: var(--green);
+}
+
+/* ── TABLE ───────────────────────────────── */
+.lb-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+.lb-table th {
+  padding: 10px 12px;
+  text-align: left;
+  font-weight: 700;
+  color: var(--text2);
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  border-bottom: 1px solid var(--border);
+}
+.lb-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(42,42,42,0.5);
+}
+.lb-table tr:hover td { background: var(--bg3); }
+
+/* ── GEO BLOCK ───────────────────────────── */
+.geo-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  text-align: center;
+  padding: 40px;
+}
+.geo-block h1 {
+  font-size: 40px;
+  margin-bottom: 20px;
+}
+.geo-block p {
+  font-size: 14px;
+  color: var(--text2);
+  max-width: 400px;
+  line-height: 1.6;
+}
+
+/* ── ANIM ────────────────────────────────── */
+@keyframes pulse-green {
+  0%, 100% { box-shadow: 0 0 10px rgba(0,255,136,0.15); }
+  50%      { box-shadow: 0 0 25px rgba(0,255,136,0.35); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.fade-in { animation: fadeIn 0.3s ease; }
+
+/* ── MOBILE ──────────────────────────────── */
+@media (max-width: 600px) {
+  .nav-links { gap: 10px; }
+  .nav-links a { font-size: 9px; }
+  .markets-grid { grid-template-columns: 1fr; padding: 12px; }
+  .page { padding: 12px; }
+}

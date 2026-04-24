@@ -1,0 +1,26 @@
+{
+  "name": "memepred-backend",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "keeper": "tsx src/keeper/index.ts"
+  },
+  "dependencies": {
+    "fastify": "^4.28.0",
+    "@fastify/cors": "^9.0.1",
+    "@fastify/rate-limit": "^9.1.0",
+    "pg": "^8.12.0",
+    "redis": "^4.6.14",
+    "viem": "^2.17.0",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "tsx": "^4.15.0",
+    "typescript": "^5.5.0",
+    "@types/node": "^20.14.0",
+    "@types/pg": "^8.11.6"
+  }
+}

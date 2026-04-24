@@ -1,0 +1,51 @@
+type Market @entity {
+  id:            ID!          # market address
+  feedId:        Bytes!
+  feedSymbol:    String!
+  duration:      BigInt!
+  openTime:      BigInt!
+  closeTime:     BigInt!
+  entryPrice:    BigInt
+  exitPrice:     BigInt
+  status:        String!      # OPEN | CLOSED | RESOLVED | REFUNDED
+  upWon:         Boolean
+  totalUpPool:   BigInt!
+  totalDownPool: BigInt!
+  bets:          [Bet!]! @derivedFrom(field: "market")
+  createdAt:     BigInt!
+}
+
+type Bet @entity {
+  id:        ID!              # txHash-logIndex
+  market:    Market!
+  trader:    Bytes!
+  direction: String!          # UP | DOWN
+  amount:    BigInt!
+  referrer:  Bytes
+  claimed:   Boolean!
+  won:       Boolean
+  payout:    BigInt
+  placedAt:  BigInt!
+  settledAt: BigInt
+}
+
+type Trader @entity {
+  id:            ID!          # address
+  totalBets:     BigInt!
+  wonBets:       BigInt!
+  totalVolume:   BigInt!
+  totalProfit:   BigInt!
+  currentStreak: BigInt!
+  maxStreak:     BigInt!
+  lastBetDay:    BigInt
+  referralCount: BigInt!
+  referralEarnings: BigInt!
+  badges:        [Int!]!
+}
+
+type Referral @entity {
+  id:           ID!           # referee address
+  referrer:     Bytes!
+  referee:      Bytes!
+  registeredAt: BigInt!
+}
