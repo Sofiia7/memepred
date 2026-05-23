@@ -7,25 +7,51 @@ export function GenesisPage() {
   const { address, isConnected } = useAccount()
   const [depositAmount, setDepositAmount] = useState('50')
 
-  // Pool stats
+  // Pool stats: (totalAssetsOut, available, providerExposure, genesisLeft)
   const { data: stats } = useReadContract({
     address:      CONTRACTS.LIQUIDITY_POOL,
     abi:          LIQUIDITY_POOL_ABI,
     functionName: 'getPoolStats',
   })
 
-  // Provider info
-  const { data: provider } = useReadContract({
+  // LP share balance
+  const { data: shareBalance } = useReadContract({
     address:      CONTRACTS.LIQUIDITY_POOL,
     abi:          LIQUIDITY_POOL_ABI,
-    functionName: 'getProvider',
+    functionName: 'balanceOf',
     args:         [address!],
     query:        { enabled: !!address }
   })
 
-  const { writeContractAsync: approve } = useWriteContract()
-  const { writeContractAsync: deposit } = useWriteContract()
-  const { writeContractAsync: withdraw } = useWriteContract()
+  // LP equivalent USDC value
+  const { data: myAssets } = useReadContract({
+    address:      CONTRACTS.LIQUIDITY_POOL,
+    abi:          LIQUIDITY_POOL_ABI,
+    functionName: 'previewRedeem',
+    args:         [shareBalance ?? 0n],
+    query:        { enabled: !!shareBalance && shareBalance > 0n }
+  })
+
+  // Earned fees pending claim
+  const { data: pendingFees } = useReadContract({
+    address:      CONTRACTS.LIQUIDITY_POOL,
+    abi:          LIQUIDITY_POOL_ABI,
+    functionName: 'earnedFees',
+    args:         [address!],
+    query:        { enabled: !!address }
+  })
+
+  // Genesis status
+  const { data: isGenesisAddr } = useReadContract({
+    address:      CONTRACTS.LIQUIDITY_POOL,
+    abi:          LIQUIDITY_POOL_ABI,
+    functionName: 'isGenesis',
+    args:         [address!],
+    query:        { enabled: !!address }
+  })
+
+  const { writeContractAsync: approve }   = useWriteContract()
+  const { writeContractAsync: deposit }   = useWriteContract()
   const { writeContractAsync: claimFees } = useWriteContract()
 
   const [isLoading, setIsLoading] = useState(false)
@@ -36,7 +62,6 @@ export function GenesisPage() {
     try {
       const amount = parseUnits(depositAmount, 6)
 
-      // Approve USDC
       await approve({
         address: CONTRACTS.USDC,
         abi:     ERC20_ABI,
@@ -44,12 +69,11 @@ export function GenesisPage() {
         args: [CONTRACTS.LIQUIDITY_POOL, maxUint256]
       })
 
-      // Deposit
       await deposit({
         address:      CONTRACTS.LIQUIDITY_POOL,
         abi:          LIQUIDITY_POOL_ABI,
         functionName: 'deposit',
-        args:         [amount]
+        args:         [amount, address]
       })
     } catch (err) {
       console.error('Deposit failed:', err)
@@ -70,24 +94,23 @@ export function GenesisPage() {
     }
   }
 
-  const totalPool     = stats ? Number(stats[0]) / 1e6 : 0
-  const available     = stats ? Number(stats[1]) / 1e6 : 0
-  const providerCount = stats ? Number(stats[2]) : 0
-  const genesisLeft   = stats ? Number(stats[3]) : 20
+  const totalPool        = stats ? Number(stats[0]) / 1e6 : 0
+  const available        = stats ? Number(stats[1]) / 1e6 : 0
+  const totalExposureUsd = stats ? Number(stats[2]) / 1e6 : 0
+  const genesisLeft      = stats ? Number(stats[3]) : 20
 
-  const myDeposit  = provider ? Number(provider.deposit) / 1e6 : 0
-  const myExposure = provider ? Number(provider.exposure) / 1e6 : 0
-  const myEarned   = provider ? Number(provider.totalEarned) / 1e6 : 0
-  const isGenesis  = provider?.isGenesis ?? false
+  const mySharesValue = myAssets    ? Number(myAssets)    / 1e6 : 0
+  const myPending     = pendingFees ? Number(pendingFees) / 1e6 : 0
+  const isGenesis     = !!isGenesisAddr
+  const hasPosition   = (shareBalance ?? 0n) > 0n
 
   return (
     <div className="genesis-page">
       <div className="genesis-hero">
         <h1>🎴 Genesis LP Program</h1>
-        <p>First 20 liquidity providers earn boosted fees forever</p>
+        <p>First 20 liquidity providers earn 1.5x fee share forever</p>
       </div>
 
-      {/* Genesis Counter */}
       <div className="genesis-counter">
         <div className="counter-number">{genesisLeft}</div>
         <div className="counter-label">Genesis spots remaining</div>
@@ -99,23 +122,21 @@ export function GenesisPage() {
         </div>
       </div>
 
-      {/* Pool Stats */}
       <div className="stats-grid">
         <div className="stat-card">
           <div className="stat-value">${totalPool.toLocaleString()}</div>
-          <div className="stat-label">Total in Pool</div>
+          <div className="stat-label">Total Vault Assets</div>
         </div>
         <div className="stat-card">
           <div className="stat-value">${available.toLocaleString()}</div>
-          <div className="stat-label">Available Liquidity</div>
+          <div className="stat-label">Available for Matching</div>
         </div>
         <div className="stat-card">
-          <div className="stat-value">{providerCount}</div>
-          <div className="stat-label">Providers</div>
+          <div className="stat-value">${totalExposureUsd.toLocaleString()}</div>
+          <div className="stat-label">Locked in Active Matches</div>
         </div>
       </div>
 
-      {/* Deposit */}
       {isConnected && (
         <div className="deposit-section">
           <h2>Provide Liquidity</h2>
@@ -131,9 +152,9 @@ export function GenesisPage() {
             <span>USDC</span>
           </div>
 
-          {genesisLeft > 0 && myDeposit === 0 && (
+          {genesisLeft > 0 && !hasPosition && (
             <div className="genesis-badge">
-              🎴 You'll receive Genesis NFT #{21 - genesisLeft} with 80% fee share!
+              🎴 You'll receive Genesis NFT #{21 - genesisLeft} with 1.5x fee weight!
             </div>
           )}
 
@@ -148,31 +169,34 @@ export function GenesisPage() {
         </div>
       )}
 
-      {/* My Position */}
-      {myDeposit > 0 && (
+      {hasPosition && (
         <div className="my-position">
           <h2>Your Position {isGenesis && <span className="badge">🎴 Genesis</span>}</h2>
           <div className="stats-grid">
             <div className="stat-card">
-              <div className="stat-value">${myDeposit.toLocaleString()}</div>
-              <div className="stat-label">Deposited</div>
+              <div className="stat-value">${mySharesValue.toLocaleString()}</div>
+              <div className="stat-label">Current Value (USDC)</div>
             </div>
             <div className="stat-card">
-              <div className="stat-value">${myExposure.toLocaleString()}</div>
-              <div className="stat-label">At Risk</div>
+              <div className="stat-value">{(Number(shareBalance ?? 0n) / 1e12).toLocaleString()}</div>
+              <div className="stat-label">mpLP Shares</div>
             </div>
             <div className="stat-card">
-              <div className="stat-value">${myEarned.toLocaleString()}</div>
-              <div className="stat-label">Total Earned</div>
+              <div className="stat-value">${myPending.toLocaleString()}</div>
+              <div className="stat-label">Claimable Fees</div>
             </div>
           </div>
-          <button id="btn-claim-fees" className="btn-secondary" onClick={handleClaimFees}>
+          <button
+            id="btn-claim-fees"
+            className="btn-secondary"
+            onClick={handleClaimFees}
+            disabled={myPending === 0}
+          >
             Claim Fees
           </button>
         </div>
       )}
 
-      {/* Benefits Table */}
       <div className="benefits-table">
         <h2>Genesis Benefits</h2>
         <table>
@@ -185,19 +209,19 @@ export function GenesisPage() {
           </thead>
           <tbody>
             <tr>
-              <td>Fee Share</td>
-              <td className="highlight">80%</td>
-              <td>50%</td>
+              <td>Fee-stream Weight</td>
+              <td className="highlight">1.5x</td>
+              <td>1.0x</td>
+            </tr>
+            <tr>
+              <td>Share-price Growth</td>
+              <td className="highlight">✅ Yes</td>
+              <td>✅ Yes</td>
             </tr>
             <tr>
               <td>Genesis NFT</td>
-              <td className="highlight">✅ Tradeable</td>
+              <td className="highlight">✅ Soulbound</td>
               <td>—</td>
-            </tr>
-            <tr>
-              <td>Governance</td>
-              <td className="highlight">Priority Vote</td>
-              <td>Standard</td>
             </tr>
             <tr>
               <td>Hall of Fame</td>

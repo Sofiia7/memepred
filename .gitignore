@@ -27,3 +27,8 @@ build/
 # Logs
 *.log
 logs/
+
+# Foundry dependency
+contracts/lib/openzeppelin-contracts/
+contracts/out/
+contracts/cache/

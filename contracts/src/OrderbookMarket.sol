@@ -16,6 +16,14 @@ interface IOracleResolver {
     function pyth() external view returns (address);
 }
 
+interface IFeeDistributor {
+    function distributeFee(uint256 totalFee, address referrer) external;
+}
+
+interface IReferralRegistry {
+    function register(address referee, address referrer) external;
+}
+
 /**
  * @title OrderbookMarket
  * @notice Rolling market with async matching.
@@ -74,6 +82,7 @@ contract OrderbookMarket is ReentrancyGuard, Pausable {
     address public immutable resolver;
     address public immutable liquidityPool;
     address public immutable feeDistributor;
+    address public immutable referralRegistry;
     address public immutable multisig;
     bytes32 public immutable pythFeedId;
     uint256 public immutable duration;
@@ -111,17 +120,19 @@ contract OrderbookMarket is ReentrancyGuard, Pausable {
         address _resolver,
         address _liquidityPool,
         address _feeDistributor,
+        address _referralRegistry,
         address _multisig,
         bytes32 _pythFeedId,
         uint256 _duration
     ) {
-        usdc           = IERC20(_usdc);
-        resolver       = _resolver;
-        liquidityPool  = _liquidityPool;
-        feeDistributor = _feeDistributor;
-        multisig       = _multisig;
-        pythFeedId     = _pythFeedId;
-        duration       = _duration;
+        usdc             = IERC20(_usdc);
+        resolver         = _resolver;
+        liquidityPool    = _liquidityPool;
+        feeDistributor   = _feeDistributor;
+        referralRegistry = _referralRegistry;
+        multisig         = _multisig;
+        pythFeedId       = _pythFeedId;
+        duration         = _duration;
     }
 
     // ── PLACE BET ──────────────────────────────────────────
@@ -150,6 +161,11 @@ contract OrderbookMarket is ReentrancyGuard, Pausable {
         require(spread <= slippageBps, "price slippage exceeded");
 
         usdc.safeTransferFrom(msg.sender, address(this), amount);
+
+        // Register referral on first touch — best-effort, must not block the bet.
+        if (referrer != address(0) && referralRegistry != address(0)) {
+            try IReferralRegistry(referralRegistry).register(msg.sender, referrer) {} catch {}
+        }
 
         orderId = nextOrderId++;
         orders[orderId] = Order({
@@ -320,6 +336,7 @@ contract OrderbookMarket is ReentrancyGuard, Pausable {
             
             if (fee > 0 && feeDistributor != address(0)) {
                 usdc.safeTransfer(feeDistributor, fee);
+                IFeeDistributor(feeDistributor).distributeFee(fee, o.referrer);
             }
         }
     }

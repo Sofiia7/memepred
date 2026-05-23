@@ -1,51 +1,151 @@
-type Market @entity {
-  id:            ID!          # market address
-  feedId:        Bytes!
-  feedSymbol:    String!
-  duration:      BigInt!
-  openTime:      BigInt!
-  closeTime:     BigInt!
-  entryPrice:    BigInt
-  exitPrice:     BigInt
-  status:        String!      # OPEN | CLOSED | RESOLVED | REFUNDED
-  upWon:         Boolean
-  totalUpPool:   BigInt!
-  totalDownPool: BigInt!
-  bets:          [Bet!]! @derivedFrom(field: "market")
-  createdAt:     BigInt!
+# MemePred subgraph schema — orderbook model + LP vault.
+
+type Market @entity(immutable: false) {
+  id:             ID!              # market address
+  feedId:         Bytes!
+  duration:       BigInt!
+  createdAt:      BigInt!
+  feeBps:         BigInt!
+  totalOrders:    BigInt!
+  totalMatches:   BigInt!
+  totalVolume:    BigInt!          # sum of all matched amounts (USDC, 6dp)
+  orders:         [Order!]!  @derivedFrom(field: "market")
+  matches:        [Match!]!  @derivedFrom(field: "market")
 }
 
-type Bet @entity {
-  id:        ID!              # txHash-logIndex
-  market:    Market!
-  trader:    Bytes!
-  direction: String!          # UP | DOWN
-  amount:    BigInt!
+enum OrderStatus { PENDING MATCHED SETTLED CLAIMED REFUNDED }
+enum Direction   { UP DOWN }
+
+type Order @entity(immutable: false) {
+  id:            ID!               # market-orderId
+  market:        Market!
+  orderId:       BigInt!
+  trader:        Bytes!
+  direction:     Direction!
+  amount:        BigInt!
+  referrer:      Bytes!
+  status:        OrderStatus!
+  placedAt:      BigInt!
+  matchedAt:     BigInt
+  settledAt:     BigInt
+  claimedAt:     BigInt
+  refundedAt:    BigInt
+  payout:        BigInt
+  match:         Match
+  txPlace:       Bytes!
+}
+
+type Match @entity(immutable: false) {
+  id:           ID!                 # market-matchId
+  market:       Market!
+  matchId:      BigInt!
+  isLPMatch:    Boolean!
+  upOrder:      Order
+  downOrder:    Order
+  lpOrder:      Order               # if LP-matched, the user's order
+  amount:       BigInt!
+  entryPrice:   BigInt!
+  matchedAt:    BigInt!
+  settleAt:     BigInt!
+  settled:      Boolean!
+  upWon:        Boolean
+  exitPrice:    BigInt
+  settledAt:    BigInt
+}
+
+type Trader @entity(immutable: false) {
+  id:                ID!
+  totalOrders:       BigInt!
+  totalVolume:       BigInt!
+  totalProfit:       BigInt!
+  wonOrders:         BigInt!
+  lostOrders:        BigInt!
+  refundedOrders:    BigInt!
+  currentStreak:     BigInt!
+  maxStreak:         BigInt!
+  lastSettleDay:     BigInt
+  referralCount:     BigInt!
+  referralEarnings:  BigInt!
+  referrer:          Bytes
+  refCode:           Bytes
+  badges:            [TraderBadge!]! @derivedFrom(field: "trader")
+}
+
+type TraderBadge @entity(immutable: true) {
+  id:        ID!                    # trader-badgeId
+  trader:    Trader!
+  badgeId:   BigInt!
+  badgeName: String!
+  mintedAt:  BigInt!
+  tx:        Bytes!
+}
+
+type LPVault @entity(immutable: false) {
+  id:                ID!            # vault address (singleton)
+  totalAssets:       BigInt!
+  totalShares:       BigInt!
+  totalExposure:     BigInt!
+  totalPendingFees:  BigInt!
+  genesisCount:      BigInt!
+  providerCount:     BigInt!
+}
+
+type LPProvider @entity(immutable: false) {
+  id:                ID!            # address
+  shares:            BigInt!
+  totalDeposited:    BigInt!
+  totalWithdrawn:    BigInt!
+  pendingFees:       BigInt!
+  totalFeesClaimed:  BigInt!
+  isGenesis:         Boolean!
+  genesisTokenId:    BigInt
+  joinedAt:          BigInt!
+}
+
+type LPMatchActivity @entity(immutable: false) {
+  id:          ID!                  # market-matchId
+  market:      Bytes!
+  matchId:     BigInt!
+  amount:      BigInt!
+  orderId:     BigInt!
+  takenAt:     BigInt!
+  resultLpWon: Boolean
+  resolvedAt:  BigInt
+}
+
+type FeeFlow @entity(immutable: true) {
+  id:        ID!                    # txHash-logIndex
+  market:    Bytes!
+  totalFee:  BigInt!
   referrer:  Bytes
-  claimed:   Boolean!
-  won:       Boolean
-  payout:    BigInt
-  placedAt:  BigInt!
-  settledAt: BigInt
+  ts:        BigInt!
+  tx:        Bytes!
 }
 
-type Trader @entity {
-  id:            ID!          # address
-  totalBets:     BigInt!
-  wonBets:       BigInt!
-  totalVolume:   BigInt!
-  totalProfit:   BigInt!
-  currentStreak: BigInt!
-  maxStreak:     BigInt!
-  lastBetDay:    BigInt
-  referralCount: BigInt!
-  referralEarnings: BigInt!
-  badges:        [Int!]!
+type ReferralEarning @entity(immutable: true) {
+  id:        ID!                    # txHash-logIndex
+  referrer:  Bytes!
+  amount:    BigInt!
+  market:    Bytes!
+  ts:        BigInt!
+  tx:        Bytes!
 }
 
-type Referral @entity {
-  id:           ID!           # referee address
-  referrer:     Bytes!
-  referee:      Bytes!
-  registeredAt: BigInt!
+type GenesisToken @entity(immutable: false) {
+  id:        ID!                    # tokenId
+  tokenId:   BigInt!
+  owner:     Bytes!
+  mintedAt:  BigInt!
+}
+
+type ProtocolStats @entity(immutable: false) {
+  id:               ID!             # "global"
+  totalMarkets:     BigInt!
+  totalOrders:      BigInt!
+  totalMatches:     BigInt!
+  totalVolume:      BigInt!
+  totalFees:        BigInt!
+  totalReferrals:   BigInt!
+  totalTraders:     BigInt!
+  lastUpdated:      BigInt!
 }

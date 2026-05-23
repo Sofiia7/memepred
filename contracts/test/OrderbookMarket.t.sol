@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import "forge-std/Test.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "../src/OrderbookMarket.sol";
 import "../src/LiquidityPool.sol";
 import "../src/GenesisNFT.sol";
@@ -40,7 +41,7 @@ contract OrderbookMarketTest is Test {
         pyth.setPrice(bytes32("PEPE/USD"), 914200, -8);
         usdc       = new MockUSDC();
         genesisNFT = new GenesisNFT("ipfs://test/");
-        pool       = new LiquidityPool(address(usdc), address(genesisNFT));
+        pool       = new LiquidityPool(IERC20(address(usdc)), address(genesisNFT));
         genesisNFT.setLiquidityPool(address(pool));
 
         market = new OrderbookMarket(
@@ -48,12 +49,13 @@ contract OrderbookMarketTest is Test {
             resolver,
             address(pool),
             feeDistrib,
+            address(0), // referralRegistry — not exercised in these tests
             multisig,
             bytes32("PEPE/USD"),
             DURATION
         );
 
-        pool.setMarket(address(market));
+        pool.authorizeMarket(address(market));
 
         // Fund users
         usdc.mint(alice,      1000e6);
@@ -89,7 +91,7 @@ contract OrderbookMarketTest is Test {
     function test_Match_LP_Fallback() public {
         // LP deposits
         vm.prank(lpProvider);
-        pool.deposit(500e6);
+        pool.deposit(500e6, lpProvider);
 
         // Alice bets UP — no PvP opponent → LP matches
         vm.prank(alice);
@@ -147,7 +149,7 @@ contract OrderbookMarketTest is Test {
     // ── SETTLE & CLAIM (LP) ───────────────────────────────
     function test_Settle_And_Claim_LP() public {
         vm.prank(lpProvider);
-        pool.deposit(500e6);
+        pool.deposit(500e6, lpProvider);
 
         vm.prank(alice);
         uint256 orderId = market.placeBet(

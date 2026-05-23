@@ -1,0 +1,18 @@
+{
+  "name": "memepred-subgraph",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "codegen":     "graph codegen",
+    "build":       "graph build",
+    "auth":        "graph auth $DEPLOY_KEY",
+    "deploy":      "graph deploy --node https://api.studio.thegraph.com/deploy/ $SUBGRAPH_NAME",
+    "deploy:base": "graph deploy --network base $SUBGRAPH_NAME",
+    "create-local":"graph create --node http://localhost:8020/ $SUBGRAPH_NAME",
+    "deploy-local":"graph deploy --node http://localhost:8020/ --ipfs http://localhost:5001 $SUBGRAPH_NAME"
+  },
+  "dependencies": {
+    "@graphprotocol/graph-cli": "^0.79.0",
+    "@graphprotocol/graph-ts": "^0.35.1"
+  }
+}

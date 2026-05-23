@@ -1,8 +1,10 @@
+import { useNavigate } from 'react-router-dom'
 import { useMarkets } from '../hooks/useMarkets'
 import { MarketCard } from '../components/MarketCard'
 
 export function Markets() {
   const { data: markets, isLoading } = useMarkets()
+  const navigate = useNavigate()
 
   return (
     <div className="page">
@@ -22,7 +24,7 @@ export function Markets() {
             <MarketCard
               key={m.address}
               market={m}
-              onClick={() => {/* TODO: navigate to detail page */}}
+              onClick={() => navigate(`/market/${m.address}`)}
             />
           ))}
         </div>

@@ -110,10 +110,11 @@ export const ORDERBOOK_MARKET_ABI = [
     type: 'function',
     stateMutability: 'nonpayable',
     inputs: [
-      { name: 'dir',          type: 'uint8'   },
-      { name: 'amount',       type: 'uint256' },
-      { name: 'referrer',     type: 'address' },
-      { name: 'currentPrice', type: 'uint256' }
+      { name: 'dir',           type: 'uint8'   },
+      { name: 'amount',        type: 'uint256' },
+      { name: 'referrer',      type: 'address' },
+      { name: 'expectedPrice', type: 'uint256' },
+      { name: 'slippageBps',   type: 'uint256' }
     ],
     outputs: [{ name: 'orderId', type: 'uint256' }]
   },
@@ -249,28 +250,104 @@ export const ORDERBOOK_MARKET_ABI = [
   }
 ] as const
 
-// LiquidityPool ABI
+// LiquidityPool ABI (ERC4626 vault — shares are soulbound)
 export const LIQUIDITY_POOL_ABI = [
+  // ── ERC4626 / actions ─────────────────────────────────────
   {
     name: 'deposit',
     type: 'function',
     stateMutability: 'nonpayable',
-    inputs: [{ name: 'amount', type: 'uint256' }],
-    outputs: []
+    inputs: [
+      { name: 'assets',   type: 'uint256' },
+      { name: 'receiver', type: 'address' }
+    ],
+    outputs: [{ name: 'shares', type: 'uint256' }]
   },
   {
     name: 'withdraw',
     type: 'function',
     stateMutability: 'nonpayable',
-    inputs: [{ name: 'amount', type: 'uint256' }],
-    outputs: []
+    inputs: [
+      { name: 'assets',   type: 'uint256' },
+      { name: 'receiver', type: 'address' },
+      { name: 'owner',    type: 'address' }
+    ],
+    outputs: [{ name: 'shares', type: 'uint256' }]
+  },
+  {
+    name: 'redeem',
+    type: 'function',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'shares',   type: 'uint256' },
+      { name: 'receiver', type: 'address' },
+      { name: 'owner',    type: 'address' }
+    ],
+    outputs: [{ name: 'assets', type: 'uint256' }]
   },
   {
     name: 'claimFees',
     type: 'function',
     stateMutability: 'nonpayable',
     inputs: [],
-    outputs: []
+    outputs: [{ name: 'amount', type: 'uint256' }]
+  },
+  // ── views ─────────────────────────────────────────────────
+  {
+    name: 'asset',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ type: 'address' }]
+  },
+  {
+    name: 'totalAssets',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ type: 'uint256' }]
+  },
+  {
+    name: 'balanceOf',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [{ name: 'account', type: 'address' }],
+    outputs: [{ type: 'uint256' }]
+  },
+  {
+    name: 'convertToAssets',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [{ name: 'shares', type: 'uint256' }],
+    outputs: [{ type: 'uint256' }]
+  },
+  {
+    name: 'convertToShares',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [{ name: 'assets', type: 'uint256' }],
+    outputs: [{ type: 'uint256' }]
+  },
+  {
+    name: 'previewRedeem',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [{ name: 'shares', type: 'uint256' }],
+    outputs: [{ type: 'uint256' }]
+  },
+  {
+    name: 'maxWithdraw',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [{ name: 'owner', type: 'address' }],
+    outputs: [{ type: 'uint256' }]
+  },
+  {
+    name: 'maxRedeem',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [{ name: 'owner', type: 'address' }],
+    outputs: [{ type: 'uint256' }]
   },
   {
     name: 'getPoolStats',
@@ -278,41 +355,139 @@ export const LIQUIDITY_POOL_ABI = [
     stateMutability: 'view',
     inputs: [],
     outputs: [
-      { name: 'total',          type: 'uint256' },
-      { name: 'available',      type: 'uint256' },
-      { name: 'providerCount',  type: 'uint256' },
-      { name: 'genesisLeft',    type: 'uint256' }
+      { name: 'totalAssetsOut',  type: 'uint256' },
+      { name: 'available',       type: 'uint256' },
+      { name: 'providerExposure',type: 'uint256' },
+      { name: 'genesisLeft',     type: 'uint256' }
     ]
   },
   {
-    name: 'getProvider',
+    name: 'availableForMatching',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ type: 'uint256' }]
+  },
+  {
+    name: 'earnedFees',
     type: 'function',
     stateMutability: 'view',
     inputs: [{ name: 'lp', type: 'address' }],
-    outputs: [{
-      name: '',
-      type: 'tuple',
-      components: [
-        { name: 'deposit',     type: 'uint256' },
-        { name: 'exposure',    type: 'uint256' },
-        { name: 'totalEarned', type: 'uint256' },
-        { name: 'isGenesis',   type: 'bool'    },
-        { name: 'joinedAt',    type: 'uint256' }
-      ]
-    }]
+    outputs: [{ type: 'uint256' }]
   },
-  // Events
   {
-    name: 'Deposited',
+    name: 'isGenesis',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [{ name: 'lp', type: 'address' }],
+    outputs: [{ type: 'bool' }]
+  },
+  {
+    name: 'isAuthorizedMarket',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [{ name: 'market', type: 'address' }],
+    outputs: [{ type: 'bool' }]
+  },
+  {
+    name: 'marketExposure',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [{ name: 'market', type: 'address' }],
+    outputs: [{ type: 'uint256' }]
+  },
+  {
+    name: 'totalExposure',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ type: 'uint256' }]
+  },
+  {
+    name: 'totalPendingFees',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ type: 'uint256' }]
+  },
+  {
+    name: 'genesisCount',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ type: 'uint256' }]
+  },
+  // ── ERC4626 standard events ───────────────────────────────
+  {
+    name: 'Deposit',
     type: 'event',
     inputs: [
-      { name: 'lp',        type: 'address', indexed: true  },
-      { name: 'amount',    type: 'uint256', indexed: false },
-      { name: 'isGenesis', type: 'bool',    indexed: false }
+      { name: 'sender',   type: 'address', indexed: true  },
+      { name: 'owner',    type: 'address', indexed: true  },
+      { name: 'assets',   type: 'uint256', indexed: false },
+      { name: 'shares',   type: 'uint256', indexed: false }
     ]
   },
   {
-    name: 'Withdrawn',
+    name: 'Withdraw',
+    type: 'event',
+    inputs: [
+      { name: 'sender',   type: 'address', indexed: true  },
+      { name: 'receiver', type: 'address', indexed: true  },
+      { name: 'owner',    type: 'address', indexed: true  },
+      { name: 'assets',   type: 'uint256', indexed: false },
+      { name: 'shares',   type: 'uint256', indexed: false }
+    ]
+  },
+  // ── custom events ─────────────────────────────────────────
+  {
+    name: 'GenesisMinted',
+    type: 'event',
+    inputs: [
+      { name: 'lp',      type: 'address', indexed: true  },
+      { name: 'tokenId', type: 'uint256', indexed: false }
+    ]
+  },
+  {
+    name: 'MarketAuthorized',
+    type: 'event',
+    inputs: [{ name: 'market', type: 'address', indexed: true }]
+  },
+  {
+    name: 'MarketDeauthorized',
+    type: 'event',
+    inputs: [{ name: 'market', type: 'address', indexed: true }]
+  },
+  {
+    name: 'MatchTaken',
+    type: 'event',
+    inputs: [
+      { name: 'market',  type: 'address', indexed: true  },
+      { name: 'matchId', type: 'uint256', indexed: true  },
+      { name: 'orderId', type: 'uint256', indexed: false },
+      { name: 'amount',  type: 'uint256', indexed: false }
+    ]
+  },
+  {
+    name: 'MatchResult',
+    type: 'event',
+    inputs: [
+      { name: 'market',  type: 'address', indexed: true  },
+      { name: 'matchId', type: 'uint256', indexed: true  },
+      { name: 'lpWon',   type: 'bool',    indexed: false },
+      { name: 'amount',  type: 'uint256', indexed: false }
+    ]
+  },
+  {
+    name: 'FeeAccrued',
+    type: 'event',
+    inputs: [
+      { name: 'market', type: 'address', indexed: true  },
+      { name: 'amount', type: 'uint256', indexed: false }
+    ]
+  },
+  {
+    name: 'FeesClaimed',
     type: 'event',
     inputs: [
       { name: 'lp',     type: 'address', indexed: true  },

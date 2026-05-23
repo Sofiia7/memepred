@@ -1,0 +1,149 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+
+import "forge-std/Test.sol";
+import "../src/FeeDistributor.sol";
+import "./mocks/MockUSDC.sol";
+
+contract FeeDistributorTest is Test {
+    FeeDistributor dist;
+    MockUSDC       usdc;
+
+    address treasury = makeAddr("treasury");
+    address lpSink   = makeAddr("lpSink");
+    address nftPool  = makeAddr("nftPool");
+    address factory  = makeAddr("factory");
+    address market   = makeAddr("market");
+    address ref      = makeAddr("ref");
+
+    function setUp() public {
+        usdc = new MockUSDC();
+        dist = new FeeDistributor(address(usdc), treasury, lpSink, nftPool);
+
+        dist.setMarketFactory(factory);
+        vm.prank(factory);
+        dist.authorizeMarket(market);
+    }
+
+    function _push(uint256 fee) internal {
+        usdc.mint(address(this), fee);
+        usdc.transfer(address(dist), fee);
+    }
+
+    // ─── auth ────────────────────────────────────────────
+    function test_SetMarketFactory_OnceOnly() public {
+        FeeDistributor d2 = new FeeDistributor(address(usdc), treasury, lpSink, nftPool);
+        d2.setMarketFactory(factory);
+        vm.expectRevert("factory already set");
+        d2.setMarketFactory(makeAddr("other"));
+    }
+
+    function test_AuthorizeMarket_OnlyFactoryOrOwner() public {
+        vm.prank(makeAddr("rogue"));
+        vm.expectRevert("only factory or owner");
+        dist.authorizeMarket(makeAddr("m2"));
+
+        // owner allowed
+        dist.authorizeMarket(makeAddr("m2"));
+        assertTrue(dist.isAuthorizedMarket(makeAddr("m2")));
+    }
+
+    function test_Deauthorize_OnlyOwner() public {
+        vm.prank(makeAddr("rogue"));
+        vm.expectRevert();
+        dist.deauthorizeMarket(market);
+
+        dist.deauthorizeMarket(market);
+        assertFalse(dist.isAuthorizedMarket(market));
+    }
+
+    function test_DistributeFee_Reverts_Unauthorized() public {
+        _push(100e6);
+        vm.prank(makeAddr("rogue"));
+        vm.expectRevert("not authorized market");
+        dist.distributeFee(100e6, ref);
+    }
+
+    function test_DistributeFee_Reverts_ZeroFee() public {
+        vm.prank(market);
+        vm.expectRevert("zero fee");
+        dist.distributeFee(0, ref);
+    }
+
+    // ─── distribution math ───────────────────────────────
+    function test_DistributeFee_WithReferrer() public {
+        _push(100e6);
+        vm.prank(market);
+        dist.distributeFee(100e6, ref);
+
+        // 40% to referrer, remaining 60 split 20/20/20 of 60 ≈ 20 each
+        assertEq(dist.referralBalance(ref), 40e6, "ref 40");
+        assertEq(usdc.balanceOf(treasury),  20e6, "treasury 20");
+        assertEq(usdc.balanceOf(lpSink),    20e6, "lpSink 20");
+        assertEq(usdc.balanceOf(nftPool),   20e6, "nftPool 20");
+    }
+
+    function test_DistributeFee_NoReferrer_FullSplit() public {
+        _push(60e6);
+        vm.prank(market);
+        dist.distributeFee(60e6, address(0));
+
+        // No referrer → entire 60 split across 3 sinks ≈ 20 each
+        assertEq(dist.referralBalance(address(0)), 0);
+        assertEq(usdc.balanceOf(treasury), 20e6);
+        assertEq(usdc.balanceOf(lpSink),   20e6);
+        assertEq(usdc.balanceOf(nftPool),  20e6);
+    }
+
+    function test_DistributeFee_OddAmount_NoLeak() public {
+        _push(101);
+        vm.prank(market);
+        dist.distributeFee(101, address(0));
+        // NFT gets the rounding remainder
+        uint256 total = usdc.balanceOf(treasury) + usdc.balanceOf(lpSink) + usdc.balanceOf(nftPool);
+        assertEq(total, 101, "no leak");
+    }
+
+    // ─── claim ──────────────────────────────────────────
+    function test_ClaimReferralRewards() public {
+        _push(100e6);
+        vm.prank(market);
+        dist.distributeFee(100e6, ref);
+
+        uint256 balBefore = usdc.balanceOf(ref);
+        vm.prank(ref); dist.claimReferralRewards();
+        assertEq(usdc.balanceOf(ref) - balBefore, 40e6);
+        assertEq(dist.referralBalance(ref), 0);
+    }
+
+    function test_ClaimReferralRewards_Reverts_Nothing() public {
+        vm.prank(makeAddr("nobody"));
+        vm.expectRevert("nothing to claim");
+        dist.claimReferralRewards();
+    }
+
+    // ─── admin setters ──────────────────────────────────
+    function test_SetTreasury_OnlyOwner() public {
+        vm.prank(makeAddr("rogue"));
+        vm.expectRevert();
+        dist.setTreasury(makeAddr("x"));
+
+        dist.setTreasury(makeAddr("x"));
+        assertEq(dist.treasury(), makeAddr("x"));
+    }
+
+    function test_SetLiquidityPool_OnlyOwner() public {
+        dist.setLiquidityPool(makeAddr("lp2"));
+        assertEq(dist.liquidityPool(), makeAddr("lp2"));
+    }
+
+    function test_SetNftRewardsPool_OnlyOwner() public {
+        dist.setNftRewardsPool(makeAddr("nft2"));
+        assertEq(dist.nftRewardsPool(), makeAddr("nft2"));
+    }
+
+    function test_Constructor_Reverts_ZeroAddress() public {
+        vm.expectRevert("zero address");
+        new FeeDistributor(address(0), treasury, lpSink, nftPool);
+    }
+}

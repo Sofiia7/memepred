@@ -1,0 +1,177 @@
+specVersion: 1.0.0
+description: MemePred — orderbook prediction markets on Base
+schema:
+  file: ./schema.graphql
+
+dataSources:
+  # MarketFactory — spawns OrderbookMarket instances dynamically.
+  - kind: ethereum
+    name: MarketFactory
+    network: base
+    source:
+      address: "0x0000000000000000000000000000000000000000" # ← replace with deployed factory
+      abi: MarketFactory
+      startBlock: 0                                          # ← replace with deploy block
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      file: ./src/mappings/factory.ts
+      entities: [Market, ProtocolStats]
+      abis:
+        - name: MarketFactory
+          file: ./abis/MarketFactory.json
+      eventHandlers:
+        - event: MarketCreated(indexed address,indexed bytes32,uint256,uint256)
+          handler: handleMarketCreated
+
+  # LiquidityPool (singleton).
+  - kind: ethereum
+    name: LiquidityPool
+    network: base
+    source:
+      address: "0x0000000000000000000000000000000000000000" # ← replace
+      abi: LiquidityPool
+      startBlock: 0
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      file: ./src/mappings/liquidityPool.ts
+      entities: [LPVault, LPProvider, LPMatchActivity]
+      abis:
+        - name: LiquidityPool
+          file: ./abis/LiquidityPool.json
+      eventHandlers:
+        - event: Deposit(indexed address,indexed address,uint256,uint256)
+          handler: handleDeposit
+        - event: Withdraw(indexed address,indexed address,indexed address,uint256,uint256)
+          handler: handleWithdraw
+        - event: GenesisMinted(indexed address,uint256)
+          handler: handleGenesisMinted
+        - event: MatchTaken(indexed address,indexed uint256,uint256,uint256)
+          handler: handleMatchTaken
+        - event: MatchResult(indexed address,indexed uint256,bool,uint256)
+          handler: handleMatchResult
+        - event: FeeAccrued(indexed address,uint256)
+          handler: handleFeeAccrued
+        - event: FeesClaimed(indexed address,uint256)
+          handler: handleFeesClaimed
+
+  # ReferralRegistry (singleton).
+  - kind: ethereum
+    name: ReferralRegistry
+    network: base
+    source:
+      address: "0x0000000000000000000000000000000000000000" # ← replace
+      abi: ReferralRegistry
+      startBlock: 0
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      file: ./src/mappings/referralRegistry.ts
+      entities: [Trader]
+      abis:
+        - name: ReferralRegistry
+          file: ./abis/ReferralRegistry.json
+      eventHandlers:
+        - event: ReferralRegistered(indexed address,indexed address)
+          handler: handleReferralRegistered
+        - event: RefCodeGenerated(indexed address,bytes6)
+          handler: handleRefCodeGenerated
+
+  # FeeDistributor (singleton).
+  - kind: ethereum
+    name: FeeDistributor
+    network: base
+    source:
+      address: "0x0000000000000000000000000000000000000000" # ← replace
+      abi: FeeDistributor
+      startBlock: 0
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      file: ./src/mappings/feeDistributor.ts
+      entities: [FeeFlow, ReferralEarning, Trader]
+      abis:
+        - name: FeeDistributor
+          file: ./abis/FeeDistributor.json
+      eventHandlers:
+        - event: FeeReceived(indexed address,uint256,indexed address)
+          handler: handleFeeReceived
+        - event: ReferralCredited(indexed address,uint256)
+          handler: handleReferralCredited
+
+  # BadgeNFT (singleton).
+  - kind: ethereum
+    name: BadgeNFT
+    network: base
+    source:
+      address: "0x0000000000000000000000000000000000000000" # ← replace
+      abi: BadgeNFT
+      startBlock: 0
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      file: ./src/mappings/badgeNFT.ts
+      entities: [TraderBadge, Trader]
+      abis:
+        - name: BadgeNFT
+          file: ./abis/BadgeNFT.json
+      eventHandlers:
+        - event: BadgeEarned(indexed address,indexed uint256,string)
+          handler: handleBadgeEarned
+
+  # GenesisNFT (singleton).
+  - kind: ethereum
+    name: GenesisNFT
+    network: base
+    source:
+      address: "0x0000000000000000000000000000000000000000" # ← replace
+      abi: GenesisNFT
+      startBlock: 0
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      file: ./src/mappings/genesisNFT.ts
+      entities: [GenesisToken]
+      abis:
+        - name: GenesisNFT
+          file: ./abis/GenesisNFT.json
+      eventHandlers:
+        - event: Transfer(indexed address,indexed address,indexed uint256)
+          handler: handleTransfer
+
+# Templates spawned dynamically by MarketFactory.
+templates:
+  - kind: ethereum
+    name: OrderbookMarket
+    network: base
+    source:
+      abi: OrderbookMarket
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      file: ./src/mappings/orderbookMarket.ts
+      entities: [Order, Match, Market, Trader, ProtocolStats]
+      abis:
+        - name: OrderbookMarket
+          file: ./abis/OrderbookMarket.json
+      eventHandlers:
+        - event: OrderPlaced(indexed uint256,indexed address,uint8,uint256)
+          handler: handleOrderPlaced
+        - event: OrderMatched(indexed uint256,uint256,uint256,uint256)
+          handler: handleOrderMatched
+        - event: LPMatched(indexed uint256,uint256,uint256)
+          handler: handleLPMatched
+        - event: MatchSettled(indexed uint256,bool,uint256,uint256)
+          handler: handleMatchSettled
+        - event: OrderRefunded(indexed uint256,address,uint256)
+          handler: handleOrderRefunded
+        - event: Claimed(indexed uint256,address,uint256)
+          handler: handleClaimed

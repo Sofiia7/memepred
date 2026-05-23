@@ -21,8 +21,14 @@ contract ReferralRegistry is Ownable {
     // Authorized markets that can register referrals
     mapping(address => bool) public authorizedMarkets;
 
+    // MarketFactory (set once); can authorize new markets without owner involvement.
+    address public marketFactory;
+
     event ReferralRegistered(address indexed referee, address indexed referrer);
     event RefCodeGenerated(address indexed referrer, bytes6 code);
+    event MarketFactorySet (address indexed factory);
+    event MarketAuthorized (address indexed market);
+    event MarketRevoked    (address indexed market);
 
     constructor() Ownable(msg.sender) {}
 
@@ -72,11 +78,22 @@ contract ReferralRegistry is Ownable {
     }
 
     // ── ADMIN ──────────────────────────────────────────────
-    function authorizeMarket(address market) external onlyOwner {
+    function setMarketFactory(address _factory) external onlyOwner {
+        require(marketFactory == address(0), "factory already set");
+        require(_factory != address(0), "zero factory");
+        marketFactory = _factory;
+        emit MarketFactorySet(_factory);
+    }
+
+    function authorizeMarket(address market) external {
+        require(msg.sender == marketFactory || msg.sender == owner(), "only factory or owner");
+        require(market != address(0), "zero market");
         authorizedMarkets[market] = true;
+        emit MarketAuthorized(market);
     }
 
     function revokeMarket(address market) external onlyOwner {
         authorizedMarkets[market] = false;
+        emit MarketRevoked(market);
     }
 }

@@ -2,7 +2,9 @@ import { useState, useEffect } from 'react'
 import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom'
 import { useAccount, useConnect, useDisconnect } from 'wagmi'
 import { checkGeo } from './lib/geocheck'
+import { signalAppReady } from './lib/miniapp'
 import { Markets } from './pages/Markets'
+import { Market } from './pages/Market'
 import { Leaderboard } from './pages/Leaderboard'
 import { Portfolio } from './pages/Portfolio'
 import { GenesisPage } from './pages/Genesis'
@@ -19,6 +21,8 @@ export function App() {
     checkGeo().then(({ blocked }) => {
       setBlocked(blocked)
       setGeoChecked(true)
+      // Signal the Farcaster / Base App host that the splash can dismiss.
+      signalAppReady()
     })
   }, [])
 
@@ -62,6 +66,7 @@ export function App() {
       {/* ROUTES */}
       <Routes>
         <Route path="/" element={<Markets />} />
+        <Route path="/market/:address" element={<Market />} />
         <Route path="/leaderboard" element={<Leaderboard />} />
         <Route path="/portfolio" element={<Portfolio />} />
         <Route path="/genesis" element={<GenesisPage />} />

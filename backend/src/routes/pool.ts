@@ -9,11 +9,25 @@ const LIQUIDITY_POOL_ABI = [
     stateMutability: 'view',
     inputs: [],
     outputs: [
-      { name: 'total',          type: 'uint256' },
-      { name: 'available',      type: 'uint256' },
-      { name: 'providerCount',  type: 'uint256' },
-      { name: 'genesisLeft',    type: 'uint256' }
+      { name: 'totalAssetsOut',  type: 'uint256' },
+      { name: 'available',       type: 'uint256' },
+      { name: 'providerExposure',type: 'uint256' },
+      { name: 'genesisLeft',     type: 'uint256' }
     ]
+  },
+  {
+    name: 'genesisCount',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ type: 'uint256' }]
+  },
+  {
+    name: 'totalSupply',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ type: 'uint256' }]
   }
 ] as const
 
@@ -27,17 +41,19 @@ export default async function poolRoutes(app: FastifyInstance) {
 
   app.get('/api/pool/stats', async (_req, reply) => {
     try {
-      const stats = await client.readContract({
-        address:      poolAddress,
-        abi:          LIQUIDITY_POOL_ABI,
-        functionName: 'getPoolStats'
-      })
+      const [stats, genesisCount, totalSupply] = await Promise.all([
+        client.readContract({ address: poolAddress, abi: LIQUIDITY_POOL_ABI, functionName: 'getPoolStats' }),
+        client.readContract({ address: poolAddress, abi: LIQUIDITY_POOL_ABI, functionName: 'genesisCount' }),
+        client.readContract({ address: poolAddress, abi: LIQUIDITY_POOL_ABI, functionName: 'totalSupply' })
+      ])
 
       reply.send({
-        total:         stats[0].toString(),
-        available:     stats[1].toString(),
-        providerCount: Number(stats[2]),
-        genesisLeft:   Number(stats[3])
+        totalAssets:    stats[0].toString(),
+        available:      stats[1].toString(),
+        totalExposure:  stats[2].toString(),
+        genesisLeft:    Number(stats[3]),
+        genesisCount:   Number(genesisCount),
+        totalShares:    totalSupply.toString()
       })
     } catch (err) {
       app.log.error(err, 'Failed to read pool stats')

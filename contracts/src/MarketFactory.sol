@@ -3,10 +3,14 @@ pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "./OrderbookMarket.sol";
+import "./LiquidityPool.sol";
+import "./FeeDistributor.sol";
+import "./ReferralRegistry.sol";
 
 /**
  * @title MarketFactory
- * @notice Creates OrderbookMarket instances via direct deployment.
+ * @notice Creates OrderbookMarket instances and authorizes them on the shared
+ *         LP vault, FeeDistributor, and ReferralRegistry in one transaction.
  *         Keeper calls createMarket() every N minutes.
  */
 contract MarketFactory is Ownable {
@@ -15,16 +19,15 @@ contract MarketFactory is Ownable {
     address public immutable usdc;
     address public immutable resolver;
     address public immutable feeDistributor;
+    address public immutable referralRegistry;
     address public immutable multisig;
     address public immutable liquidityPool;
 
     // feedId → list of active markets
     mapping(bytes32 => address[]) public activeMarkets;
 
-    // Allowed durations in seconds
     uint256[] public allowedDurations;
 
-    // Whitelisted coins
     mapping(bytes32 => bool) public allowedFeeds;
     bytes32[] public feedIds;
 
@@ -39,16 +42,20 @@ contract MarketFactory is Ownable {
         address _usdc,
         address _resolver,
         address _feeDistributor,
+        address _referralRegistry,
         address _multisig,
         address _liquidityPool
     ) Ownable(msg.sender) {
-        usdc           = _usdc;
-        resolver       = _resolver;
-        feeDistributor = _feeDistributor;
-        multisig       = _multisig;
-        liquidityPool  = _liquidityPool;
+        require(_usdc != address(0) && _resolver != address(0)
+             && _feeDistributor != address(0) && _referralRegistry != address(0)
+             && _multisig != address(0) && _liquidityPool != address(0), "zero address");
+        usdc             = _usdc;
+        resolver         = _resolver;
+        feeDistributor   = _feeDistributor;
+        referralRegistry = _referralRegistry;
+        multisig         = _multisig;
+        liquidityPool    = _liquidityPool;
 
-        // Default durations
         allowedDurations.push(5 minutes);
         allowedDurations.push(15 minutes);
         allowedDurations.push(1 hours);
@@ -56,12 +63,6 @@ contract MarketFactory is Ownable {
         allowedDurations.push(24 hours);
     }
 
-    // ── CREATE MARKET ──────────────────────────────────────
-    /**
-     * @notice Create a new OrderbookMarket via direct deployment.
-     * @param feedId      Pyth price feed ID
-     * @param duration    Duration in seconds
-     */
     function createMarket(
         bytes32 feedId,
         uint256 duration
@@ -70,12 +71,12 @@ contract MarketFactory is Ownable {
         require(allowedFeeds[feedId], "feed not whitelisted");
         require(_isDurationAllowed(duration), "duration not allowed");
 
-        // Direct deployment (no clone pattern — OrderbookMarket uses immutables)
         OrderbookMarket m = new OrderbookMarket(
             usdc,
             resolver,
             liquidityPool,
             feeDistributor,
+            referralRegistry,
             multisig,
             feedId,
             duration
@@ -83,10 +84,15 @@ contract MarketFactory is Ownable {
 
         market = address(m);
         activeMarkets[feedId].push(market);
+
+        // Authorize this market on shared infra (one tx, atomic).
+        LiquidityPool   (liquidityPool)   .authorizeMarket(market);
+        FeeDistributor  (feeDistributor)  .authorizeMarket(market);
+        ReferralRegistry(referralRegistry).authorizeMarket(market);
+
         emit MarketCreated(market, feedId, duration, block.timestamp);
     }
 
-    // ── ADMIN ──────────────────────────────────────────────
     function addFeed(bytes32 feedId) external onlyOwner {
         allowedFeeds[feedId] = true;
         feedIds.push(feedId);
@@ -96,7 +102,6 @@ contract MarketFactory is Ownable {
         allowedFeeds[feedId] = false;
     }
 
-    // ── VIEWS ──────────────────────────────────────────────
     function getActiveMarkets(bytes32 feedId) external view returns (address[] memory) {
         return activeMarkets[feedId];
     }

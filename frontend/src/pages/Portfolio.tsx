@@ -1,7 +1,24 @@
 import { useAccount } from 'wagmi'
 import { useQuery } from '@tanstack/react-query'
+import { type Address } from 'viem'
+import { useClaim } from '../hooks/useClaim'
+import { useReferral } from '../hooks/useReferral'
 
 const API = import.meta.env.VITE_API_URL
+
+interface Bet {
+  market_address: Address
+  order_id:       string | null
+  match_id:       string | null
+  direction:      'UP' | 'DOWN'
+  amount_usdc:    string
+  won:            boolean | null
+  payout_usdc:    string | null
+  claimed:        boolean
+  placed_at:      string
+  settled_at:     string | null
+  feed_symbol:    string
+}
 
 interface Profile {
   address:       string
@@ -13,7 +30,74 @@ interface Profile {
   currentStreak: number
   maxStreak:     number
   badges:        { badge_id: number; minted_at: string }[]
-  recentBets:    any[]
+  recentBets:    Bet[]
+}
+
+function ClaimButton({ marketAddress, orderId }: { marketAddress: Address; orderId: bigint }) {
+  const { claim, pending, error } = useClaim(marketAddress)
+  return (
+    <button
+      className="btn-primary"
+      style={{ padding: '4px 10px', fontSize: 11 }}
+      disabled={pending}
+      onClick={() => claim(orderId)}
+      title={error}
+    >
+      {pending ? '…' : 'Claim'}
+    </button>
+  )
+}
+
+function ReferralPanel() {
+  const r = useReferral()
+  const refLink = r.myCode && r.myCode !== '0x000000000000'
+    ? `${window.location.origin}/?ref=${r.myCode}`
+    : null
+
+  return (
+    <div style={{ background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 10, padding: 14, marginBottom: 24 }}>
+      <h2 style={{ fontSize: 14, color: 'var(--muted)', textTransform: 'uppercase', marginTop: 0, marginBottom: 12 }}>
+        Referrals
+      </h2>
+      <div className="stats-grid" style={{ marginBottom: 12 }}>
+        <div className="stat-card">
+          <div className="stat-value">{Number(r.myReferralCount ?? 0n)}</div>
+          <div className="stat-label">Friends Referred</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-value">${(Number(r.claimableRewards ?? 0n) / 1e6).toFixed(2)}</div>
+          <div className="stat-label">Claimable Rewards</div>
+        </div>
+      </div>
+
+      {refLink ? (
+        <div>
+          <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 4 }}>Your referral link:</div>
+          <input
+            readOnly
+            value={refLink}
+            style={{ width: '100%', padding: 8, background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)', borderRadius: 6 }}
+            onFocus={(e) => e.currentTarget.select()}
+          />
+        </div>
+      ) : (
+        <button className="btn-secondary" onClick={r.generateMyCode} disabled={r.busy}>
+          Generate referral code
+        </button>
+      )}
+
+      {Number(r.claimableRewards ?? 0n) > 0 && (
+        <button
+          className="btn-primary"
+          style={{ marginTop: 10 }}
+          onClick={r.claimRewards}
+          disabled={r.busy}
+        >
+          Claim ${(Number(r.claimableRewards ?? 0n) / 1e6).toFixed(2)}
+        </button>
+      )}
+    </div>
+  )
 }
 
 export function Portfolio() {
@@ -41,95 +125,110 @@ export function Portfolio() {
   if (isLoading) {
     return (
       <div className="page" style={{ textAlign: 'center', padding: 80 }}>
-        <p style={{ color: '#666' }}>Loading profile...</p>
+        <p style={{ color: '#666' }}>Loading profile…</p>
       </div>
     )
   }
 
+  const claimable = profile?.recentBets.filter(b =>
+    b.won === true && b.order_id !== null && !b.claimed
+  ) ?? []
+
   return (
-    <div className="page">
+    <div className="page" style={{ maxWidth: 1100, margin: '0 auto', padding: 24 }}>
       <h1 className="page-title">📊 Portfolio</h1>
 
-      {/* Stats Grid */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))',
-        gap: 12,
-        marginBottom: 24
-      }}>
+      <div className="stats-grid" style={{ marginBottom: 24 }}>
         {[
-          { label: 'Total Bets', value: profile?.totalBets || 0 },
-          { label: 'Won', value: profile?.wonBets || 0, color: '#00ff88' },
-          { label: 'Accuracy', value: `${profile?.accuracy || 0}%`, color: (profile?.accuracy || 0) >= 50 ? '#00ff88' : '#ff3355' },
-          { label: 'Volume', value: `$${(profile?.totalVolume || 0).toFixed(0)}` },
-          { label: 'Profit', value: `$${(profile?.profit || 0).toFixed(2)}`, color: (profile?.profit || 0) >= 0 ? '#00ff88' : '#ff3355' },
-          { label: 'Streak', value: `🔥 ${profile?.currentStreak || 0}` },
+          { label: 'Total Bets',  value: profile?.totalBets || 0 },
+          { label: 'Won',         value: profile?.wonBets || 0 },
+          { label: 'Accuracy',    value: `${profile?.accuracy || 0}%` },
+          { label: 'Volume',      value: `$${(profile?.totalVolume || 0).toFixed(0)}` },
+          { label: 'Profit',      value: `$${(profile?.profit || 0).toFixed(2)}` },
+          { label: 'Streak',      value: `🔥 ${profile?.currentStreak || 0}` },
         ].map(s => (
-          <div key={s.label} style={{
-            background: '#111',
-            border: '1px solid #2a2a2a',
-            borderRadius: 8,
-            padding: 14,
-            textAlign: 'center'
-          }}>
-            <div style={{ fontSize: 9, color: '#888', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>
-              {s.label}
-            </div>
-            <div style={{ fontSize: 18, fontWeight: 800, color: s.color || '#e0e0e0' }}>
-              {s.value}
-            </div>
+          <div key={s.label} className="stat-card">
+            <div className="stat-value">{s.value}</div>
+            <div className="stat-label">{s.label}</div>
           </div>
         ))}
       </div>
 
-      {/* Badges */}
+      {claimable.length > 0 && (
+        <div style={{ background: 'var(--panel)', border: '1px solid var(--accent)', borderRadius: 10, padding: 14, marginBottom: 24 }}>
+          <h2 style={{ fontSize: 14, color: 'var(--accent)', textTransform: 'uppercase', marginTop: 0 }}>
+            Ready to claim ({claimable.length})
+          </h2>
+          <table style={{ width: '100%' }}>
+            <thead>
+              <tr style={{ color: 'var(--muted)', fontSize: 11 }}>
+                <th style={{ textAlign: 'left' }}>Coin</th>
+                <th style={{ textAlign: 'left' }}>Dir</th>
+                <th style={{ textAlign: 'right' }}>Payout</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {claimable.map((b, i) => (
+                <tr key={i}>
+                  <td>{b.feed_symbol}</td>
+                  <td style={{ color: b.direction === 'UP' ? 'var(--accent)' : 'var(--accent2)' }}>
+                    {b.direction === 'UP' ? '↑' : '↓'} {b.direction}
+                  </td>
+                  <td style={{ textAlign: 'right' }}>${parseFloat(b.payout_usdc || '0').toFixed(4)}</td>
+                  <td style={{ textAlign: 'right' }}>
+                    <ClaimButton marketAddress={b.market_address} orderId={BigInt(b.order_id!)} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <ReferralPanel />
+
       {profile?.badges && profile.badges.length > 0 && (
         <div style={{ marginBottom: 24 }}>
-          <h2 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12, color: '#888' }}>BADGES</h2>
+          <h2 style={{ fontSize: 14, color: 'var(--muted)', textTransform: 'uppercase' }}>Badges</h2>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
             {profile.badges.map(b => (
-              <div key={b.badge_id} style={{
-                background: '#1a1a1a',
-                border: '1px solid #2a2a2a',
-                borderRadius: 6,
-                padding: '6px 12px',
-                fontSize: 10,
-                fontWeight: 700,
-              }}>
-                Badge #{b.badge_id}
-              </div>
+              <div key={b.badge_id} className="stat-card" style={{ padding: '6px 12px' }}>#{b.badge_id}</div>
             ))}
           </div>
         </div>
       )}
 
-      {/* Recent Bets */}
-      <h2 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12, color: '#888' }}>RECENT BETS</h2>
+      <h2 style={{ fontSize: 14, color: 'var(--muted)', textTransform: 'uppercase' }}>Recent Bets</h2>
       {!profile?.recentBets?.length ? (
-        <p style={{ color: '#666', fontSize: 12 }}>No bets yet.</p>
+        <p style={{ color: 'var(--muted)' }}>No bets yet.</p>
       ) : (
-        <table className="lb-table">
+        <table style={{ width: '100%' }}>
           <thead>
-            <tr>
-              <th>Coin</th>
-              <th>Dir</th>
-              <th>Amount</th>
-              <th>Result</th>
-              <th>Payout</th>
+            <tr style={{ color: 'var(--muted)', fontSize: 11 }}>
+              <th style={{ textAlign: 'left' }}>Coin</th>
+              <th style={{ textAlign: 'left' }}>Dir</th>
+              <th style={{ textAlign: 'right' }}>Amount</th>
+              <th style={{ textAlign: 'left' }}>Result</th>
+              <th style={{ textAlign: 'right' }}>Payout</th>
             </tr>
           </thead>
           <tbody>
             {profile.recentBets.map((b, i) => (
               <tr key={i}>
                 <td>{b.feed_symbol}</td>
-                <td style={{ color: b.direction === 'UP' ? '#00ff88' : '#ff3355', fontWeight: 700 }}>
+                <td style={{ color: b.direction === 'UP' ? 'var(--accent)' : 'var(--accent2)' }}>
                   {b.direction === 'UP' ? '↑' : '↓'} {b.direction}
                 </td>
-                <td>${parseFloat(b.amount_usdc).toFixed(2)}</td>
-                <td style={{ color: b.won ? '#00ff88' : b.won === false ? '#ff3355' : '#888' }}>
-                  {b.won === null ? 'Pending' : b.won ? 'WON' : 'LOST'}
+                <td style={{ textAlign: 'right' }}>${parseFloat(b.amount_usdc).toFixed(2)}</td>
+                <td>
+                  {b.won === null ? 'Pending' :
+                   b.claimed     ? 'Claimed' :
+                   b.won         ? 'WON · claim →' : 'LOST'}
                 </td>
-                <td>{b.payout_usdc ? `$${parseFloat(b.payout_usdc).toFixed(2)}` : '—'}</td>
+                <td style={{ textAlign: 'right' }}>
+                  {b.payout_usdc ? `$${parseFloat(b.payout_usdc).toFixed(2)}` : '—'}
+                </td>
               </tr>
             ))}
           </tbody>

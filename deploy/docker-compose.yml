@@ -1,0 +1,105 @@
+# MemePred — single-VPS production stack.
+# Boots Postgres (TimescaleDB), Redis, the API, the keeper, and Caddy (HTTPS reverse proxy).
+#
+# Usage:
+#   cp .env.example .env       # fill in
+#   docker compose up -d
+#   docker compose logs -f
+#
+# Backups: see ./scripts/backup-db.sh (cron-friendly).
+
+services:
+  postgres:
+    image: timescale/timescaledb:latest-pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER:     ${POSTGRES_USER:-memepred}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB:       ${POSTGRES_DB:-memepred}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test:     ["CMD", "pg_isready", "-U", "${POSTGRES_USER:-memepred}"]
+      interval: 5s
+      timeout:  3s
+      retries:  10
+    # Bind only to localhost to keep DB off the public internet.
+    ports:
+      - "127.0.0.1:5432:5432"
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}"]
+    volumes:
+      - redisdata:/data
+    ports:
+      - "127.0.0.1:6379:6379"
+
+  backend:
+    build:
+      context:    ../backend
+      dockerfile: ../deploy/backend.Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis:    { condition: service_started }
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-memepred}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-memepred}
+      REDIS_URL:    redis://default:${REDIS_PASSWORD}@redis:6379
+      PORT:         "3001"
+      BASE_RPC_URL: ${BASE_RPC_URL}
+      PYTH_HERMES_URL:    ${PYTH_HERMES_URL:-https://hermes.pyth.network}
+      WORKER_SECRET:      ${WORKER_SECRET}
+      USDC_ADDRESS:       ${USDC_ADDRESS}
+      MARKET_FACTORY:     ${MARKET_FACTORY}
+      ORACLE_RESOLVER:    ${ORACLE_RESOLVER}
+      FEE_DISTRIBUTOR:    ${FEE_DISTRIBUTOR}
+      REFERRAL_REGISTRY:  ${REFERRAL_REGISTRY}
+      LIQUIDITY_POOL:     ${LIQUIDITY_POOL}
+      GENESIS_NFT:        ${GENESIS_NFT}
+      BADGE_NFT:          ${BADGE_NFT}
+    ports:
+      - "127.0.0.1:3001:3001"
+
+  keeper:
+    build:
+      context:    ../backend
+      dockerfile: ../deploy/backend.Dockerfile
+    command: ["node", "dist/keeper/index.js"]
+    restart: unless-stopped
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis:    { condition: service_started }
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-memepred}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-memepred}
+      REDIS_URL:    redis://default:${REDIS_PASSWORD}@redis:6379
+      BASE_RPC_URL: ${BASE_RPC_URL}
+      PYTH_HERMES_URL:           ${PYTH_HERMES_URL:-https://hermes.pyth.network}
+      USDC_ADDRESS:              ${USDC_ADDRESS}
+      MARKET_FACTORY:            ${MARKET_FACTORY}
+      ORACLE_RESOLVER:           ${ORACLE_RESOLVER}
+      FEE_DISTRIBUTOR:           ${FEE_DISTRIBUTOR}
+      REFERRAL_REGISTRY:         ${REFERRAL_REGISTRY}
+      LIQUIDITY_POOL:            ${LIQUIDITY_POOL}
+      KEEPER_PRIVATE_KEY:        ${KEEPER_PRIVATE_KEY}
+      BADGE_MINTER_PRIVATE_KEY:  ${BADGE_MINTER_PRIVATE_KEY}
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddydata:/data
+      - caddyconfig:/config
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:
+  redisdata:
+  caddydata:
+  caddyconfig:
