@@ -9,7 +9,8 @@ import { useCandles, useProbHistory } from '../hooks/useCandles'
 import { useMarkets } from '../hooks/useMarkets'
 import { useOdds } from '../hooks/useOdds'
 import { usePythPrice } from '../hooks/usePythPrice'
-import { symbolMeta, formatPrice, formatDuration, countdown } from '../lib/symbols'
+import { useNow, countdownFrom } from '../hooks/useNow'
+import { symbolMeta, formatPrice, formatDuration } from '../lib/symbols'
 import { Chev } from '../components/ui/icons'
 
 export function Market() {
@@ -45,7 +46,7 @@ export function Market() {
         ← BACK
       </button>
 
-      <ScreenTitle title={`${symbol} / USD`} live liveLabel={countdown(closeTime)} liveColor="var(--up)" />
+      <ScreenTitle title={`${symbol} / USD`} live liveLabel={countdownFrom(closeTime, useNow(1000))} liveColor="var(--up)" />
 
       <div className="market" style={{ marginBottom: 12 }}>
         <div className="coin">

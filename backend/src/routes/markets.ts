@@ -84,4 +84,52 @@ export async function marketsRoutes(app: FastifyInstance) {
     await redis.setEx(cacheKey, 10, JSON.stringify(out))
     return out
   })
+
+  // 24h aggregate stats: total bet volume + per-symbol latest price & 24h change %
+  app.get('/stats', async () => {
+    const cacheKey = 'markets:stats:24h'
+    const cached = await redis.get(cacheKey)
+    if (cached) return JSON.parse(cached)
+
+    // Total volume (sum of bet amounts in last 24h)
+    const volRes = await pg.query<{ vol: string }>(
+      `SELECT COALESCE(SUM(amount_usdc), 0)::text AS vol
+         FROM bets
+        WHERE placed_at >= NOW() - INTERVAL '24 hours'`
+    )
+    const volume24h = parseFloat(volRes.rows[0]?.vol ?? '0')
+
+    // Per-symbol: latest price + price closest to 24h ago
+    const sym = await pg.query<{
+      symbol: string; latest: string; prior: string | null
+    }>(
+      `WITH latest AS (
+         SELECT DISTINCT ON (symbol) symbol, price, recorded_at
+           FROM price_history
+          ORDER BY symbol, recorded_at DESC
+       ),
+       prior AS (
+         SELECT DISTINCT ON (symbol) symbol, price
+           FROM price_history
+          WHERE recorded_at <= NOW() - INTERVAL '24 hours'
+          ORDER BY symbol, recorded_at DESC
+       )
+       SELECT l.symbol,
+              l.price::text  AS latest,
+              p.price::text  AS prior
+         FROM latest l
+         LEFT JOIN prior p USING (symbol)`
+    )
+
+    const symbols = sym.rows.map(r => {
+      const latest = parseFloat(r.latest)
+      const prior = r.prior !== null ? parseFloat(r.prior) : null
+      const chg24h = prior && prior > 0 ? ((latest - prior) / prior) * 100 : 0
+      return { symbol: r.symbol, price: latest, chg24h }
+    })
+
+    const out = { volume24h, symbols }
+    await redis.setEx(cacheKey, 30, JSON.stringify(out))
+    return out
+  })
 }

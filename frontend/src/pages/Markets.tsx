@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useMarkets, type Market } from '../hooks/useMarkets'
+import { useMarketStats, symbolFromStats } from '../hooks/useMarketStats'
 import { ScreenTitle, StatStrip } from '../components/ui/AppShell'
 import { MarketCardUI, type PickedBet } from '../components/ui/MarketCard'
 import { Composer } from '../components/ui/Composer'
@@ -16,15 +17,13 @@ function groupBySymbol(markets: Market[]): Record<string, Market[]> {
 
 export function Markets() {
   const { data: markets, isLoading } = useMarkets('OPEN')
+  const { data: stats } = useMarketStats()
   const [picked, setPicked] = useState<PickedBet | null>(null)
 
   const groups = useMemo(() => groupBySymbol(markets ?? []), [markets])
-  const totalVolUsd = useMemo(() => {
-    if (!markets) return 0
-    return markets.reduce((s, m) => s + (m.upPool || 0) + (m.downPool || 0), 0)
-  }, [markets])
-
   const symbols = Object.keys(groups).sort()
+  const vol = stats?.volume24h ?? 0
+  const volText = vol >= 1e6 ? `$${(vol / 1e6).toFixed(2)}M` : vol >= 1e3 ? `$${(vol / 1e3).toFixed(1)}K` : `$${vol.toFixed(0)}`
 
   return (
     <>
@@ -41,7 +40,7 @@ export function Markets() {
 
       <StatStrip
         items={[
-          { k: '24h Volume', v: `$${(totalVolUsd / 1e6).toFixed(2)}M`, u: 'USDC' },
+          { k: '24h Volume', v: volText, u: 'USDC' },
           { k: 'Active', v: String(symbols.length), u: 'symbols' },
         ]}
       />
@@ -49,17 +48,20 @@ export function Markets() {
       {isLoading && <div className="empty-state">Loading markets…</div>}
       {!isLoading && symbols.length === 0 && <div className="empty-state">No open markets yet</div>}
 
-      {symbols.map((sym) => (
-        <MarketCardUI
-          key={sym}
-          symbol={sym}
-          livePrice={groups[sym][0]?.entryPrice ?? 0}
-          chg24h={0}
-          markets={groups[sym]}
-          picked={picked}
-          onPick={setPicked}
-        />
-      ))}
+      {symbols.map((sym) => {
+        const s = symbolFromStats(stats, sym)
+        return (
+          <MarketCardUI
+            key={sym}
+            symbol={sym}
+            livePrice={s?.price ?? groups[sym][0]?.entryPrice ?? 0}
+            chg24h={s?.chg24h ?? 0}
+            markets={groups[sym]}
+            picked={picked}
+            onPick={setPicked}
+          />
+        )
+      })}
 
       <div style={{ height: 280 }} />
 

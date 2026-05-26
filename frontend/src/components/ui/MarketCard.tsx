@@ -2,7 +2,8 @@ import { useState, useMemo } from 'react'
 import type { Address } from 'viem'
 import type { Market } from '../../hooks/useMarkets'
 import { useOdds } from '../../hooks/useOdds'
-import { symbolMeta, formatPrice, formatDuration, countdown } from '../../lib/symbols'
+import { useNow, countdownFrom } from '../../hooks/useNow'
+import { symbolMeta, formatPrice, formatDuration } from '../../lib/symbols'
 import { Chev } from './icons'
 
 export interface PickedBet {
@@ -34,6 +35,7 @@ export function MarketCardUI({ symbol, livePrice = 0, chg24h = 0, markets, picke
   const sorted = useMemo(() => [...markets].sort((a, b) => a.duration - b.duration), [markets])
   const [activeIdx, setActiveIdx] = useState(0)
   const active = sorted[activeIdx]
+  const now = useNow(1000)
   if (!active) return null
   const { probUp } = useOdds(active.address as Address)
   const isSelHere = picked?.marketAddress.toLowerCase() === active.address.toLowerCase()
@@ -64,7 +66,7 @@ export function MarketCardUI({ symbol, livePrice = 0, chg24h = 0, markets, picke
             onClick={() => setActiveIdx(i)}
           >
             <span className="tf-lbl">{formatDuration(m.duration)}</span>
-            <span className="tf-end">⌁ {countdown(m.closeTime)}</span>
+            <span className="tf-end">⌁ {countdownFrom(m.closeTime, now)}</span>
           </button>
         ))}
       </div>
