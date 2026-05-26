@@ -1,5 +1,5 @@
 /* memepred — design system */
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Inter:wght@400;500;600;700;800;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700;9..40,800;9..40,900&display=swap');
 
 :root{
   --bg:#07070a;
@@ -24,7 +24,7 @@
   --down-strong:rgba(255,61,110,.22);
   --warn:#ffb547;
   --mono:"JetBrains Mono",ui-monospace,"SF Mono",Menlo,monospace;
-  --sans:"Inter",-apple-system,BlinkMacSystemFont,system-ui,sans-serif;
+  --sans:"DM Sans",-apple-system,BlinkMacSystemFont,system-ui,sans-serif;
   --app-w:420px;
 }
 *{box-sizing:border-box;margin:0;padding:0}
