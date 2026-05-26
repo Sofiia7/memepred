@@ -1,79 +1,88 @@
 import { useState } from 'react'
-import { useReadContract, useWriteContract, useAccount } from 'wagmi'
+import { useReadContract, useWriteContract, useAccount, useConnect } from 'wagmi'
 import { parseUnits, maxUint256 } from 'viem'
 import { CONTRACTS, LIQUIDITY_POOL_ABI, ERC20_ABI } from '../lib/contracts'
+import { ScreenTitle } from '../components/ui/AppShell'
+import { StarIcon } from '../components/ui/icons'
 
 export function GenesisPage() {
   const { address, isConnected } = useAccount()
+  const { connect, connectors } = useConnect()
   const [depositAmount, setDepositAmount] = useState('50')
+  const [isLoading, setIsLoading] = useState(false)
 
-  // Pool stats: (totalAssetsOut, available, providerExposure, genesisLeft)
   const { data: stats } = useReadContract({
-    address:      CONTRACTS.LIQUIDITY_POOL,
-    abi:          LIQUIDITY_POOL_ABI,
+    address: CONTRACTS.LIQUIDITY_POOL,
+    abi: LIQUIDITY_POOL_ABI,
     functionName: 'getPoolStats',
   })
 
-  // LP share balance
   const { data: shareBalance } = useReadContract({
-    address:      CONTRACTS.LIQUIDITY_POOL,
-    abi:          LIQUIDITY_POOL_ABI,
+    address: CONTRACTS.LIQUIDITY_POOL,
+    abi: LIQUIDITY_POOL_ABI,
     functionName: 'balanceOf',
-    args:         [address!],
-    query:        { enabled: !!address }
+    args: [address!],
+    query: { enabled: !!address },
   })
 
-  // LP equivalent USDC value
   const { data: myAssets } = useReadContract({
-    address:      CONTRACTS.LIQUIDITY_POOL,
-    abi:          LIQUIDITY_POOL_ABI,
+    address: CONTRACTS.LIQUIDITY_POOL,
+    abi: LIQUIDITY_POOL_ABI,
     functionName: 'previewRedeem',
-    args:         [shareBalance ?? 0n],
-    query:        { enabled: !!shareBalance && shareBalance > 0n }
+    args: [shareBalance ?? 0n],
+    query: { enabled: !!shareBalance && shareBalance > 0n },
   })
 
-  // Earned fees pending claim
   const { data: pendingFees } = useReadContract({
-    address:      CONTRACTS.LIQUIDITY_POOL,
-    abi:          LIQUIDITY_POOL_ABI,
+    address: CONTRACTS.LIQUIDITY_POOL,
+    abi: LIQUIDITY_POOL_ABI,
     functionName: 'earnedFees',
-    args:         [address!],
-    query:        { enabled: !!address }
+    args: [address!],
+    query: { enabled: !!address },
   })
 
-  // Genesis status
   const { data: isGenesisAddr } = useReadContract({
-    address:      CONTRACTS.LIQUIDITY_POOL,
-    abi:          LIQUIDITY_POOL_ABI,
+    address: CONTRACTS.LIQUIDITY_POOL,
+    abi: LIQUIDITY_POOL_ABI,
     functionName: 'isGenesis',
-    args:         [address!],
-    query:        { enabled: !!address }
+    args: [address!],
+    query: { enabled: !!address },
   })
 
-  const { writeContractAsync: approve }   = useWriteContract()
-  const { writeContractAsync: deposit }   = useWriteContract()
+  const { writeContractAsync: approve } = useWriteContract()
+  const { writeContractAsync: deposit } = useWriteContract()
   const { writeContractAsync: claimFees } = useWriteContract()
 
-  const [isLoading, setIsLoading] = useState(false)
+  const totalPool = stats ? Number(stats[0]) / 1e6 : 0
+  const locked = stats ? Number(stats[2]) / 1e6 : 0
+  const genesisLeft = stats ? Number(stats[3]) : 20
+  const filled = 20 - genesisLeft
+  const pct = (filled / 20) * 100
+
+  const mySharesValue = myAssets ? Number(myAssets) / 1e6 : 0
+  const myPending = pendingFees ? Number(pendingFees) / 1e6 : 0
+  const isGenesis = !!isGenesisAddr
+  const hasPosition = (shareBalance ?? 0n) > 0n
 
   async function handleDeposit() {
-    if (!address) return
+    if (!address) {
+      connectors[0] && connect({ connector: connectors[0] })
+      return
+    }
     setIsLoading(true)
     try {
       const amount = parseUnits(depositAmount, 6)
-
       await approve({
         address: CONTRACTS.USDC,
-        abi:     ERC20_ABI,
+        abi: ERC20_ABI,
         functionName: 'approve',
-        args: [CONTRACTS.LIQUIDITY_POOL, maxUint256]
+        args: [CONTRACTS.LIQUIDITY_POOL, maxUint256],
       })
-
       await deposit({
-        address:      CONTRACTS.LIQUIDITY_POOL,
-        abi:          LIQUIDITY_POOL_ABI,
+        address: CONTRACTS.LIQUIDITY_POOL,
+        abi: LIQUIDITY_POOL_ABI,
         functionName: 'deposit',
-        args:         [amount, address]
+        args: [amount, address],
       })
     } catch (err) {
       console.error('Deposit failed:', err)
@@ -85,8 +94,8 @@ export function GenesisPage() {
   async function handleClaimFees() {
     try {
       await claimFees({
-        address:      CONTRACTS.LIQUIDITY_POOL,
-        abi:          LIQUIDITY_POOL_ABI,
+        address: CONTRACTS.LIQUIDITY_POOL,
+        abi: LIQUIDITY_POOL_ABI,
         functionName: 'claimFees',
       })
     } catch (err) {
@@ -94,143 +103,106 @@ export function GenesisPage() {
     }
   }
 
-  const totalPool        = stats ? Number(stats[0]) / 1e6 : 0
-  const available        = stats ? Number(stats[1]) / 1e6 : 0
-  const totalExposureUsd = stats ? Number(stats[2]) / 1e6 : 0
-  const genesisLeft      = stats ? Number(stats[3]) : 20
-
-  const mySharesValue = myAssets    ? Number(myAssets)    / 1e6 : 0
-  const myPending     = pendingFees ? Number(pendingFees) / 1e6 : 0
-  const isGenesis     = !!isGenesisAddr
-  const hasPosition   = (shareBalance ?? 0n) > 0n
-
   return (
-    <div className="genesis-page">
+    <>
+      <ScreenTitle title="Genesis LP" icon={<StarIcon color="#4d8dff" />} />
+
       <div className="genesis-hero">
-        <h1>🎴 Genesis LP Program</h1>
-        <p>First 20 liquidity providers earn 1.5x fee share forever</p>
+        <div className="gh-eyebrow">
+          <span className="basesq" />
+          Limited program · Base mainnet
+        </div>
+        <h3 className="gh-title">
+          First 20 LPs earn <em>1.5×</em> fee share <em>forever</em>.
+        </h3>
+        <div className="gh-sub">
+          Provide USDC to the matching vault, mint a soulbound Genesis NFT, and accrue boosted fees on every market settlement — for as long as memepred exists.
+        </div>
+        <div className="spots">
+          <div className="big">{genesisLeft}</div>
+          <div className="of">/ 20 spots</div>
+        </div>
+        <div className="spots-bar">
+          <div className="spots-fill" style={{ width: pct + '%' }} />
+        </div>
+        <div className="spots-meta">
+          <span>{filled} CLAIMED</span>
+          <span>{genesisLeft} REMAINING</span>
+        </div>
       </div>
 
-      <div className="genesis-counter">
-        <div className="counter-number">{genesisLeft}</div>
-        <div className="counter-label">Genesis spots remaining</div>
-        <div className="counter-bar">
-          <div
-            className="counter-fill"
-            style={{ width: `${((20 - genesisLeft) / 20) * 100}%` }}
+      <div className="g-stats">
+        <div className="g-stat">
+          <div className="k">Total Vault Assets</div>
+          <div className="v">
+            ${totalPool.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+            <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text-faint)', fontWeight: 500, marginLeft: 4 }}>USDC</span>
+          </div>
+        </div>
+        <div className="g-stat">
+          <div className="k">Locked in Matches</div>
+          <div className="v">${locked.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
+        </div>
+      </div>
+
+      {hasPosition && (
+        <>
+          <div className="b-title">Your position {isGenesis && <span className="pick-pill up" style={{ marginLeft: 6 }}>GENESIS</span>}</div>
+          <div className="g-stats">
+            <div className="g-stat">
+              <div className="k">Value</div>
+              <div className="v">${mySharesValue.toFixed(2)}<span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text-faint)', fontWeight: 500, marginLeft: 4 }}>USDC</span></div>
+            </div>
+            <div className="g-stat">
+              <div className="k">Claimable Fees</div>
+              <div className="v">${myPending.toFixed(2)}</div>
+            </div>
+          </div>
+          {myPending > 0 && (
+            <button className="cta" style={{ marginBottom: 8 }} onClick={handleClaimFees}>
+              <span className="basesq" />
+              CLAIM ${myPending.toFixed(2)}
+            </button>
+          )}
+        </>
+      )}
+
+      <div className="b-title">Genesis benefits</div>
+      <div className="benefits">
+        <div className="b-head">
+          <span>Benefit</span>
+          <span>Genesis LP</span>
+          <span>Regular LP</span>
+        </div>
+        <div className="b-row"><span className="k">Fee-stream weight</span><span className="glp">1.5×</span><span className="reg">1.0×</span></div>
+        <div className="b-row"><span className="k">Share-price growth</span><span className="check">✓ yes</span><span className="reg">✓ yes</span></div>
+        <div className="b-row"><span className="k">Genesis NFT</span><span className="check">soulbound</span><span className="dash">—</span></div>
+        <div className="b-row"><span className="k">Hall of Fame</span><span className="check">forever</span><span className="dash">—</span></div>
+        <div className="b-row"><span className="k">Min deposit</span><span className="glp">50 USDC</span><span className="reg">50 USDC</span></div>
+      </div>
+
+      <div className="b-title">Become an LP</div>
+      <div className="stake-row">
+        <div className="stake-input">
+          <span className="ccy">$</span>
+          <input
+            type="number"
+            min={50}
+            value={depositAmount}
+            onChange={(e) => setDepositAmount(e.target.value)}
           />
         </div>
       </div>
 
-      <div className="stats-grid">
-        <div className="stat-card">
-          <div className="stat-value">${totalPool.toLocaleString()}</div>
-          <div className="stat-label">Total Vault Assets</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-value">${available.toLocaleString()}</div>
-          <div className="stat-label">Available for Matching</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-value">${totalExposureUsd.toLocaleString()}</div>
-          <div className="stat-label">Locked in Active Matches</div>
-        </div>
+      <button className="g-cta" onClick={handleDeposit} disabled={isLoading}>
+        {isLoading ? <span className="spinner" /> : <span className="basesq" />}
+        {!isConnected ? 'CONNECT WALLET' : isLoading ? 'PROCESSING…' : genesisLeft > 0 && !hasPosition ? `BECOME GENESIS LP · $${depositAmount}` : `DEPOSIT $${depositAmount}`}
+      </button>
+      <div className="g-foot">
+        Base Sepolia · {genesisLeft > 0 && !hasPosition ? `You'll receive Genesis NFT #${21 - genesisLeft}` : 'Smart-contract audited'}
       </div>
 
-      {isConnected && (
-        <div className="deposit-section">
-          <h2>Provide Liquidity</h2>
-          <div className="deposit-input-group">
-            <input
-              id="deposit-amount"
-              type="number"
-              min="50"
-              value={depositAmount}
-              onChange={e => setDepositAmount(e.target.value)}
-              placeholder="50"
-            />
-            <span>USDC</span>
-          </div>
-
-          {genesisLeft > 0 && !hasPosition && (
-            <div className="genesis-badge">
-              🎴 You'll receive Genesis NFT #{21 - genesisLeft} with 1.5x fee weight!
-            </div>
-          )}
-
-          <button
-            id="btn-deposit"
-            className="btn-primary"
-            onClick={handleDeposit}
-            disabled={isLoading}
-          >
-            {isLoading ? 'Processing...' : `Deposit $${depositAmount} USDC`}
-          </button>
-        </div>
-      )}
-
-      {hasPosition && (
-        <div className="my-position">
-          <h2>Your Position {isGenesis && <span className="badge">🎴 Genesis</span>}</h2>
-          <div className="stats-grid">
-            <div className="stat-card">
-              <div className="stat-value">${mySharesValue.toLocaleString()}</div>
-              <div className="stat-label">Current Value (USDC)</div>
-            </div>
-            <div className="stat-card">
-              <div className="stat-value">{(Number(shareBalance ?? 0n) / 1e12).toLocaleString()}</div>
-              <div className="stat-label">mpLP Shares</div>
-            </div>
-            <div className="stat-card">
-              <div className="stat-value">${myPending.toLocaleString()}</div>
-              <div className="stat-label">Claimable Fees</div>
-            </div>
-          </div>
-          <button
-            id="btn-claim-fees"
-            className="btn-secondary"
-            onClick={handleClaimFees}
-            disabled={myPending === 0}
-          >
-            Claim Fees
-          </button>
-        </div>
-      )}
-
-      <div className="benefits-table">
-        <h2>Genesis Benefits</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>Benefit</th>
-              <th>Genesis LP</th>
-              <th>Regular LP</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td>Fee-stream Weight</td>
-              <td className="highlight">1.5x</td>
-              <td>1.0x</td>
-            </tr>
-            <tr>
-              <td>Share-price Growth</td>
-              <td className="highlight">✅ Yes</td>
-              <td>✅ Yes</td>
-            </tr>
-            <tr>
-              <td>Genesis NFT</td>
-              <td className="highlight">✅ Soulbound</td>
-              <td>—</td>
-            </tr>
-            <tr>
-              <td>Hall of Fame</td>
-              <td className="highlight">✅ Forever</td>
-              <td>—</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
+      <div style={{ height: 24 }} />
+    </>
   )
 }

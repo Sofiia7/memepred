@@ -1,4 +1,8 @@
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { ScreenTitle } from '../components/ui/AppShell'
+import { TrophyIcon } from '../components/ui/icons'
+import { shortAddr } from '../lib/symbols'
 
 const API = import.meta.env.VITE_API_URL
 
@@ -13,67 +17,100 @@ interface LeaderboardEntry {
   streak:    number
 }
 
+type Period = '24H' | '7D' | '30D' | 'ALL'
+
+const PERIOD_TO_API: Record<Period, string> = {
+  '24H': 'daily',
+  '7D': 'weekly',
+  '30D': 'monthly',
+  'ALL': 'alltime',
+}
+
+function avatarBg(profit: number): { bg: string; color: string } {
+  if (profit < 0) return { bg: '#3b0a1f', color: '#ff3d6e' }
+  return { bg: '#0a1a3b', color: '#4d8dff' }
+}
+
+function fmtMoney(n: number): string {
+  const sign = n < 0 ? '−' : '+'
+  return `${sign}$${Math.abs(n).toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+}
+
 export function Leaderboard() {
+  const [period, setPeriod] = useState<Period>('24H')
+
   const { data, isLoading } = useQuery<LeaderboardEntry[]>({
-    queryKey: ['leaderboard'],
+    queryKey: ['leaderboard', period],
     queryFn: async () => {
-      const res = await fetch(`${API}/api/leaderboard?period=weekly&limit=100`)
+      const res = await fetch(`${API}/api/leaderboard?period=${PERIOD_TO_API[period]}&limit=100`)
       if (!res.ok) throw new Error('Failed')
       return res.json()
     },
-    refetchInterval: 60_000
+    refetchInterval: 60_000,
   })
 
-  return (
-    <div className="page">
-      <h1 className="page-title">🏆 Leaderboard</h1>
+  const top3 = data?.slice(0, 3) ?? []
+  const rest = data?.slice(3) ?? []
 
-      {isLoading ? (
-        <div style={{ textAlign: 'center', padding: 40, color: '#666' }}>Loading...</div>
-      ) : !data?.length ? (
-        <div style={{ textAlign: 'center', padding: 40, color: '#666' }}>
-          No leaderboard data yet. Start trading!
-        </div>
-      ) : (
-        <div style={{ overflowX: 'auto' }}>
-          <table className="lb-table">
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>Address</th>
-                <th>Bets</th>
-                <th>Won</th>
-                <th>Accuracy</th>
-                <th>Volume</th>
-                <th>Profit</th>
-                <th>Streak</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.map(e => (
-                <tr key={e.address}>
-                  <td style={{ fontWeight: 800, color: e.rank <= 3 ? '#ffdd00' : '#888' }}>
-                    {e.rank}
-                  </td>
-                  <td style={{ fontFamily: 'JetBrains Mono', fontSize: 10 }}>
-                    {e.address.slice(0,6)}...{e.address.slice(-4)}
-                  </td>
-                  <td>{e.totalBets}</td>
-                  <td style={{ color: '#00ff88' }}>{e.wonBets}</td>
-                  <td style={{ fontWeight: 700, color: e.accuracy >= 60 ? '#00ff88' : '#ff3355' }}>
-                    {e.accuracy}%
-                  </td>
-                  <td>${e.volume.toFixed(0)}</td>
-                  <td style={{ color: e.profit >= 0 ? '#00ff88' : '#ff3355', fontWeight: 700 }}>
-                    {e.profit >= 0 ? '+' : ''}{e.profit.toFixed(2)}
-                  </td>
-                  <td>🔥 {e.streak}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+  return (
+    <>
+      <ScreenTitle title="Leaderboard" icon={<TrophyIcon color="#ffb547" />} live liveLabel={period} liveColor="var(--up)" />
+
+      <div className="ftabs">
+        {(['24H', '7D', '30D', 'ALL'] as Period[]).map((p) => (
+          <button key={p} className={'ftab ' + (p === period ? 'on' : '')} onClick={() => setPeriod(p)}>
+            {p}
+          </button>
+        ))}
+      </div>
+
+      {isLoading && <div className="empty-state">Loading…</div>}
+      {!isLoading && !data?.length && <div className="empty-state">No data yet — be the first</div>}
+
+      {top3.length > 0 && (
+        <div className="podium">
+          {[top3[1], top3[0], top3[2]].filter(Boolean).map((p) => {
+            const av = avatarBg(p.profit)
+            return (
+              <div key={p.address} className={'pod pod-' + p.rank} style={p.rank === 1 ? { paddingTop: 18, paddingBottom: 18 } : undefined}>
+                <div className="rank">{p.rank}</div>
+                <div className="av" style={{ background: av.bg, color: av.color, border: `1px solid ${av.color}55` }}>
+                  {p.address.slice(2, 3).toUpperCase()}
+                </div>
+                <div className="nm">{shortAddr(p.address)}</div>
+                <div className={'pnl ' + (p.profit < 0 ? 'dn' : '')}>{fmtMoney(p.profit)}</div>
+                <div className="wr">{p.accuracy}% WR · {p.totalBets}T</div>
+              </div>
+            )
+          })}
         </div>
       )}
-    </div>
+
+      {rest.length > 0 && <div className="b-title">Rest of the field</div>}
+
+      <div className="lb-list">
+        {rest.map((p) => {
+          const av = avatarBg(p.profit)
+          return (
+            <div key={p.address} className="lb-row">
+              <div className="lb-rank">#{p.rank}</div>
+              <div className="lb-user">
+                <div className="lb-av" style={{ background: av.bg, color: av.color, border: `1px solid ${av.color}55` }}>
+                  {p.address.slice(2, 3).toUpperCase()}
+                </div>
+                <div style={{ minWidth: 0 }}>
+                  <div className="lb-name">{shortAddr(p.address)}</div>
+                  <div className="lb-sub">{p.totalBets} bets · 🔥 {p.streak}</div>
+                </div>
+              </div>
+              <div className="lb-wr">{p.accuracy}%</div>
+              <div className={'lb-pnl ' + (p.profit < 0 ? 'dn' : '')}>{fmtMoney(p.profit)}</div>
+            </div>
+          )
+        })}
+      </div>
+
+      <div style={{ height: 24 }} />
+    </>
   )
 }

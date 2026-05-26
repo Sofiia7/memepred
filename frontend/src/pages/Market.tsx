@@ -1,106 +1,113 @@
-import { useParams, Link } from 'react-router-dom'
-import { useReadContract } from 'wagmi'
-import { useEffect, useState } from 'react'
+import { useParams, useNavigate } from 'react-router-dom'
+import { useState } from 'react'
 import type { Address } from 'viem'
-import { ORDERBOOK_MARKET_ABI } from '../lib/contracts'
-import { BetForm } from '../components/BetForm'
-
-const PYTH_HERMES = import.meta.env.VITE_PYTH_HERMES_URL ?? 'https://hermes.pyth.network'
+import { ScreenTitle, StatStrip } from '../components/ui/AppShell'
+import { Composer } from '../components/ui/Composer'
+import type { PickedBet } from '../components/ui/MarketCard'
+import { MarketChart, type Timeframe } from '../components/MarketChart'
+import { useCandles, useProbHistory } from '../hooks/useCandles'
+import { useMarkets } from '../hooks/useMarkets'
+import { useOdds } from '../hooks/useOdds'
+import { usePythPrice } from '../hooks/usePythPrice'
+import { symbolMeta, formatPrice, formatDuration, countdown } from '../lib/symbols'
+import { Chev } from '../components/ui/icons'
 
 export function Market() {
   const { address } = useParams<{ address: string }>()
+  const navigate = useNavigate()
   const marketAddress = address as Address
+  const [tf, setTf] = useState<Timeframe>('5m')
+  const [picked, setPicked] = useState<PickedBet | null>(null)
 
-  const { data: pendingDepth } = useReadContract({
-    address:      marketAddress,
-    abi:          ORDERBOOK_MARKET_ABI,
-    functionName: 'getPendingDepth',
-    query:        { refetchInterval: 5_000 }
-  })
+  const { data: allMarkets } = useMarkets()
+  const market = allMarkets?.find((m) => m.address.toLowerCase() === marketAddress?.toLowerCase())
 
-  const { data: feedId } = useReadContract({
-    address:      marketAddress,
-    abi:          ORDERBOOK_MARKET_ABI,
-    functionName: 'pythFeedId'
-  })
+  const feedId = market?.feedId
+  const symbol = market?.feedSymbol ?? 'UNKNOWN'
+  const durationSec = market?.duration ?? 0
+  const closeTime = market?.closeTime ?? 0
 
-  const { data: duration } = useReadContract({
-    address:      marketAddress,
-    abi:          ORDERBOOK_MARKET_ABI,
-    functionName: 'duration'
-  })
+  const { upDepth, downDepth, probUp } = useOdds(marketAddress)
+  const { display: livePrice, raw: pythRaw } = usePythPrice(feedId)
+  const { data: candles } = useCandles(feedId ?? '', tf)
+  const { data: probHistory } = useProbHistory(marketAddress)
 
-  const [pythPriceWei, setPythPriceWei] = useState<bigint>(0n)
-
-  useEffect(() => {
-    if (!feedId) return
-    let cancelled = false
-    const fetchPrice = async () => {
-      try {
-        const url = `${PYTH_HERMES}/v2/updates/price/latest?ids[]=${feedId}&encoding=hex&parsed=true`
-        const r = await fetch(url)
-        const j = await r.json()
-        if (cancelled) return
-        const p     = j.parsed?.[0]?.price
-        if (!p) return
-        const expo  = Number(p.expo)
-        const price = BigInt(p.price)
-        // normalize to 1e18
-        const wei = expo < 0
-          ? (price * 10n ** 18n) / (10n ** BigInt(-expo))
-          : (price * 10n ** 18n) * (10n ** BigInt(expo))
-        setPythPriceWei(wei)
-      } catch (e) {
-        console.warn('pyth fetch failed', e)
-      }
-    }
-    fetchPrice()
-    const i = setInterval(fetchPrice, 10_000)
-    return () => { cancelled = true; clearInterval(i) }
-  }, [feedId])
-
-  if (!marketAddress) return <div style={{ padding: 24 }}>Invalid market address.</div>
+  if (!marketAddress) return <div className="empty-state">Invalid market</div>
+  const meta = symbolMeta(symbol)
 
   return (
-    <div style={{ maxWidth: 1100, margin: '0 auto', padding: 24, display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 24 }}>
-      <div>
-        <Link to="/">← Markets</Link>
-        <h1 style={{ marginTop: 8 }}>Market</h1>
-        <div className="stat-card">
-          <div className="stat-label">Address</div>
-          <div style={{ fontFamily: 'monospace', fontSize: 13 }}>{marketAddress}</div>
-        </div>
-        <div className="stats-grid" style={{ marginTop: 12 }}>
-          <div className="stat-card">
-            <div className="stat-value">
-              {pythPriceWei > 0n ? (Number(pythPriceWei) / 1e18).toPrecision(6) : '—'}
-            </div>
-            <div className="stat-label">Live Pyth Price</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-value">{duration ? Number(duration) / 60 : '—'} min</div>
-            <div className="stat-label">Match Duration</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-value">
-              {pendingDepth ? (Number(pendingDepth[0]) / 1e6).toFixed(2) : '0.00'}
-            </div>
-            <div className="stat-label">UP Queue (USDC)</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-value">
-              {pendingDepth ? (Number(pendingDepth[1]) / 1e6).toFixed(2) : '0.00'}
-            </div>
-            <div className="stat-label">DOWN Queue (USDC)</div>
-          </div>
-        </div>
+    <>
+      <button
+        className="clear"
+        onClick={() => navigate(-1)}
+        style={{ padding: '0 0 8px', fontSize: 11, letterSpacing: '.14em', display: 'block' }}
+      >
+        ← BACK
+      </button>
 
-        <div style={{ marginTop: 24, fontSize: 13, color: 'var(--muted)' }}>
-          Live chart: TBD (TradingView lightweight-charts).
+      <ScreenTitle title={`${symbol} / USD`} live liveLabel={countdown(closeTime)} liveColor="var(--up)" />
+
+      <div className="market" style={{ marginBottom: 12 }}>
+        <div className="coin">
+          <div className="coin-l">
+            <div className={'coin-icon ' + meta.iconClass}>{meta.glyph}</div>
+            <div>
+              <div className="coin-name">{symbol}<span className="pair"> / USD</span></div>
+              <div className="coin-sub">{meta.name} · {formatDuration(durationSec)}</div>
+            </div>
+          </div>
+          <div className="coin-r">
+            <div className="coin-price">${formatPrice(livePrice)}</div>
+            <div className="coin-chg"><Chev dir="up" /> live</div>
+          </div>
         </div>
       </div>
 
-      <BetForm marketAddress={marketAddress} pythPriceWei={pythPriceWei} />
-    </div>
+      <MarketChart
+        feedId={feedId ?? ''}
+        marketAddress={marketAddress}
+        candles={candles}
+        probHistory={probHistory}
+        onTfChange={setTf}
+      />
+
+      <StatStrip
+        items={[
+          { k: 'UP queue', v: `$${(Number(upDepth) / 1e6).toFixed(2)}`, u: 'USDC', tone: 'up' },
+          { k: 'DOWN queue', v: `$${(Number(downDepth) / 1e6).toFixed(2)}`, u: 'USDC', tone: 'dn' },
+        ]}
+      />
+
+      <div className="ud" style={{ padding: 0, marginBottom: 12 }}>
+        <button
+          className={'b b-up ' + (picked?.side === 'up' ? 'sel' : '')}
+          onClick={() => setPicked({
+            marketAddress, feedId: feedId ?? '', symbol, durationSec,
+            side: 'up', oddsPct: Math.round(probUp * 100),
+          })}
+        >
+          <span className="side"><Chev dir="up" /> UP</span>
+          <span className="pct">{Math.round(probUp * 100)}¢</span>
+        </button>
+        <button
+          className={'b b-dn ' + (picked?.side === 'down' ? 'sel' : '')}
+          onClick={() => setPicked({
+            marketAddress, feedId: feedId ?? '', symbol, durationSec,
+            side: 'down', oddsPct: Math.round((1 - probUp) * 100),
+          })}
+        >
+          <span className="side"><Chev dir="down" /> DOWN</span>
+          <span className="pct">{Math.round((1 - probUp) * 100)}¢</span>
+        </button>
+      </div>
+
+      <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text-faint)', letterSpacing: '.1em', textAlign: 'center', padding: '4px 0' }}>
+        EXPECTED {pythRaw > 0n ? (Number(pythRaw) / 1e18).toPrecision(6) : '—'} · SLIPPAGE 1%
+      </div>
+
+      <div style={{ height: 280 }} />
+
+      <Composer picked={picked} onClear={() => setPicked(null)} />
+    </>
   )
 }

@@ -1,8 +1,12 @@
-import { useAccount } from 'wagmi'
+import { useAccount, useConnect } from 'wagmi'
 import { useQuery } from '@tanstack/react-query'
 import { type Address } from 'viem'
 import { useClaim } from '../hooks/useClaim'
 import { useReferral } from '../hooks/useReferral'
+import { ScreenTitle, StatStrip } from '../components/ui/AppShell'
+import { BadgeGrid } from '../components/BadgeGrid'
+import { WalletIcon, Chev } from '../components/ui/icons'
+import { symbolMeta, shortAddr } from '../lib/symbols'
 
 const API = import.meta.env.VITE_API_URL
 
@@ -34,17 +38,52 @@ interface Profile {
 }
 
 function ClaimButton({ marketAddress, orderId }: { marketAddress: Address; orderId: bigint }) {
-  const { claim, pending, error } = useClaim(marketAddress)
+  const { claim, pending } = useClaim(marketAddress)
   return (
     <button
-      className="btn-primary"
-      style={{ padding: '4px 10px', fontSize: 11 }}
+      className="cta"
+      style={{ padding: '6px 10px', fontSize: 10, height: 'auto', width: 'auto' }}
       disabled={pending}
       onClick={() => claim(orderId)}
-      title={error}
     >
-      {pending ? '…' : 'Claim'}
+      {pending ? <span className="spinner" /> : null}
+      CLAIM
     </button>
+  )
+}
+
+function BetRow({ bet }: { bet: Bet }) {
+  const meta = symbolMeta(bet.feed_symbol)
+  const isUp = bet.direction === 'UP'
+  const amount = parseFloat(bet.amount_usdc)
+  const payout = bet.payout_usdc ? parseFloat(bet.payout_usdc) : null
+  const status =
+    bet.won === null ? 'PENDING' :
+    bet.claimed ? 'CLAIMED' :
+    bet.won ? 'WON' : 'LOST'
+  const canClaim = bet.won === true && !bet.claimed && bet.order_id
+
+  return (
+    <div className="lb-row" style={{ gridTemplateColumns: '32px 1fr auto auto' }}>
+      <div className={'coin-icon ' + meta.iconClass} style={{ width: 26, height: 26, fontSize: 10 }}>{meta.glyph}</div>
+      <div style={{ minWidth: 0 }}>
+        <div className="lb-name">
+          <span className={'pick-pill ' + (isUp ? 'up' : 'dn')} style={{ marginRight: 6, padding: '2px 6px', fontSize: 9 }}>
+            <Chev dir={isUp ? 'up' : 'down'} /> {bet.direction}
+          </span>
+          {bet.feed_symbol} · ${amount.toFixed(2)}
+        </div>
+        <div className="lb-sub">{status}{payout !== null ? ` · payout $${payout.toFixed(2)}` : ''}</div>
+      </div>
+      {canClaim ? (
+        <ClaimButton marketAddress={bet.market_address} orderId={BigInt(bet.order_id!)} />
+      ) : (
+        <span />
+      )}
+      <div className={'lb-pnl ' + (bet.won === false ? 'dn' : '')}>
+        {payout !== null ? `$${payout.toFixed(2)}` : '—'}
+      </div>
+    </div>
   )
 }
 
@@ -53,55 +92,41 @@ function ReferralPanel() {
   const refLink = r.myCode && r.myCode !== '0x000000000000'
     ? `${window.location.origin}/?ref=${r.myCode}`
     : null
+  const claimable = Number(r.claimableRewards ?? 0n) / 1e6
 
   return (
-    <div style={{ background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 10, padding: 14, marginBottom: 24 }}>
-      <h2 style={{ fontSize: 14, color: 'var(--muted)', textTransform: 'uppercase', marginTop: 0, marginBottom: 12 }}>
-        Referrals
-      </h2>
-      <div className="stats-grid" style={{ marginBottom: 12 }}>
-        <div className="stat-card">
-          <div className="stat-value">{Number(r.myReferralCount ?? 0n)}</div>
-          <div className="stat-label">Friends Referred</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-value">${(Number(r.claimableRewards ?? 0n) / 1e6).toFixed(2)}</div>
-          <div className="stat-label">Claimable Rewards</div>
-        </div>
-      </div>
-
+    <>
+      <div className="b-title">Referrals</div>
+      <StatStrip
+        items={[
+          { k: 'Friends Referred', v: String(Number(r.myReferralCount ?? 0n)) },
+          { k: 'Claimable', v: `$${claimable.toFixed(2)}`, tone: claimable > 0 ? 'up' : undefined },
+        ]}
+      />
       {refLink ? (
-        <div>
-          <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 4 }}>Your referral link:</div>
-          <input
-            readOnly
-            value={refLink}
-            style={{ width: '100%', padding: 8, background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)', borderRadius: 6 }}
-            onFocus={(e) => e.currentTarget.select()}
-          />
+        <div className="stake-input" style={{ marginBottom: 10 }}>
+          <span className="ccy" style={{ marginRight: 6, fontSize: 10 }}>LINK</span>
+          <input readOnly value={refLink} onFocus={(e) => e.currentTarget.select()} style={{ fontSize: 10 }} />
         </div>
       ) : (
-        <button className="btn-secondary" onClick={r.generateMyCode} disabled={r.busy}>
-          Generate referral code
+        <button className="cta" style={{ marginBottom: 10 }} onClick={r.generateMyCode} disabled={r.busy}>
+          <span className="basesq" />
+          GENERATE CODE
         </button>
       )}
-
-      {Number(r.claimableRewards ?? 0n) > 0 && (
-        <button
-          className="btn-primary"
-          style={{ marginTop: 10 }}
-          onClick={r.claimRewards}
-          disabled={r.busy}
-        >
-          Claim ${(Number(r.claimableRewards ?? 0n) / 1e6).toFixed(2)}
+      {claimable > 0 && (
+        <button className="cta" style={{ marginBottom: 14 }} onClick={r.claimRewards} disabled={r.busy}>
+          {r.busy ? <span className="spinner" /> : <span className="basesq" />}
+          CLAIM ${claimable.toFixed(2)}
         </button>
       )}
-    </div>
+    </>
   )
 }
 
 export function Portfolio() {
   const { address, isConnected } = useAccount()
+  const { connect, connectors } = useConnect()
 
   const { data: profile, isLoading } = useQuery<Profile>({
     queryKey: ['profile', address],
@@ -111,129 +136,75 @@ export function Portfolio() {
       return res.json()
     },
     enabled: !!address,
-    refetchInterval: 30_000
+    refetchInterval: 30_000,
   })
 
   if (!isConnected) {
     return (
-      <div className="page" style={{ textAlign: 'center', padding: 80 }}>
-        <p style={{ fontSize: 14, color: '#888' }}>Connect your wallet to view your portfolio.</p>
-      </div>
+      <>
+        <ScreenTitle title="Portfolio" icon={<WalletIcon />} />
+        <div className="empty-state" style={{ marginBottom: 16 }}>Connect wallet to view your stats</div>
+        <button className="cta" onClick={() => connectors[0] && connect({ connector: connectors[0] })}>
+          <span className="basesq" />
+          CONNECT WALLET
+        </button>
+      </>
     )
   }
 
-  if (isLoading) {
+  if (isLoading || !profile) {
     return (
-      <div className="page" style={{ textAlign: 'center', padding: 80 }}>
-        <p style={{ color: '#666' }}>Loading profile…</p>
-      </div>
+      <>
+        <ScreenTitle title="Portfolio" icon={<WalletIcon />} />
+        <div className="empty-state">Loading profile…</div>
+      </>
     )
   }
 
-  const claimable = profile?.recentBets.filter(b =>
-    b.won === true && b.order_id !== null && !b.claimed
-  ) ?? []
+  const ownedBadgeIds = new Set((profile.badges ?? []).map((b) => b.badge_id))
+  const claimable = profile.recentBets.filter((b) => b.won === true && b.order_id && !b.claimed)
 
   return (
-    <div className="page" style={{ maxWidth: 1100, margin: '0 auto', padding: 24 }}>
-      <h1 className="page-title">📊 Portfolio</h1>
+    <>
+      <ScreenTitle title="Portfolio" icon={<WalletIcon />} live liveLabel={shortAddr(address)} liveColor="var(--up)" />
 
-      <div className="stats-grid" style={{ marginBottom: 24 }}>
-        {[
-          { label: 'Total Bets',  value: profile?.totalBets || 0 },
-          { label: 'Won',         value: profile?.wonBets || 0 },
-          { label: 'Accuracy',    value: `${profile?.accuracy || 0}%` },
-          { label: 'Volume',      value: `$${(profile?.totalVolume || 0).toFixed(0)}` },
-          { label: 'Profit',      value: `$${(profile?.profit || 0).toFixed(2)}` },
-          { label: 'Streak',      value: `🔥 ${profile?.currentStreak || 0}` },
-        ].map(s => (
-          <div key={s.label} className="stat-card">
-            <div className="stat-value">{s.value}</div>
-            <div className="stat-label">{s.label}</div>
-          </div>
-        ))}
-      </div>
+      <StatStrip
+        items={[
+          { k: 'Profit', v: `${profile.profit >= 0 ? '+' : '−'}$${Math.abs(profile.profit).toFixed(2)}`, tone: profile.profit >= 0 ? 'up' : 'dn' },
+          { k: 'Accuracy', v: `${profile.accuracy}%`, u: `${profile.wonBets}/${profile.totalBets}` },
+        ]}
+      />
+      <StatStrip
+        items={[
+          { k: 'Volume', v: `$${profile.totalVolume.toFixed(0)}`, u: 'USDC' },
+          { k: 'Streak', v: `🔥 ${profile.currentStreak}`, u: `max ${profile.maxStreak}` },
+        ]}
+      />
 
       {claimable.length > 0 && (
-        <div style={{ background: 'var(--panel)', border: '1px solid var(--accent)', borderRadius: 10, padding: 14, marginBottom: 24 }}>
-          <h2 style={{ fontSize: 14, color: 'var(--accent)', textTransform: 'uppercase', marginTop: 0 }}>
-            Ready to claim ({claimable.length})
-          </h2>
-          <table style={{ width: '100%' }}>
-            <thead>
-              <tr style={{ color: 'var(--muted)', fontSize: 11 }}>
-                <th style={{ textAlign: 'left' }}>Coin</th>
-                <th style={{ textAlign: 'left' }}>Dir</th>
-                <th style={{ textAlign: 'right' }}>Payout</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {claimable.map((b, i) => (
-                <tr key={i}>
-                  <td>{b.feed_symbol}</td>
-                  <td style={{ color: b.direction === 'UP' ? 'var(--accent)' : 'var(--accent2)' }}>
-                    {b.direction === 'UP' ? '↑' : '↓'} {b.direction}
-                  </td>
-                  <td style={{ textAlign: 'right' }}>${parseFloat(b.payout_usdc || '0').toFixed(4)}</td>
-                  <td style={{ textAlign: 'right' }}>
-                    <ClaimButton marketAddress={b.market_address} orderId={BigInt(b.order_id!)} />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <>
+          <div className="b-title">Ready to claim ({claimable.length})</div>
+          <div className="lb-list" style={{ marginBottom: 14 }}>
+            {claimable.map((b, i) => <BetRow key={i} bet={b} />)}
+          </div>
+        </>
       )}
 
       <ReferralPanel />
 
-      {profile?.badges && profile.badges.length > 0 && (
-        <div style={{ marginBottom: 24 }}>
-          <h2 style={{ fontSize: 14, color: 'var(--muted)', textTransform: 'uppercase' }}>Badges</h2>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-            {profile.badges.map(b => (
-              <div key={b.badge_id} className="stat-card" style={{ padding: '6px 12px' }}>#{b.badge_id}</div>
-            ))}
-          </div>
+      <div className="b-title">Badges</div>
+      <BadgeGrid ownedIds={ownedBadgeIds} />
+
+      <div className="b-title" style={{ marginTop: 16 }}>Recent bets</div>
+      {profile.recentBets.length === 0 ? (
+        <div className="empty-state">No bets yet</div>
+      ) : (
+        <div className="lb-list">
+          {profile.recentBets.map((b, i) => <BetRow key={i} bet={b} />)}
         </div>
       )}
 
-      <h2 style={{ fontSize: 14, color: 'var(--muted)', textTransform: 'uppercase' }}>Recent Bets</h2>
-      {!profile?.recentBets?.length ? (
-        <p style={{ color: 'var(--muted)' }}>No bets yet.</p>
-      ) : (
-        <table style={{ width: '100%' }}>
-          <thead>
-            <tr style={{ color: 'var(--muted)', fontSize: 11 }}>
-              <th style={{ textAlign: 'left' }}>Coin</th>
-              <th style={{ textAlign: 'left' }}>Dir</th>
-              <th style={{ textAlign: 'right' }}>Amount</th>
-              <th style={{ textAlign: 'left' }}>Result</th>
-              <th style={{ textAlign: 'right' }}>Payout</th>
-            </tr>
-          </thead>
-          <tbody>
-            {profile.recentBets.map((b, i) => (
-              <tr key={i}>
-                <td>{b.feed_symbol}</td>
-                <td style={{ color: b.direction === 'UP' ? 'var(--accent)' : 'var(--accent2)' }}>
-                  {b.direction === 'UP' ? '↑' : '↓'} {b.direction}
-                </td>
-                <td style={{ textAlign: 'right' }}>${parseFloat(b.amount_usdc).toFixed(2)}</td>
-                <td>
-                  {b.won === null ? 'Pending' :
-                   b.claimed     ? 'Claimed' :
-                   b.won         ? 'WON · claim →' : 'LOST'}
-                </td>
-                <td style={{ textAlign: 'right' }}>
-                  {b.payout_usdc ? `$${parseFloat(b.payout_usdc).toFixed(2)}` : '—'}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-    </div>
+      <div style={{ height: 24 }} />
+    </>
   )
 }
