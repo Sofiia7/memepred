@@ -108,7 +108,10 @@ jobs:
 
       - name: typecheck
         working-directory: frontend
-        run: pnpm exec tsc -b --noEmit
+        # Plain --noEmit (not build mode): `tsc -b --noEmit` conflicts with the
+        # composite tsconfig.node.json (TS6310). vite build below is the real
+        # build gate; this just typechecks src against tsconfig.json.
+        run: pnpm exec tsc --noEmit
 
       - name: vite build
         working-directory: frontend
