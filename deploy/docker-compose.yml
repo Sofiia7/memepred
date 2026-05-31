@@ -50,6 +50,7 @@ services:
       PORT:         "3001"
       BASE_RPC_URL: ${BASE_RPC_URL}
       PYTH_HERMES_URL:    ${PYTH_HERMES_URL:-https://hermes.pyth.network}
+      CHAIN_ID:           ${CHAIN_ID:-84532}
       WORKER_SECRET:      ${WORKER_SECRET}
       USDC_ADDRESS:       ${USDC_ADDRESS}
       MARKET_FACTORY:     ${MARKET_FACTORY}

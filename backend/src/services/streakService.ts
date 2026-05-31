@@ -36,13 +36,7 @@ export async function updateStreak(traderAddress: string, won: boolean) {
     )
   }
 
-  // Also update current_streak on the bet row
-  await pg.query(
-    `UPDATE bets SET current_streak = $1
-     WHERE trader_address = $2 AND settled_at IS NOT NULL
-     ORDER BY settled_at DESC LIMIT 1`,
-    [currentStreak, addr]
-  )
-
+  // Sprint 3.3: the orders table doesn't carry per-row streak — keep streak
+  // only on trader_streaks. The leaderboard/profile already JOIN this table.
   return { currentStreak, maxStreak }
 }

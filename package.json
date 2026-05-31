@@ -1,0 +1,23 @@
+{
+  "name": "memepred",
+  "private": true,
+  "version": "0.0.0",
+  "description": "MemePred — PvP prediction market on Base (monorepo root)",
+  "packageManager": "pnpm@9.12.0",
+  "engines": {
+    "node": ">=20.0.0 <21",
+    "pnpm": ">=9.0.0"
+  },
+  "scripts": {
+    "build":           "pnpm -r --filter ./backend --filter ./frontend --filter ./subgraph run build",
+    "build:backend":   "pnpm --filter ./backend run build",
+    "build:frontend":  "pnpm --filter ./frontend run build",
+    "build:subgraph":  "pnpm --filter ./subgraph run build",
+    "typecheck":       "pnpm -r run typecheck",
+    "test":            "pnpm -r run test",
+    "contracts:build": "forge build --root contracts",
+    "contracts:test":  "forge test --root contracts -vv",
+    "contracts:fmt":   "forge fmt --check --root contracts",
+    "db:migrate:smoke": "node ./scripts/ci-db-smoke.mjs"
+  }
+}

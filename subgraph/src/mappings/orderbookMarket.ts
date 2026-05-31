@@ -3,6 +3,7 @@ import {
   OrderPlaced,
   OrderMatched,
   LPMatched,
+  OrderFilled,
   MatchSettled,
   OrderRefunded,
   Claimed
@@ -53,58 +54,79 @@ export function handleOrderMatched(ev: OrderMatched): void {
   let mAddr = ev.address.toHexString()
   let mid   = matchKey(mAddr, ev.params.matchId)
 
+  let market = Market.load(mAddr)
+  let dur    = market != null ? market.duration : ZERO_BI
+
   let mt = new Match(mid)
   mt.market     = mAddr
   mt.matchId    = ev.params.matchId
   mt.isLPMatch  = false
   mt.upOrder    = orderId(mAddr, ev.params.upId)
   mt.downOrder  = orderId(mAddr, ev.params.downId)
-  mt.amount     = ZERO_BI                          // filled on settle
+  mt.amount     = ev.params.amount                    // 3.5: real matched amount
   mt.entryPrice = ev.params.entryPrice
   mt.matchedAt  = ev.block.timestamp
-  mt.settleAt   = ZERO_BI
+  mt.settleAt   = ev.block.timestamp.plus(dur)        // 3.5: matchedAt + duration
   mt.settled    = false
   mt.save()
 
-  // Mark both orders MATCHED
+  // Orders may be partially filled — only flip status when OrderFilled fires.
+  // Here we just record the match link as PRIMARY match (first one only).
   let up = Order.load(orderId(mAddr, ev.params.upId))
-  if (up != null) { up.status = "MATCHED"; up.matchedAt = ev.block.timestamp; up.match = mid; up.save() }
+  if (up != null) {
+    up.matchedAt = ev.block.timestamp
+    if (up.match == null) up.match = mid
+    up.save()
+  }
   let dn = Order.load(orderId(mAddr, ev.params.downId))
-  if (dn != null) { dn.status = "MATCHED"; dn.matchedAt = ev.block.timestamp; dn.match = mid; dn.save() }
+  if (dn != null) {
+    dn.matchedAt = ev.block.timestamp
+    if (dn.match == null) dn.match = mid
+    dn.save()
+  }
 
-  let m = Market.load(mAddr)
-  if (m != null) { m.totalMatches = m.totalMatches.plus(ONE_BI); m.save() }
-
-  let s = getStats()
-  s.totalMatches = s.totalMatches.plus(ONE_BI)
-  s.save()
+  if (market != null) { market.totalMatches = market.totalMatches.plus(ONE_BI); market.save() }
+  let s = getStats(); s.totalMatches = s.totalMatches.plus(ONE_BI); s.save()
 }
 
 export function handleLPMatched(ev: LPMatched): void {
   let mAddr = ev.address.toHexString()
   let mid   = matchKey(mAddr, ev.params.matchId)
 
+  let market = Market.load(mAddr)
+  let dur    = market != null ? market.duration : ZERO_BI
+
   let mt = new Match(mid)
   mt.market     = mAddr
   mt.matchId    = ev.params.matchId
   mt.isLPMatch  = true
   mt.lpOrder    = orderId(mAddr, ev.params.orderId)
-  mt.amount     = ZERO_BI
+  mt.amount     = ev.params.amount                    // 3.5: real matched amount
   mt.entryPrice = ev.params.entryPrice
   mt.matchedAt  = ev.block.timestamp
-  mt.settleAt   = ZERO_BI
+  mt.settleAt   = ev.block.timestamp.plus(dur)
   mt.settled    = false
   mt.save()
 
   let o = Order.load(orderId(mAddr, ev.params.orderId))
-  if (o != null) { o.status = "MATCHED"; o.matchedAt = ev.block.timestamp; o.match = mid; o.save() }
+  if (o != null) {
+    o.matchedAt = ev.block.timestamp
+    if (o.match == null) o.match = mid
+    o.save()
+  }
 
-  let m = Market.load(mAddr)
-  if (m != null) { m.totalMatches = m.totalMatches.plus(ONE_BI); m.save() }
+  if (market != null) { market.totalMatches = market.totalMatches.plus(ONE_BI); market.save() }
+  let s = getStats(); s.totalMatches = s.totalMatches.plus(ONE_BI); s.save()
+}
 
-  let s = getStats()
-  s.totalMatches = s.totalMatches.plus(ONE_BI)
-  s.save()
+/// Order is fully filled — only now flip status to MATCHED.
+/// (Sprint 1.1: partial fills keep status PENDING until the last match.)
+export function handleOrderFilled(ev: OrderFilled): void {
+  let mAddr = ev.address.toHexString()
+  let o = Order.load(orderId(mAddr, ev.params.orderId))
+  if (o == null) return
+  o.status = "MATCHED"
+  o.save()
 }
 
 export function handleMatchSettled(ev: MatchSettled): void {

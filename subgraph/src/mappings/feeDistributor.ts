@@ -1,6 +1,9 @@
+import { Bytes } from "@graphprotocol/graph-ts"
 import { FeeReceived, ReferralCredited } from "../../generated/FeeDistributor/FeeDistributor"
 import { FeeFlow, ReferralEarning } from "../../generated/schema"
 import { getOrCreateTrader, getStats } from "./shared"
+
+const ZERO_BYTES = Bytes.fromHexString("0x0000000000000000000000000000000000000000")
 
 export function handleFeeReceived(ev: FeeReceived): void {
   let id = ev.transaction.hash.toHexString() + "-" + ev.logIndex.toString()
@@ -23,7 +26,9 @@ export function handleReferralCredited(ev: ReferralCredited): void {
   let r  = new ReferralEarning(id)
   r.referrer = ev.params.referrer
   r.amount   = ev.params.amount
-  r.market   = ev.transaction.to as any  // calling market is tx.to
+  // tx.to may be null for contract creation; safe to coerce to zero-bytes.
+  let to = ev.transaction.to
+  r.market   = to === null ? ZERO_BYTES : Bytes.fromUint8Array(to as Bytes)
   r.ts       = ev.block.timestamp
   r.tx       = ev.transaction.hash
   r.save()

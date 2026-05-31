@@ -176,7 +176,9 @@ export function GenesisPage() {
         </div>
         <div className="b-row"><span className="k">Fee-stream weight</span><span className="glp">1.5×</span><span className="reg">1.0×</span></div>
         <div className="b-row"><span className="k">Share-price growth</span><span className="check">✓ yes</span><span className="reg">✓ yes</span></div>
-        <div className="b-row"><span className="k">Genesis NFT</span><span className="check">soulbound</span><span className="dash">—</span></div>
+        {/* Sprint 4.7: NFT is transferable; boost follows the NFT, not the address. */}
+        <div className="b-row"><span className="k">Genesis NFT</span><span className="check">transferable*</span><span className="dash">—</span></div>
+        <div className="b-row"><span className="k">LP vault shares</span><span className="check">soulbound</span><span className="reg">soulbound</span></div>
         <div className="b-row"><span className="k">Hall of Fame</span><span className="check">forever</span><span className="dash">—</span></div>
         <div className="b-row"><span className="k">Min deposit</span><span className="glp">50 USDC</span><span className="reg">50 USDC</span></div>
       </div>
@@ -200,6 +202,11 @@ export function GenesisPage() {
       </button>
       <div className="g-foot">
         Base Sepolia · {genesisLeft > 0 && !hasPosition ? `You'll receive Genesis NFT #${21 - genesisLeft}` : 'Smart-contract audited'}
+      </div>
+      {/* Sprint 4.7: clarify that the boost rides on the NFT, not the address. */}
+      <div className="g-foot" style={{ marginTop: 6, fontSize: 10, opacity: 0.6 }}>
+        * Genesis NFT is transferable. The 1.5× fee boost follows whoever owns the NFT.
+        Selling the NFT sells the boost.
       </div>
 
       <div style={{ height: 24 }} />

@@ -27,8 +27,8 @@ contract GenesisNFT is ERC721, Ownable {
 
     event GenesisMinted(address indexed to, uint256 tokenId, uint256 number);
 
-    constructor(string memory _baseURI) ERC721("MemePred Genesis", "MPGEN") Ownable(msg.sender) {
-        baseTokenURI = _baseURI;
+    constructor(string memory baseURI_) ERC721("MemePred Genesis", "MPGEN") Ownable(msg.sender) {
+        baseTokenURI = baseURI_;
     }
 
     function mint(address to, uint256 number) external {
@@ -46,8 +46,8 @@ contract GenesisNFT is ERC721, Ownable {
         liquidityPool = _pool;
     }
 
-    function setBaseURI(string memory _uri) external onlyOwner {
-        baseTokenURI = _uri;
+    function setBaseURI(string memory uri_) external onlyOwner {
+        baseTokenURI = uri_;
     }
 
     function tokenURI(uint256 tokenId) public view override returns (string memory) {
@@ -58,4 +58,25 @@ contract GenesisNFT is ERC721, Ownable {
     function _baseURI() internal view override returns (string memory) {
         return baseTokenURI;
     }
+
+    // ── GENESIS-AWARE TRANSFER ─────────────────────────────
+    /**
+     * @dev On every transfer (including mint and burn) notify the LiquidityPool
+     *      so it can rebalance Genesis-boosted fee weights. Best-effort: a
+     *      failed sync MUST NOT brick transfers — funds always stay safe.
+     */
+    function _update(address to, uint256 tokenId, address auth)
+        internal
+        override
+        returns (address from)
+    {
+        from = super._update(to, tokenId, auth);
+        if (liquidityPool != address(0)) {
+            try ILiquidityPoolGenesisHook(liquidityPool).onGenesisTransfer(from, to) {} catch {}
+        }
+    }
+}
+
+interface ILiquidityPoolGenesisHook {
+    function onGenesisTransfer(address from, address to) external;
 }

@@ -1,33 +1,51 @@
+/**
+ * indexer — Sprint 3.2
+ *
+ * Reads OrderbookMarket / MarketFactory / ReferralRegistry events from the
+ * RPC and projects them into the orderbook DB schema (orders / matches /
+ * order_matches / referrals).
+ *
+ * Idempotency: every consumed log is fingerprinted in `_ingested_logs`
+ * (tx_hash + log_index). A reorg that replays the same log is a no-op.
+ *
+ * Cursor: per-stream last seen block in `_indexer_cursor`. Loop walks
+ * (cursor, head] in CHUNK-sized windows.
+ */
 import {
   createPublicClient,
   http,
   parseAbiItem,
   type Address,
-  type Log
+  type Log,
 } from 'viem'
-import { base } from 'viem/chains'
-import { pg }   from '../db/pg.js'
+import { base, baseSepolia } from 'viem/chains'
+import { pg } from '../db/pg.js'
 
-const RPC = process.env.BASE_RPC_URL
-
-const client = createPublicClient({ chain: base, transport: http(RPC) })
+const chain = process.env.CHAIN_ID === '8453' ? base : baseSepolia
+const RPC   = process.env.BASE_RPC_URL
+const client = createPublicClient({ chain, transport: http(RPC) })
 
 const FACTORY = process.env.MARKET_FACTORY as Address
 
-// ── ABI fragments (events only) ────────────────────────────
+// ── EVENTS ────────────────────────────────────────────────────
 const E_MARKET_CREATED  = parseAbiItem('event MarketCreated(address indexed market, bytes32 indexed feedId, uint256 duration, uint256 timestamp)')
 const E_ORDER_PLACED    = parseAbiItem('event OrderPlaced(uint256 indexed orderId, address indexed trader, uint8 dir, uint256 amount)')
-const E_ORDER_MATCHED   = parseAbiItem('event OrderMatched(uint256 indexed matchId, uint256 upId, uint256 downId, uint256 entryPrice)')
-const E_LP_MATCHED      = parseAbiItem('event LPMatched(uint256 indexed matchId, uint256 orderId, uint256 entryPrice)')
+const E_ORDER_MATCHED   = parseAbiItem('event OrderMatched(uint256 indexed matchId, uint256 upId, uint256 downId, uint256 amount, uint256 entryPrice)')
+const E_LP_MATCHED      = parseAbiItem('event LPMatched(uint256 indexed matchId, uint256 orderId, uint256 amount, uint256 entryPrice)')
+const E_ORDER_FILLED    = parseAbiItem('event OrderFilled(uint256 indexed orderId, uint256 totalFilled)')
 const E_MATCH_SETTLED   = parseAbiItem('event MatchSettled(uint256 indexed matchId, bool upWon, uint256 entry, uint256 exit)')
+const E_ORDER_REFUNDED  = parseAbiItem('event OrderRefunded(uint256 indexed orderId, address trader, uint256 amount)')
 const E_CLAIMED         = parseAbiItem('event Claimed(uint256 indexed orderId, address trader, uint256 payout)')
 const E_REFERRAL_REGD   = parseAbiItem('event ReferralRegistered(address indexed referee, address indexed referrer)')
 
-const CHUNK = 5_000n  // RPC log-window
+const CHUNK = 1_900n  // Sepolia public RPC caps log queries at ~2000 blocks.
 
+const DEFAULT_START_BLOCK = BigInt(process.env.INDEXER_START_BLOCK || '41926633')
+
+// ── HELPERS ───────────────────────────────────────────────────
 async function getCursor(stream: string): Promise<bigint> {
   const r = await pg.query('SELECT last_block FROM _indexer_cursor WHERE stream = $1', [stream])
-  if (r.rowCount === 0) return 0n
+  if (r.rowCount === 0) return DEFAULT_START_BLOCK
   return BigInt(r.rows[0].last_block)
 }
 
@@ -39,133 +57,18 @@ async function setCursor(stream: string, block: bigint) {
   `, [stream, block.toString()])
 }
 
+/** True if this log has already been ingested. Atomic insert under lock. */
+async function markIngested(tx: string, logIndex: number): Promise<boolean> {
+  const r = await pg.query(
+    `INSERT INTO _ingested_logs(tx_hash, log_index) VALUES ($1, $2) ON CONFLICT DO NOTHING RETURNING tx_hash`,
+    [tx, logIndex],
+  )
+  return r.rowCount! > 0 // true if newly inserted (not seen before)
+}
+
 async function activeMarkets(): Promise<Address[]> {
-  const r = await pg.query("SELECT market_address FROM markets WHERE status = 'OPEN' OR status = 'RESOLVED'")
-  return r.rows.map(x => x.market_address as Address)
-}
-
-/// Scan MarketFactory.MarketCreated and create rows in `markets` table.
-async function indexFactory(toBlock: bigint) {
-  const stream = 'factory'
-  const from   = (await getCursor(stream)) + 1n
-  if (from > toBlock) return
-
-  for (let start = from; start <= toBlock; start += CHUNK) {
-    const end = start + CHUNK - 1n > toBlock ? toBlock : start + CHUNK - 1n
-    const logs = await client.getLogs({
-      address: FACTORY,
-      event:   E_MARKET_CREATED,
-      fromBlock: start,
-      toBlock:   end
-    })
-    for (const log of logs) {
-      const { market, feedId, duration, timestamp } = (log as any).args
-      const closeTs = Number(timestamp) + Number(duration)
-      await pg.query(`
-        INSERT INTO markets(market_address, feed_id, feed_symbol, duration_secs, open_time, close_time, status)
-        VALUES ($1, $2, $3, $4, to_timestamp($5), to_timestamp($6), 'OPEN')
-        ON CONFLICT (market_address) DO NOTHING
-      `, [market.toLowerCase(), feedId, feedSymbolFromId(feedId), Number(duration), Number(timestamp), closeTs])
-    }
-    await setCursor(stream, end)
-  }
-}
-
-function feedSymbolFromId(feedId: string): string {
-  // Map known Pyth feed IDs → human symbol. Extend when adding coins.
-  const map: Record<string, string> = {
-    '0xd69731a2e74ac1ce884fc3890f7ee324b6deb66147055249568869ed700882e4': 'PEPE',
-    '0xdcef50dd0a4cd2dcc17e45df1676dcb336a11a61c69df7a0299b0150c672d25c': 'DOGE'
-  }
-  return map[feedId.toLowerCase()] ?? 'UNKNOWN'
-}
-
-/// Scan OrderbookMarket events for all known markets.
-async function indexMarketEvents(toBlock: bigint) {
-  const markets = await activeMarkets()
-  if (markets.length === 0) return
-
-  const stream = 'orderbook'
-  const from   = (await getCursor(stream)) + 1n
-  if (from > toBlock) return
-
-  for (let start = from; start <= toBlock; start += CHUNK) {
-    const end = start + CHUNK - 1n > toBlock ? toBlock : start + CHUNK - 1n
-
-    const [placed, matched, lpMatched, settled, claimed] = await Promise.all([
-      client.getLogs({ address: markets, event: E_ORDER_PLACED,  fromBlock: start, toBlock: end }),
-      client.getLogs({ address: markets, event: E_ORDER_MATCHED, fromBlock: start, toBlock: end }),
-      client.getLogs({ address: markets, event: E_LP_MATCHED,    fromBlock: start, toBlock: end }),
-      client.getLogs({ address: markets, event: E_MATCH_SETTLED, fromBlock: start, toBlock: end }),
-      client.getLogs({ address: markets, event: E_CLAIMED,       fromBlock: start, toBlock: end })
-    ])
-
-    for (const log of placed) {
-      const a = (log as any).args
-      await pg.query(`
-        INSERT INTO bets(market_address, trader_address, direction, amount_usdc, placed_at, feed_symbol, order_id)
-        SELECT $1, $2, $3, $4::numeric / 1e6, to_timestamp($5), m.feed_symbol, $6
-        FROM markets m WHERE m.market_address = $1
-        ON CONFLICT DO NOTHING
-      `, [log.address.toLowerCase(), a.trader.toLowerCase(),
-          a.dir === 0 ? 'UP' : 'DOWN', a.amount.toString(),
-          await blockTs(log.blockNumber!), a.orderId.toString()])
-    }
-    for (const log of matched) {
-      const a = (log as any).args
-      await pg.query(`UPDATE bets SET match_id=$1 WHERE market_address=$2 AND order_id IN ($3,$4)`,
-        [a.matchId.toString(), log.address.toLowerCase(), a.upId.toString(), a.downId.toString()])
-    }
-    for (const log of lpMatched) {
-      const a = (log as any).args
-      await pg.query(`UPDATE bets SET match_id=$1 WHERE market_address=$2 AND order_id=$3`,
-        [a.matchId.toString(), log.address.toLowerCase(), a.orderId.toString()])
-    }
-    for (const log of settled) {
-      const a = (log as any).args
-      // Mark every bet of this match as won/lost.
-      await pg.query(`
-        UPDATE bets SET won = CASE WHEN direction='UP' THEN $2 ELSE NOT $2 END,
-                       settled_at = to_timestamp($3)
-        WHERE market_address=$4 AND match_id=$1
-      `, [a.matchId.toString(), a.upWon, await blockTs(log.blockNumber!), log.address.toLowerCase()])
-    }
-    for (const log of claimed) {
-      const a = (log as any).args
-      await pg.query(`
-        UPDATE bets SET claimed=true, payout_usdc=$1::numeric/1e6
-        WHERE market_address=$2 AND order_id=$3
-      `, [a.payout.toString(), log.address.toLowerCase(), a.orderId.toString()])
-    }
-
-    await setCursor(stream, end)
-  }
-}
-
-async function indexReferrals(toBlock: bigint) {
-  const reg = process.env.REFERRAL_REGISTRY as Address
-  if (!reg) return
-  const stream = 'referrals'
-  const from   = (await getCursor(stream)) + 1n
-  if (from > toBlock) return
-
-  for (let start = from; start <= toBlock; start += CHUNK) {
-    const end  = start + CHUNK - 1n > toBlock ? toBlock : start + CHUNK - 1n
-    const logs = await client.getLogs({
-      address: reg,
-      event:   E_REFERRAL_REGD,
-      fromBlock: start, toBlock: end
-    })
-    for (const log of logs) {
-      const a = (log as any).args
-      await pg.query(`
-        INSERT INTO referrals(referrer_address, referee_address)
-        VALUES ($1, $2)
-        ON CONFLICT DO NOTHING
-      `, [a.referrer.toLowerCase(), a.referee.toLowerCase()])
-    }
-    await setCursor(stream, end)
-  }
+  const r = await pg.query("SELECT market_address FROM markets WHERE status IN ('OPEN','RESOLVED')")
+  return r.rows.map((x) => x.market_address as Address)
 }
 
 const tsCache = new Map<bigint, number>()
@@ -177,15 +80,230 @@ async function blockTs(bn: bigint): Promise<number> {
   return ts
 }
 
-/// Single tick of the indexer — called by keeper main loop every N seconds.
+function feedSymbolFromId(feedId: string): string {
+  const map: Record<string, string> = {
+    '0xd69731a2e74ac1ce884fc3890f7ee324b6deb66147055249568869ed700882e4': 'PEPE',
+    '0xdcef50dd0a4cd2dcc17e45df1676dcb336a11a61c69df7a0299b0150c672d25c': 'DOGE',
+  }
+  return map[feedId.toLowerCase()] ?? 'UNKNOWN'
+}
+
+// ── FACTORY: MarketCreated → markets row ──────────────────────
+async function indexFactory(toBlock: bigint) {
+  const stream = 'factory'
+  const from   = (await getCursor(stream)) + 1n
+  if (from > toBlock) return
+
+  for (let start = from; start <= toBlock; start += CHUNK) {
+    const end = start + CHUNK - 1n > toBlock ? toBlock : start + CHUNK - 1n
+    const logs = await client.getLogs({ address: FACTORY, event: E_MARKET_CREATED, fromBlock: start, toBlock: end })
+
+    for (const log of logs) {
+      if (!(await markIngested(log.transactionHash!, log.logIndex!))) continue
+      const { market, feedId, duration, timestamp } = (log as any).args
+      const closeTs = Number(timestamp) + Number(duration)
+      await pg.query(`
+        INSERT INTO markets(market_address, feed_id, feed_symbol, duration_secs, open_time, close_time, status)
+        VALUES (LOWER($1), $2, $3, $4, to_timestamp($5), to_timestamp($6), 'OPEN')
+        ON CONFLICT (market_address) DO NOTHING
+      `, [market, feedId, feedSymbolFromId(feedId), Number(duration), Number(timestamp), closeTs])
+    }
+    await setCursor(stream, end)
+  }
+}
+
+// ── ORDERBOOK: per-market events → orders/matches/order_matches ──
+async function indexMarketEvents(toBlock: bigint) {
+  const markets = await activeMarkets()
+  if (markets.length === 0) return
+
+  const stream = 'orderbook'
+  const from   = (await getCursor(stream)) + 1n
+  if (from > toBlock) return
+
+  for (let start = from; start <= toBlock; start += CHUNK) {
+    const end = start + CHUNK - 1n > toBlock ? toBlock : start + CHUNK - 1n
+
+    const [placed, matched, lpMatched, filled, settled, refunded, claimed] = await Promise.all([
+      client.getLogs({ address: markets, event: E_ORDER_PLACED,   fromBlock: start, toBlock: end }),
+      client.getLogs({ address: markets, event: E_ORDER_MATCHED,  fromBlock: start, toBlock: end }),
+      client.getLogs({ address: markets, event: E_LP_MATCHED,     fromBlock: start, toBlock: end }),
+      client.getLogs({ address: markets, event: E_ORDER_FILLED,   fromBlock: start, toBlock: end }),
+      client.getLogs({ address: markets, event: E_MATCH_SETTLED,  fromBlock: start, toBlock: end }),
+      client.getLogs({ address: markets, event: E_ORDER_REFUNDED, fromBlock: start, toBlock: end }),
+      client.getLogs({ address: markets, event: E_CLAIMED,        fromBlock: start, toBlock: end }),
+    ])
+
+    // OrderPlaced → INSERT orders
+    for (const log of placed) {
+      if (!(await markIngested(log.transactionHash!, log.logIndex!))) continue
+      const a = (log as any).args
+      const ts = await blockTs(log.blockNumber!)
+      await pg.query(`
+        INSERT INTO orders(market_address, order_id, trader_address, direction, amount_usdc, placed_at, feed_symbol, placed_tx)
+        SELECT LOWER($1), $2, LOWER($3), $4, $5::numeric / 1e6, to_timestamp($6), m.feed_symbol, $7
+        FROM markets m WHERE m.market_address = LOWER($1)
+        ON CONFLICT (market_address, order_id) DO NOTHING
+      `, [log.address, a.orderId.toString(), a.trader,
+          a.dir === 0 ? 'UP' : 'DOWN', a.amount.toString(), ts, log.transactionHash])
+    }
+
+    // OrderMatched → INSERT matches + order_matches (×2)
+    for (const log of matched) {
+      if (!(await markIngested(log.transactionHash!, log.logIndex!))) continue
+      const a = (log as any).args
+      const ts = await blockTs(log.blockNumber!)
+      const mkt = log.address.toLowerCase()
+      await pg.query(`
+        INSERT INTO matches(market_address, match_id, is_lp_match, up_order_id, down_order_id,
+                            amount_usdc, entry_price, matched_at, settle_at)
+        SELECT $1, $2, FALSE, $3, $4, $5::numeric / 1e6, $6::numeric,
+               to_timestamp($7), to_timestamp($7) + (m.duration_secs || ' seconds')::INTERVAL
+        FROM markets m WHERE m.market_address = $1
+        ON CONFLICT (market_address, match_id) DO NOTHING
+      `, [mkt, a.matchId.toString(), a.upId.toString(), a.downId.toString(),
+          a.amount.toString(), a.entryPrice.toString(), ts])
+      // Link both sides.
+      for (const side of [a.upId, a.downId]) {
+        await pg.query(`
+          INSERT INTO order_matches(market_address, order_id, match_id, matched_amount)
+          VALUES ($1, $2, $3, $4::numeric / 1e6)
+          ON CONFLICT DO NOTHING
+        `, [mkt, side.toString(), a.matchId.toString(), a.amount.toString()])
+      }
+      // Bump filled_amount on both orders.
+      for (const side of [a.upId, a.downId]) {
+        await pg.query(`
+          UPDATE orders SET filled_amount = filled_amount + $1::numeric / 1e6,
+                            matched_at = COALESCE(matched_at, to_timestamp($2))
+          WHERE market_address = $3 AND order_id = $4
+        `, [a.amount.toString(), ts, mkt, side.toString()])
+      }
+    }
+
+    // LPMatched → INSERT matches + order_matches (LP side)
+    for (const log of lpMatched) {
+      if (!(await markIngested(log.transactionHash!, log.logIndex!))) continue
+      const a = (log as any).args
+      const ts = await blockTs(log.blockNumber!)
+      const mkt = log.address.toLowerCase()
+      await pg.query(`
+        INSERT INTO matches(market_address, match_id, is_lp_match, user_order_id,
+                            amount_usdc, entry_price, matched_at, settle_at)
+        SELECT $1, $2, TRUE, $3, $4::numeric / 1e6, $5::numeric,
+               to_timestamp($6), to_timestamp($6) + (m.duration_secs || ' seconds')::INTERVAL
+        FROM markets m WHERE m.market_address = $1
+        ON CONFLICT (market_address, match_id) DO NOTHING
+      `, [mkt, a.matchId.toString(), a.orderId.toString(),
+          a.amount.toString(), a.entryPrice.toString(), ts])
+      await pg.query(`
+        INSERT INTO order_matches(market_address, order_id, match_id, matched_amount)
+        VALUES ($1, $2, $3, $4::numeric / 1e6)
+        ON CONFLICT DO NOTHING
+      `, [mkt, a.orderId.toString(), a.matchId.toString(), a.amount.toString()])
+      await pg.query(`
+        UPDATE orders SET filled_amount = filled_amount + $1::numeric / 1e6,
+                          matched_at = COALESCE(matched_at, to_timestamp($2))
+        WHERE market_address = $3 AND order_id = $4
+      `, [a.amount.toString(), ts, mkt, a.orderId.toString()])
+    }
+
+    // OrderFilled → mark order MATCHED (fully filled)
+    for (const log of filled) {
+      if (!(await markIngested(log.transactionHash!, log.logIndex!))) continue
+      const a = (log as any).args
+      await pg.query(`
+        UPDATE orders SET status = 'MATCHED'
+        WHERE market_address = $1 AND order_id = $2 AND status = 'PENDING'
+      `, [log.address.toLowerCase(), a.orderId.toString()])
+    }
+
+    // MatchSettled → mark match settled + close orders that ran out of pending matches
+    for (const log of settled) {
+      if (!(await markIngested(log.transactionHash!, log.logIndex!))) continue
+      const a = (log as any).args
+      const ts = await blockTs(log.blockNumber!)
+      const mkt = log.address.toLowerCase()
+      await pg.query(`
+        UPDATE matches SET settled = TRUE, up_won = $1, exit_price = $2::numeric,
+                          settled_at = to_timestamp($3)
+        WHERE market_address = $4 AND match_id = $5
+      `, [a.upWon, a.exit.toString(), ts, mkt, a.matchId.toString()])
+      // Promote orders to SETTLED iff all their matches are settled.
+      await pg.query(`
+        UPDATE orders o SET status = 'SETTLED', settled_at = to_timestamp($1)
+        WHERE o.market_address = $2 AND o.status = 'MATCHED'
+          AND NOT EXISTS (
+            SELECT 1 FROM order_matches om
+            JOIN matches m ON m.market_address = om.market_address AND m.match_id = om.match_id
+            WHERE om.market_address = o.market_address AND om.order_id = o.order_id
+              AND m.settled = FALSE
+          )
+      `, [ts, mkt])
+    }
+
+    // OrderRefunded → either full refund (status PENDING → REFUNDED) or
+    // partial (unmatched portion). The contract emits the unmatched amount,
+    // so we just record unmatched_refunded=true on the order.
+    for (const log of refunded) {
+      if (!(await markIngested(log.transactionHash!, log.logIndex!))) continue
+      const a = (log as any).args
+      const ts = await blockTs(log.blockNumber!)
+      await pg.query(`
+        UPDATE orders SET
+          unmatched_refunded = TRUE,
+          refunded_at = COALESCE(refunded_at, to_timestamp($1)),
+          status = CASE
+            WHEN filled_amount = 0 THEN 'REFUNDED'
+            ELSE status
+          END
+        WHERE market_address = $2 AND order_id = $3
+      `, [ts, log.address.toLowerCase(), a.orderId.toString()])
+    }
+
+    // Claimed → status CLAIMED, payout recorded, streak/profit update
+    for (const log of claimed) {
+      if (!(await markIngested(log.transactionHash!, log.logIndex!))) continue
+      const a = (log as any).args
+      const ts = await blockTs(log.blockNumber!)
+      await pg.query(`
+        UPDATE orders SET status = 'CLAIMED', claimed_at = to_timestamp($1),
+                          payout_usdc = $2::numeric / 1e6
+        WHERE market_address = $3 AND order_id = $4
+      `, [ts, a.payout.toString(), log.address.toLowerCase(), a.orderId.toString()])
+    }
+
+    await setCursor(stream, end)
+  }
+}
+
+// ── REFERRALS ────────────────────────────────────────────────
+async function indexReferrals(toBlock: bigint) {
+  const reg = process.env.REFERRAL_REGISTRY as Address
+  if (!reg) return
+  const stream = 'referrals'
+  const from   = (await getCursor(stream)) + 1n
+  if (from > toBlock) return
+
+  for (let start = from; start <= toBlock; start += CHUNK) {
+    const end  = start + CHUNK - 1n > toBlock ? toBlock : start + CHUNK - 1n
+    const logs = await client.getLogs({ address: reg, event: E_REFERRAL_REGD, fromBlock: start, toBlock: end })
+
+    for (const log of logs) {
+      if (!(await markIngested(log.transactionHash!, log.logIndex!))) continue
+      const a = (log as any).args
+      await pg.query(`
+        INSERT INTO referrals(referrer_address, referee_address)
+        VALUES (LOWER($1), LOWER($2))
+        ON CONFLICT DO NOTHING
+      `, [a.referrer, a.referee])
+    }
+    await setCursor(stream, end)
+  }
+}
+
+// ── ENTRY ────────────────────────────────────────────────────
 export async function indexerTick() {
-  await pg.query(`
-    CREATE TABLE IF NOT EXISTS _indexer_cursor (
-      stream      TEXT PRIMARY KEY,
-      last_block  TEXT NOT NULL,
-      updated_at  TIMESTAMPTZ DEFAULT NOW()
-    )
-  `)
   const head = await client.getBlockNumber()
   await indexFactory(head)
   await indexMarketEvents(head)

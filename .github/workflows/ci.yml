@@ -1,0 +1,179 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PNPM_VERSION: '9.12.0'
+
+jobs:
+  # ─────────────────────────────────────────────────────────────
+  # 1. SMART CONTRACTS — forge fmt + build + test
+  # ─────────────────────────────────────────────────────────────
+  contracts:
+    name: contracts (forge)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: recursive }
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: stable
+
+      - name: forge fmt --check
+        working-directory: contracts
+        run: forge fmt --check
+
+      - name: forge build (sizes)
+        working-directory: contracts
+        run: forge build --sizes
+
+      - name: forge test
+        working-directory: contracts
+        run: forge test -vv
+
+  # ─────────────────────────────────────────────────────────────
+  # 2. BACKEND — tsc typecheck + DB migration smoke test
+  # ─────────────────────────────────────────────────────────────
+  backend:
+    name: backend (tsc + db-smoke)
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: timescale/timescaledb:latest-pg16
+        env:
+          POSTGRES_USER: memepred
+          POSTGRES_PASSWORD: memepred
+          POSTGRES_DB: memepred_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U memepred"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgres://memepred:memepred@localhost:5432/memepred_ci
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with: { version: '${{ env.PNPM_VERSION }}' }
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: pnpm
+
+      - name: pnpm install
+        run: pnpm install --frozen-lockfile=false
+
+      - name: typecheck
+        working-directory: backend
+        run: pnpm exec tsc --noEmit
+
+      - name: db migration smoke
+        run: node scripts/ci-db-smoke.mjs
+
+  # ─────────────────────────────────────────────────────────────
+  # 3. FRONTEND — tsc + vite build
+  # ─────────────────────────────────────────────────────────────
+  frontend:
+    name: frontend (tsc + vite build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with: { version: '${{ env.PNPM_VERSION }}' }
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: pnpm
+
+      - name: pnpm install
+        run: pnpm install --frozen-lockfile=false
+
+      - name: typecheck
+        working-directory: frontend
+        run: pnpm exec tsc -b --noEmit
+
+      - name: vite build
+        working-directory: frontend
+        env:
+          # Build-time placeholders so vite doesn't fail on missing envs.
+          # Real values are injected at deploy time.
+          VITE_NETWORK: sepolia
+          VITE_BASE_RPC_URL: https://sepolia.base.org
+          VITE_USDC_ADDRESS: '0x0000000000000000000000000000000000000001'
+          VITE_MARKET_FACTORY: '0x0000000000000000000000000000000000000002'
+          VITE_ORACLE_RESOLVER: '0x0000000000000000000000000000000000000003'
+          VITE_FEE_DISTRIBUTOR: '0x0000000000000000000000000000000000000004'
+          VITE_REFERRAL_REGISTRY: '0x0000000000000000000000000000000000000005'
+          VITE_BADGE_NFT: '0x0000000000000000000000000000000000000006'
+          VITE_LIQUIDITY_POOL: '0x0000000000000000000000000000000000000007'
+          VITE_GENESIS_NFT: '0x0000000000000000000000000000000000000008'
+          VITE_API_URL: https://api.example.test
+          VITE_GRAPH_URL: https://example.test/subgraph
+          VITE_PYTH_HERMES: https://hermes.pyth.network
+        run: pnpm exec vite build
+
+  # ─────────────────────────────────────────────────────────────
+  # 4. SUBGRAPH — graph codegen + build
+  # ─────────────────────────────────────────────────────────────
+  subgraph:
+    name: subgraph (graph build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with: { version: '${{ env.PNPM_VERSION }}' }
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: pnpm
+
+      - name: pnpm install
+        run: pnpm install --frozen-lockfile=false
+
+      - name: graph codegen
+        working-directory: subgraph
+        run: pnpm exec graph codegen
+
+      - name: graph build
+        working-directory: subgraph
+        run: pnpm exec graph build
+
+  # ─────────────────────────────────────────────────────────────
+  # Aggregator job — required-status target for branch protection
+  # ─────────────────────────────────────────────────────────────
+  ci-passed:
+    name: ci-passed
+    if: always()
+    needs: [contracts, backend, frontend, subgraph]
+    runs-on: ubuntu-latest
+    steps:
+      - name: assert all green
+        run: |
+          if [ "${{ needs.contracts.result }}" != "success" ] \
+          || [ "${{ needs.backend.result   }}" != "success" ] \
+          || [ "${{ needs.frontend.result  }}" != "success" ] \
+          || [ "${{ needs.subgraph.result  }}" != "success" ]; then
+            echo "one or more jobs failed"
+            exit 1
+          fi
+          echo "all green"

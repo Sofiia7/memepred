@@ -119,10 +119,31 @@ export const ORDERBOOK_MARKET_ABI = [
     outputs: [{ name: 'orderId', type: 'uint256' }]
   },
   {
+    name: 'placeBetWithPyth',
+    type: 'function',
+    stateMutability: 'payable',
+    inputs: [
+      { name: 'dir',             type: 'uint8'   },
+      { name: 'amount',          type: 'uint256' },
+      { name: 'referrer',        type: 'address' },
+      { name: 'expectedPrice',   type: 'uint256' },
+      { name: 'slippageBps',     type: 'uint256' },
+      { name: 'priceUpdateData', type: 'bytes[]' }
+    ],
+    outputs: [{ name: 'orderId', type: 'uint256' }]
+  },
+  {
     name: 'claim',
     type: 'function',
     stateMutability: 'nonpayable',
     inputs: [{ name: 'orderId', type: 'uint256' }],
+    outputs: []
+  },
+  {
+    name: 'emergencyRefundMatch',
+    type: 'function',
+    stateMutability: 'nonpayable',
+    inputs: [{ name: 'matchId', type: 'uint256' }],
     outputs: []
   },
   {
@@ -133,6 +154,9 @@ export const ORDERBOOK_MARKET_ABI = [
     outputs: []
   },
   {
+    // Sprint 1.1: Order struct expanded for multi-fill (filledAmount,
+    // pendingSettlements, unmatchedRefunded). Old 8-field shape decoded
+    // garbage after the refactor.
     name: 'getOrder',
     type: 'function',
     stateMutability: 'view',
@@ -141,14 +165,17 @@ export const ORDERBOOK_MARKET_ABI = [
       name: '',
       type: 'tuple',
       components: [
-        { name: 'trader',    type: 'address' },
-        { name: 'direction', type: 'uint8'   },
-        { name: 'amount',    type: 'uint256' },
-        { name: 'referrer',  type: 'address' },
-        { name: 'status',    type: 'uint8'   },
-        { name: 'placedAt',  type: 'uint256' },
-        { name: 'matchId',   type: 'uint256' },
-        { name: 'payout',    type: 'uint256' }
+        { name: 'trader',             type: 'address' },
+        { name: 'direction',          type: 'uint8'   },
+        { name: 'amount',             type: 'uint256' },
+        { name: 'filledAmount',       type: 'uint256' },
+        { name: 'referrer',           type: 'address' },
+        { name: 'status',             type: 'uint8'   },
+        { name: 'placedAt',           type: 'uint256' },
+        { name: 'matchId',            type: 'uint256' },
+        { name: 'pendingSettlements', type: 'uint256' },
+        { name: 'payout',             type: 'uint256' },
+        { name: 'unmatchedRefunded',  type: 'bool'    }
       ]
     }]
   },
@@ -172,6 +199,20 @@ export const ORDERBOOK_MARKET_ABI = [
         { name: 'lpMatch',     type: 'bool'    }
       ]
     }]
+  },
+  {
+    name: 'pythFeedId',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ type: 'bytes32' }]
+  },
+  {
+    name: 'duration',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ type: 'uint256' }]
   },
   {
     name: 'getPendingDepth',

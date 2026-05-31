@@ -1,9 +1,10 @@
 import { createPublicClient, createWalletClient, http, type Address } from 'viem'
-import { base } from 'viem/chains'
+import { base, baseSepolia } from 'viem/chains'
+const chain = process.env.CHAIN_ID === '8453' ? base : baseSepolia
 import { privateKeyToAccount } from 'viem/accounts'
 import { FEED_IDS, PYTH_HERMES, ORACLE_RESOLVER_ABI, CONTRACTS } from '../config.js'
 
-const publicClient = createPublicClient({ chain: base, transport: http(process.env.BASE_RPC_URL) })
+const publicClient = createPublicClient({ chain, transport: http(process.env.BASE_RPC_URL) })
 
 /**
  * Fetch Pyth Hermes price updates and submit them on-chain to OracleResolver.
@@ -19,7 +20,7 @@ export async function recordPricesOnChain() {
   }
 
   const account = privateKeyToAccount(key)
-  const wallet  = createWalletClient({ account, chain: base, transport: http(process.env.BASE_RPC_URL) })
+  const wallet  = createWalletClient({ account, chain, transport: http(process.env.BASE_RPC_URL) })
 
   for (const [symbol, feedId] of Object.entries(FEED_IDS)) {
     try {
@@ -30,12 +31,16 @@ export async function recordPricesOnChain() {
       const json = await r.json() as { binary: { data: string[] } }
       const updateData = json.binary.data.map(h => (h.startsWith('0x') ? h : `0x${h}`) as `0x${string}`)
 
+      // OracleResolver pays Pyth from its own ETH balance — recordPrice is
+      // nonpayable, no `value` argument. Pin gas because Pyth's price-feed
+      // update reverts in gas-estimation when the publishTime is already
+      // on-chain, which viem can't detect.
       const hash = await wallet.writeContract({
         address:      CONTRACTS.ORACLE_RESOLVER as Address,
         abi:          ORACLE_RESOLVER_ABI,
         functionName: 'recordPrice',
         args:         [feedId as `0x${string}`, updateData],
-        value:        0n  // OracleResolver pays Pyth from its own ETH balance
+        gas:          500_000n,
       })
       await publicClient.waitForTransactionReceipt({ hash })
     } catch (err) {

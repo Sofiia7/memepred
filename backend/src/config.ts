@@ -11,6 +11,8 @@ export const CONTRACTS = {
   FEE_DISTRIBUTOR:   (process.env.FEE_DISTRIBUTOR || '0x') as Address,
   REFERRAL_REGISTRY: (process.env.REFERRAL_REGISTRY || '0x') as Address,
   BADGE_NFT:         (process.env.BADGE_NFT || '0x') as Address,
+  LIQUIDITY_POOL:    (process.env.LIQUIDITY_POOL || '0x') as Address,
+  GENESIS_NFT:       (process.env.GENESIS_NFT || '0x') as Address,
 }
 
 // ── PYTH FEED IDs ──────────────────────────────────────────
@@ -30,6 +32,7 @@ export const ORACLE_RESOLVER_ABI = [
   {
     name: 'recordPrice',
     type: 'function',
+    stateMutability: 'nonpayable',
     inputs: [
       { name: 'feedId', type: 'bytes32' },
       { name: 'priceUpdateData', type: 'bytes[]' }
@@ -37,13 +40,44 @@ export const ORACLE_RESOLVER_ABI = [
     outputs: []
   },
   {
-    name: 'resolveMarket',
+    // Replaced legacy `resolveMarket` (didn't exist on-chain after the
+    // OrderbookMarket migration). Use the batched variant exclusively.
+    name: 'resolveOrderbookMarketBatch',
     type: 'function',
+    stateMutability: 'nonpayable',
     inputs: [
-      { name: 'market', type: 'address' },
-      { name: 'priceUpdateData', type: 'bytes[]' }
+      { name: 'market',          type: 'address' },
+      { name: 'priceUpdateData', type: 'bytes[]' },
+      { name: 'maxCount',        type: 'uint256' }
     ],
-    outputs: []
+    outputs: [{ name: 'settled', type: 'uint256' }]
+  }
+] as const
+
+export const MARKET_FACTORY_ABI = [
+  {
+    name: 'createMarket',
+    type: 'function',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'feedId',   type: 'bytes32' },
+      { name: 'duration', type: 'uint256' }
+    ],
+    outputs: [{ name: 'market', type: 'address' }]
+  },
+  {
+    name: 'getActiveMarkets',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [{ name: 'feedId', type: 'bytes32' }],
+    outputs: [{ type: 'address[]' }]
+  },
+  {
+    name: 'getAllFeedIds',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ type: 'bytes32[]' }]
   }
 ] as const
 

@@ -31,12 +31,26 @@ contract MarketFactory is Ownable {
     mapping(bytes32 => bool) public allowedFeeds;
     bytes32[] public feedIds;
 
+    /// @notice Low-trust hot wallet allowed to call `pauseMarketsForFeed`
+    ///         (e.g. the keeper) when an oracle feed goes stale. Cannot unpause;
+    ///         unpause still requires the multisig acting on each market.
+    address public emergencyPauser;
+
+    /// @notice Low-trust hot wallet allowed to call `createMarket` (e.g. the
+    ///         keeper, on a cron). It can only spin up markets for already
+    ///         whitelisted feeds with allowed durations — no fund access, no
+    ///         ability to change config. This avoids requiring the multisig to
+    ///         sign a tx every N minutes just to keep fresh markets rolling.
+    address public marketCreator;
+
     event MarketCreated(
         address indexed market,
         bytes32 indexed feedId,
         uint256 duration,
         uint256 timestamp
     );
+    event EmergencyPauserSet(address indexed pauser);
+    event MarketCreatorSet(address indexed creator);
 
     constructor(
         address _usdc,
@@ -67,7 +81,10 @@ contract MarketFactory is Ownable {
         bytes32 feedId,
         uint256 duration
     ) external returns (address market) {
-        require(msg.sender == resolver || msg.sender == owner(), "unauthorized");
+        require(
+            msg.sender == resolver || msg.sender == owner() || msg.sender == marketCreator,
+            "unauthorized"
+        );
         require(allowedFeeds[feedId], "feed not whitelisted");
         require(_isDurationAllowed(duration), "duration not allowed");
 
@@ -100,6 +117,35 @@ contract MarketFactory is Ownable {
 
     function removeFeed(bytes32 feedId) external onlyOwner {
         allowedFeeds[feedId] = false;
+    }
+
+    /// @notice Pause all currently active markets for a given feed in one call.
+    ///         Callable by owner (multisig) OR by the dedicated emergencyPauser
+    ///         hot wallet (typically the keeper) when the feed is detected as
+    ///         stale. Bounded by feed market count.
+    function pauseMarketsForFeed(bytes32 feedId) external {
+        require(
+            msg.sender == owner() || msg.sender == emergencyPauser,
+            "not authorized"
+        );
+        address[] storage list = activeMarkets[feedId];
+        for (uint256 i = 0; i < list.length; i++) {
+            try OrderbookMarket(list[i]).pauseByFactory() {} catch {}
+        }
+    }
+
+    /// @notice Owner-only setter for the low-trust emergency pauser hot wallet.
+    ///         Rotate this when the keeper key is rotated.
+    function setEmergencyPauser(address pauser) external onlyOwner {
+        emergencyPauser = pauser;
+        emit EmergencyPauserSet(pauser);
+    }
+
+    /// @notice Owner-only setter for the low-trust market-creator hot wallet
+    ///         (typically the keeper). Rotate alongside the keeper key.
+    function setMarketCreator(address creator) external onlyOwner {
+        marketCreator = creator;
+        emit MarketCreatorSet(creator);
     }
 
     function getActiveMarkets(bytes32 feedId) external view returns (address[] memory) {

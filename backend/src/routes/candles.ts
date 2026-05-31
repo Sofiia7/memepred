@@ -26,7 +26,7 @@ export async function candlesRoutes(app: FastifyInstance) {
       '4h':  '4 hours',
       '1d':  '1 day'
     }
-    const interval = intervalMap[q.tf]
+    const interval = intervalMap[q.tf ?? '5m'] ?? '5 minutes'
 
     const result = await pg.query(`
       SELECT

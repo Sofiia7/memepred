@@ -1,5 +1,6 @@
 import { createPublicClient, createWalletClient, http, type Address } from 'viem'
-import { base } from 'viem/chains'
+import { base, baseSepolia } from 'viem/chains'
+const chain = process.env.CHAIN_ID === '8453' ? base : baseSepolia
 import { privateKeyToAccount } from 'viem/accounts'
 import { pg } from '../db/pg.js'
 
@@ -50,7 +51,7 @@ const ORDERBOOK_MARKET_ABI = [
 const ORDER_STATUS_PENDING = 0
 
 const publicClient = createPublicClient({
-  chain: base,
+  chain,
   transport: http(process.env.BASE_RPC_URL)
 })
 
@@ -68,7 +69,7 @@ export async function refundExpiredOrders() {
   const account = privateKeyToAccount(keeperKey)
   const walletClient = createWalletClient({
     account,
-    chain: base,
+    chain,
     transport: http(process.env.BASE_RPC_URL)
   })
 

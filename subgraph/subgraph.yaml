@@ -7,11 +7,11 @@ dataSources:
   # MarketFactory — spawns OrderbookMarket instances dynamically.
   - kind: ethereum
     name: MarketFactory
-    network: base
+    network: base-sepolia
     source:
-      address: "0x0000000000000000000000000000000000000000" # ← replace with deployed factory
+      address: "0x59385ca69a4ca9628a411a6a0655c3eaf7507316"
       abi: MarketFactory
-      startBlock: 0                                          # ← replace with deploy block
+      startBlock: 41926633
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7
@@ -28,11 +28,11 @@ dataSources:
   # LiquidityPool (singleton).
   - kind: ethereum
     name: LiquidityPool
-    network: base
+    network: base-sepolia
     source:
-      address: "0x0000000000000000000000000000000000000000" # ← replace
+      address: "0xaf3acfce41417de5c973cc214e170c73480b068a"
       abi: LiquidityPool
-      startBlock: 0
+      startBlock: 41926633
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7
@@ -61,11 +61,11 @@ dataSources:
   # ReferralRegistry (singleton).
   - kind: ethereum
     name: ReferralRegistry
-    network: base
+    network: base-sepolia
     source:
-      address: "0x0000000000000000000000000000000000000000" # ← replace
+      address: "0x206982f0341a0668f26325e16eb0e8259767c666"
       abi: ReferralRegistry
-      startBlock: 0
+      startBlock: 41926633
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7
@@ -84,11 +84,11 @@ dataSources:
   # FeeDistributor (singleton).
   - kind: ethereum
     name: FeeDistributor
-    network: base
+    network: base-sepolia
     source:
-      address: "0x0000000000000000000000000000000000000000" # ← replace
+      address: "0xb61ed4c59d340e3379775974a71f3c78f0888af2"
       abi: FeeDistributor
-      startBlock: 0
+      startBlock: 41926633
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7
@@ -107,11 +107,11 @@ dataSources:
   # BadgeNFT (singleton).
   - kind: ethereum
     name: BadgeNFT
-    network: base
+    network: base-sepolia
     source:
-      address: "0x0000000000000000000000000000000000000000" # ← replace
+      address: "0x90d22B3eFd2A344a9f4eC262FD51B44381725617"
       abi: BadgeNFT
-      startBlock: 0
+      startBlock: 41926633
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7
@@ -128,11 +128,11 @@ dataSources:
   # GenesisNFT (singleton).
   - kind: ethereum
     name: GenesisNFT
-    network: base
+    network: base-sepolia
     source:
-      address: "0x0000000000000000000000000000000000000000" # ← replace
+      address: "0xac7787dfb45ca8726cdf38585964f2281dae3e07"
       abi: GenesisNFT
-      startBlock: 0
+      startBlock: 41926633
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7
@@ -150,7 +150,7 @@ dataSources:
 templates:
   - kind: ethereum
     name: OrderbookMarket
-    network: base
+    network: base-sepolia
     source:
       abi: OrderbookMarket
     mapping:
@@ -165,10 +165,12 @@ templates:
       eventHandlers:
         - event: OrderPlaced(indexed uint256,indexed address,uint8,uint256)
           handler: handleOrderPlaced
-        - event: OrderMatched(indexed uint256,uint256,uint256,uint256)
+        - event: OrderMatched(indexed uint256,uint256,uint256,uint256,uint256)
           handler: handleOrderMatched
-        - event: LPMatched(indexed uint256,uint256,uint256)
+        - event: LPMatched(indexed uint256,uint256,uint256,uint256)
           handler: handleLPMatched
+        - event: OrderFilled(indexed uint256,uint256)
+          handler: handleOrderFilled
         - event: MatchSettled(indexed uint256,bool,uint256,uint256)
           handler: handleMatchSettled
         - event: OrderRefunded(indexed uint256,address,uint256)

@@ -57,16 +57,17 @@ export async function referralRoutes(app: FastifyInstance) {
   app.get('/list/:address', async (req, reply) => {
     const p = parse(AddrParams, req.params, reply); if (!p) return
 
+    // Sprint 3.3: volume = SUM(filled_amount) on the referee's orders. We
+    // multiply by feeBps × referrerShare to estimate earned, matching the
+    // FeeDistributor split (0.5% × 40% by default).
     const result = await pg.query(`
       SELECT
         r.referee_address,
         r.registered_at,
-        COALESCE(SUM(b.amount_usdc), 0) AS volume,
-        COALESCE(
-          SUM(b.amount_usdc * 0.005 * 0.20), 0
-        ) AS earned
+        COALESCE(SUM(o.filled_amount), 0) AS volume,
+        COALESCE(SUM(o.filled_amount * 0.005 * 0.40), 0) AS earned
       FROM referrals r
-      LEFT JOIN bets b ON b.trader_address = r.referee_address
+      LEFT JOIN orders o ON o.trader_address = r.referee_address
       WHERE r.referrer_address = $1
       GROUP BY r.referee_address, r.registered_at
       ORDER BY volume DESC

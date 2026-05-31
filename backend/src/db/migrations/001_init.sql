@@ -2,18 +2,19 @@
 CREATE EXTENSION IF NOT EXISTS timescaledb;
 
 -- Цены монет (TimescaleDB hypertable для быстрых запросов)
-CREATE TABLE price_history (
+CREATE TABLE IF NOT EXISTS price_history (
   id          BIGSERIAL,
   feed_id     TEXT NOT NULL,
   symbol      TEXT NOT NULL,
   price       NUMERIC(30, 18) NOT NULL,
   recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-SELECT create_hypertable('price_history', 'recorded_at');
-CREATE INDEX ON price_history (feed_id, recorded_at DESC);
+SELECT create_hypertable('price_history', 'recorded_at', if_not_exists => TRUE);
+CREATE INDEX IF NOT EXISTS price_history_feed_recorded_idx
+  ON price_history (feed_id, recorded_at DESC);
 
 -- Рынки (синхронизируется из The Graph)
-CREATE TABLE markets (
+CREATE TABLE IF NOT EXISTS markets (
   market_address TEXT PRIMARY KEY,
   feed_id        TEXT NOT NULL,
   feed_symbol    TEXT NOT NULL,
@@ -30,26 +31,26 @@ CREATE TABLE markets (
 );
 
 -- Ставки
-CREATE TABLE bets (
-  id              BIGSERIAL PRIMARY KEY,
-  market_address  TEXT NOT NULL REFERENCES markets(market_address),
-  trader_address  TEXT NOT NULL,
-  direction       TEXT NOT NULL CHECK (direction IN ('UP', 'DOWN')),
-  amount_usdc     NUMERIC(20, 6) NOT NULL,
+CREATE TABLE IF NOT EXISTS bets (
+  id               BIGSERIAL PRIMARY KEY,
+  market_address   TEXT NOT NULL REFERENCES markets(market_address),
+  trader_address   TEXT NOT NULL,
+  direction        TEXT NOT NULL CHECK (direction IN ('UP', 'DOWN')),
+  amount_usdc      NUMERIC(20, 6) NOT NULL,
   referrer_address TEXT,
-  won             BOOLEAN,
-  payout_usdc     NUMERIC(20, 6),
-  claimed         BOOLEAN DEFAULT FALSE,
-  placed_at       TIMESTAMPTZ NOT NULL,
-  settled_at      TIMESTAMPTZ,
-  feed_symbol     TEXT NOT NULL,
-  current_streak  INTEGER DEFAULT 0
+  won              BOOLEAN,
+  payout_usdc      NUMERIC(20, 6),
+  claimed          BOOLEAN DEFAULT FALSE,
+  placed_at        TIMESTAMPTZ NOT NULL,
+  settled_at       TIMESTAMPTZ,
+  feed_symbol      TEXT NOT NULL,
+  current_streak   INTEGER DEFAULT 0
 );
-CREATE INDEX ON bets (trader_address, settled_at DESC);
-CREATE INDEX ON bets (market_address);
+CREATE INDEX IF NOT EXISTS bets_trader_settled_idx ON bets (trader_address, settled_at DESC);
+CREATE INDEX IF NOT EXISTS bets_market_idx         ON bets (market_address);
 
 -- Рефералы
-CREATE TABLE referrals (
+CREATE TABLE IF NOT EXISTS referrals (
   referrer_address TEXT NOT NULL,
   referee_address  TEXT NOT NULL UNIQUE,
   registered_at    TIMESTAMPTZ DEFAULT NOW(),
@@ -58,13 +59,13 @@ CREATE TABLE referrals (
   PRIMARY KEY (referrer_address, referee_address)
 );
 
-CREATE TABLE ref_codes (
+CREATE TABLE IF NOT EXISTS ref_codes (
   code             TEXT PRIMARY KEY,
   referrer_address TEXT NOT NULL UNIQUE,
   created_at       TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE TABLE referral_earnings (
+CREATE TABLE IF NOT EXISTS referral_earnings (
   id               BIGSERIAL PRIMARY KEY,
   referrer_address TEXT NOT NULL,
   referee_address  TEXT NOT NULL,
@@ -75,17 +76,17 @@ CREATE TABLE referral_earnings (
 );
 
 -- Снапшоты вероятности
-CREATE TABLE prob_snapshots (
+CREATE TABLE IF NOT EXISTS prob_snapshots (
   id             BIGSERIAL,
   market_address TEXT NOT NULL,
   up_pool        NUMERIC(20, 6) DEFAULT 0,
   down_pool      NUMERIC(20, 6) DEFAULT 0,
   snapshot_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-SELECT create_hypertable('prob_snapshots', 'snapshot_at');
+SELECT create_hypertable('prob_snapshots', 'snapshot_at', if_not_exists => TRUE);
 
 -- Стрики
-CREATE TABLE trader_streaks (
+CREATE TABLE IF NOT EXISTS trader_streaks (
   trader_address TEXT PRIMARY KEY,
   current_streak INTEGER DEFAULT 0,
   max_streak     INTEGER DEFAULT 0,
@@ -94,7 +95,7 @@ CREATE TABLE trader_streaks (
 );
 
 -- NFT бейджи
-CREATE TABLE minted_badges (
+CREATE TABLE IF NOT EXISTS minted_badges (
   trader_address TEXT NOT NULL,
   badge_id       INTEGER NOT NULL,
   tx_hash        TEXT,

@@ -1,11 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "./interfaces/IPyth.sol";
-import "./interfaces/IMarket.sol";
-import "./PvPMarket.sol";
 import "./OrderbookMarket.sol";
 
 /**
@@ -14,15 +11,18 @@ import "./OrderbookMarket.sol";
  *         Поддерживает PvPMarket (legacy) и OrderbookMarket (новый).
  *         Вызывается keeper-ом каждые N минут.
  */
-contract OracleResolver is Ownable, AccessControl {
+contract OracleResolver is AccessControl {
 
     bytes32 public constant KEEPER_ROLE = keccak256("KEEPER_ROLE");
 
     IPyth public immutable pyth;
 
-    // TWAP: feedId → массив {price, timestamp}
+    // TWAP: feedId → array {price, timestamp}.
+    // historyHead[feedId] marks the first still-relevant index; cleanup just
+    // advances the head (amortized O(1)) instead of shifting the array.
     struct PricePoint { uint256 price; uint256 ts; }
     mapping(bytes32 => PricePoint[]) public priceHistory;
+    mapping(bytes32 => uint256) public historyHead;
 
     uint256 public constant TWAP_WINDOW = 5 minutes;
     uint256 public constant MAX_PRICE_AGE = 60; // секунд
@@ -32,7 +32,7 @@ contract OracleResolver is Ownable, AccessControl {
     event MarketResolved(address indexed market, bool upWon, uint256 entry, uint256 exit);
     event MarketRefunded(address indexed market, string reason);
 
-    constructor(address _pyth) Ownable(msg.sender) {
+    constructor(address _pyth) {
         pyth = IPyth(_pyth);
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
     }
@@ -58,50 +58,6 @@ contract OracleResolver is Ownable, AccessControl {
         _cleanHistory(feedId);
 
         emit PriceRecorded(feedId, price, block.timestamp);
-    }
-
-    // ── RESOLVE MARKET ─────────────────────────────────────
-    /**
-     * @notice Зарезолвить рынок. Вызывается keeper-ом после закрытия.
-     * @param market           Адрес PvPMarket
-     * @param priceUpdateData  Свежие данные от Pyth Hermes
-     */
-    function resolveMarket(
-        address market,
-        bytes[] calldata priceUpdateData
-    ) external onlyRole(KEEPER_ROLE) {
-        IMarket m = IMarket(market);
-        require(block.timestamp >= m.marketCloseTime(), "market still open");
-
-        bytes32 feedId = m.pythFeedId();
-
-        // Получить свежую цену
-        uint256 updateFee = pyth.getUpdateFee(priceUpdateData);
-        pyth.updatePriceFeeds{value: updateFee}(priceUpdateData);
-
-        // TWAP exit price
-        uint256 exitTwap = _getTWAP(feedId);
-        uint256 entryPrice = m.entryPrice();
-
-        // Проверка аномалии: если spread > 2% с последней spot-ценой → refund
-        IPyth.Price memory spot = pyth.getPriceNoOlderThan(feedId, MAX_PRICE_AGE);
-        uint256 spotPrice = _normalizePrice(spot);
-        if (_spread(exitTwap, spotPrice) > MAX_SPREAD_BPS) {
-            emit MarketRefunded(market, "oracle spread too high");
-            return;
-        }
-
-        // Цена не изменилась (edge case) — refund
-        if (exitTwap == entryPrice) {
-            emit MarketRefunded(market, "price unchanged");
-            return;
-        }
-
-        bool upWon = exitTwap > entryPrice;
-        PvPMarket(market).setExitPrice(exitTwap);
-        PvPMarket(market).settle(upWon);
-
-        emit MarketResolved(market, upWon, entryPrice, exitTwap);
     }
 
     // ── RESOLVE ORDERBOOK MATCH ────────────────────────────
@@ -140,6 +96,8 @@ contract OracleResolver is Ownable, AccessControl {
 
     /**
      * @notice Batch-settle all pending matches on an OrderbookMarket.
+     *         Kept as a thin wrapper around the bounded batch for back-compat;
+     *         prefer resolveOrderbookMarketBatch to pin per-tx gas.
      * @param market           Address of OrderbookMarket
      * @param priceUpdateData  Fresh Pyth Hermes data
      */
@@ -147,27 +105,51 @@ contract OracleResolver is Ownable, AccessControl {
         address market,
         bytes[] calldata priceUpdateData
     ) external onlyRole(KEEPER_ROLE) {
+        _resolveBatch(market, priceUpdateData, 0); // 0 = all ready
+    }
+
+    /**
+     * @notice Bounded batch-settle. Caller picks `maxCount` to keep gas under a
+     *         reliable cap (≈ 1.5M for ~25 settlements at current contract size).
+     *         Returns the number of matches actually settled in this call so
+     *         keepers can loop until all ready matches are flushed.
+     */
+    function resolveOrderbookMarketBatch(
+        address market,
+        bytes[] calldata priceUpdateData,
+        uint256 maxCount
+    ) external onlyRole(KEEPER_ROLE) returns (uint256 settled) {
+        return _resolveBatch(market, priceUpdateData, maxCount);
+    }
+
+    function _resolveBatch(
+        address market,
+        bytes[] calldata priceUpdateData,
+        uint256 maxCount
+    ) internal returns (uint256 settled) {
         OrderbookMarket m = OrderbookMarket(market);
-        bytes32 feedId = m.pythFeedId();
+        bytes32 feedId    = m.pythFeedId();
 
         uint256 updateFee = pyth.getUpdateFee(priceUpdateData);
         pyth.updatePriceFeeds{value: updateFee}(priceUpdateData);
 
         uint256 exitTwap = _getTWAP(feedId);
 
+        // Anomaly check: TWAP vs spot.
         IPyth.Price memory spot = pyth.getPriceNoOlderThan(feedId, MAX_PRICE_AGE);
         uint256 spotPrice = _normalizePrice(spot);
         if (_spread(exitTwap, spotPrice) > MAX_SPREAD_BPS) {
             emit MarketRefunded(market, "oracle spread too high");
-            return;
+            return 0;
         }
 
-        uint256[] memory ready = m.getPendingSettlements();
+        uint256[] memory ready = m.getReadySettlements(0, maxCount);
         for (uint256 i = 0; i < ready.length; i++) {
             m.settleMatch(ready[i], exitTwap);
         }
+        settled = ready.length;
 
-        if (ready.length > 0) {
+        if (settled > 0) {
             emit MarketResolved(market, true, 0, exitTwap);
         }
     }
@@ -175,11 +157,12 @@ contract OracleResolver is Ownable, AccessControl {
     // ── TWAP ───────────────────────────────────────────────
     function _getTWAP(bytes32 feedId) internal view returns (uint256) {
         PricePoint[] storage history = priceHistory[feedId];
+        uint256 head   = historyHead[feedId];
         uint256 cutoff = block.timestamp > TWAP_WINDOW ? block.timestamp - TWAP_WINDOW : 0;
         uint256 sum = 0;
         uint256 count = 0;
 
-        for (uint256 i = history.length; i > 0; i--) {
+        for (uint256 i = history.length; i > head; i--) {
             if (history[i-1].ts < cutoff) break;
             sum += history[i-1].price;
             count++;
@@ -200,9 +183,11 @@ contract OracleResolver is Ownable, AccessControl {
         int32 expo = p.expo;
         uint256 price = uint256(int256(p.price));
         if (expo < 0) {
+            // forge-lint: disable-next-line(unsafe-typecast)
             uint256 divisor = 10 ** uint32(-expo);
             return price * 1e18 / divisor;
         } else {
+            // forge-lint: disable-next-line(unsafe-typecast)
             return price * 1e18 * (10 ** uint32(expo));
         }
     }
@@ -211,24 +196,29 @@ contract OracleResolver is Ownable, AccessControl {
         if (block.timestamp < 10 minutes) return; // prevent underflow
         uint256 cutoff = block.timestamp - 10 minutes;
         PricePoint[] storage history = priceHistory[feedId];
-        uint256 i = 0;
+        uint256 i = historyHead[feedId];
+        // Advance head past stale entries; do NOT shift the array.
         while (i < history.length && history[i].ts < cutoff) i++;
-        if (i > 0) {
-            for (uint256 j = 0; j < history.length - i; j++) {
-                history[j] = history[j + i];
-            }
-            for (uint256 j = 0; j < i; j++) history.pop();
-        }
+        historyHead[feedId] = i;
     }
 
     // Keeper может пополнять ETH для оплаты Pyth updates
     receive() external payable {}
 
-    function addKeeper(address keeper) external onlyOwner {
+    function addKeeper(address keeper) external onlyRole(DEFAULT_ADMIN_ROLE) {
         _grantRole(KEEPER_ROLE, keeper);
     }
 
-    function removeKeeper(address keeper) external onlyOwner {
+    function removeKeeper(address keeper) external onlyRole(DEFAULT_ADMIN_ROLE) {
         _revokeRole(KEEPER_ROLE, keeper);
+    }
+
+    /// @notice Withdraw stuck ETH (leftover from Pyth fee top-ups).
+    function withdrawETH(address payable to, uint256 amount)
+        external
+        onlyRole(DEFAULT_ADMIN_ROLE)
+    {
+        (bool ok, ) = to.call{value: amount}("");
+        require(ok, "eth withdraw failed");
     }
 }

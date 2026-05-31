@@ -4,6 +4,7 @@ import { checkGeo } from './lib/geocheck'
 import { signalAppReady } from './lib/miniapp'
 import { Markets } from './pages/Markets'
 import { Market } from './pages/Market'
+import { OrderPage } from './pages/Order'
 import { Leaderboard } from './pages/Leaderboard'
 import { Portfolio } from './pages/Portfolio'
 import { GenesisPage } from './pages/Genesis'
@@ -31,6 +32,7 @@ export function App() {
         <Routes>
           <Route path="/" element={<Markets />} />
           <Route path="/market/:address" element={<Market />} />
+          <Route path="/order/:address/:orderId" element={<OrderPage />} />
           <Route path="/leaderboard" element={<Leaderboard />} />
           <Route path="/portfolio" element={<Portfolio />} />
           <Route path="/genesis" element={<GenesisPage />} />

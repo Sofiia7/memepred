@@ -7,6 +7,18 @@
 {$API_DOMAIN:api.memepred.xyz} {
     encode gzip zstd
 
+    # Security headers — applied to every response.
+    header {
+        Strict-Transport-Security    "max-age=31536000; includeSubDomains; preload"
+        X-Content-Type-Options       "nosniff"
+        X-Frame-Options              "DENY"
+        Referrer-Policy              "strict-origin-when-cross-origin"
+        Permissions-Policy           "interest-cohort=()"
+        Content-Security-Policy      "default-src 'none'; frame-ancestors 'none'"
+        Cross-Origin-Resource-Policy "same-site"
+        -Server
+    }
+
     # Worker bypass — keep header forwarding so /api/geo can read X-Country.
     # The frontend never hits this directly in prod; the Cloudflare Worker proxies.
     reverse_proxy backend:3001 {

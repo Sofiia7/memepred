@@ -118,6 +118,36 @@ contract MarketFactoryTest is Test {
         assertTrue(pool.isAuthorizedMarket(m));
     }
 
+    // ── marketCreator role (Sprint 5 finding) ─────────────
+    function test_SetMarketCreator_OnlyOwner() public {
+        vm.prank(makeAddr("rogue"));
+        vm.expectRevert(); // Ownable: caller is not the owner
+        factory.setMarketCreator(keeper);
+
+        // owner succeeds
+        factory.setMarketCreator(keeper);
+        assertEq(factory.marketCreator(), keeper);
+    }
+
+    function test_CreateMarket_ByMarketCreator() public {
+        factory.setMarketCreator(keeper);
+
+        // keeper is neither owner nor resolver, but holds the creator role
+        vm.prank(keeper);
+        address m = factory.createMarket(FEED_PEPE, 5 minutes);
+        assertTrue(pool.isAuthorizedMarket(m), "creator-spawned market authorized");
+        assertEq(factory.getActiveMarkets(FEED_PEPE).length, 1);
+    }
+
+    function test_CreateMarket_Reverts_AfterCreatorRevoked() public {
+        factory.setMarketCreator(keeper);
+        factory.setMarketCreator(address(0)); // revoke
+
+        vm.prank(keeper);
+        vm.expectRevert("unauthorized");
+        factory.createMarket(FEED_PEPE, 5 minutes);
+    }
+
     function test_CreateMarket_Multiple_SharePool() public {
         vm.startPrank(resolver);
         address m1 = factory.createMarket(FEED_PEPE, 5 minutes);

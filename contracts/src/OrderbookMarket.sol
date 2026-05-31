@@ -8,8 +8,13 @@ import "@openzeppelin/contracts/utils/Pausable.sol";
 import "./interfaces/IPyth.sol";
 
 interface ILiquidityPool {
-    function tryMatch(uint256 orderId, uint256 amount, bool userIsUp, uint256 matchId) external returns (bool);
-    function onMatchSettled(uint256 matchId, bool upWon) external;
+    /// @return matchedAmount actual USDC the pool took from `amount` (0 .. amount).
+    function tryMatch(uint256 orderId, uint256 amount, bool userIsUp, uint256 matchId)
+        external
+        returns (uint256 matchedAmount);
+
+    function onMatchSettled (uint256 matchId, bool upWon) external;
+    function onMatchRefunded(uint256 matchId)            external;
 }
 
 interface IOracleResolver {
@@ -26,14 +31,24 @@ interface IReferralRegistry {
 
 /**
  * @title OrderbookMarket
- * @notice Rolling market with async matching.
+ * @notice Rolling market with async matching and multi-fill orders.
  *
- * Bet lifecycle:
- *   placeBet() → PENDING → match() → MATCHED → settle() → SETTLED → claim()
+ *  Order lifecycle:
+ *      placeBet  → PENDING (filledAmount < amount, in queue)
+ *               → MATCHED  (filledAmount == amount)
+ *               → SETTLED  (all matches settled AND
+ *                          (filledAmount == amount OR unmatchedRefunded))
+ *               → CLAIMED
+ *      placeBet → REFUNDED (refundExpired before any fill)
  *
- * Each match has its own entryPrice — price is fixed
- * at match time, not at market creation.
- * This allows matching bets at any time.
+ *  Multi-fill design (Sprint 1.1):
+ *      A single Order can be matched against multiple counterparties (or against
+ *      the LP pool in partial amounts) before becoming fully MATCHED. Each
+ *      individual match has its own Match record with its own m.amount and
+ *      entryPrice. Order.payout accumulates winnings across all matches; claim
+ *      pays the total once Order.pendingSettlements reaches 0. This eliminates
+ *      the previous bug where the larger side of an unequal PvP match silently
+ *      lost the unmatched portion of their stake.
  */
 contract OrderbookMarket is ReentrancyGuard, Pausable {
     using SafeERC20 for IERC20;
@@ -45,37 +60,41 @@ contract OrderbookMarket is ReentrancyGuard, Pausable {
     struct Order {
         address     trader;
         Direction   direction;
-        uint256     amount;
+        uint256     amount;             // total deposit; immutable after placeBet
+        uint256     filledAmount;       // matched so far; <= amount
         address     referrer;
         OrderStatus status;
         uint256     placedAt;
-        uint256     matchId;    // 0 if not matched
-        uint256     payout;     // filled on settlement
+        uint256     matchId;            // FIRST match for back-compat / view ease (0 if none)
+        uint256     pendingSettlements; // matches yet to settle
+        uint256     payout;             // accumulated winnings (claimable when pendingSettlements == 0)
+        bool        unmatchedRefunded;  // refundExpired already returned the unmatched portion
     }
 
     struct Match {
         uint256 upOrderId;
         uint256 downOrderId;
-        uint256 amount;       // min(upOrder.amount, downOrder.amount)
-        uint256 entryPrice;   // price at match time
-        uint256 settleAt;     // matchedAt + duration
-        uint256 exitPrice;    // filled on resolution
+        uint256 amount;       // per-side stake = matched amount
+        uint256 entryPrice;   // price at match creation
+        uint256 settleAt;     // matched-at + duration
+        uint256 exitPrice;
         bool    settled;
         bool    upWon;
-        bool    lpMatch;      // true if matched with LP pool
+        bool    lpMatch;      // true when one side is the LP pool
     }
 
     // ── CONSTANTS ──────────────────────────────────────────
     uint256 public constant MIN_BET       = 1e6;       // 1 USDC
     uint256 public constant MAX_BET       = 100e6;     // 100 USDC, remove after audit
-    uint256 public constant MATCH_TIMEOUT = 5 minutes; // max wait → refund
+    uint256 public constant MATCH_TIMEOUT = 5 minutes; // PENDING → refundExpired
+    uint256 public constant SETTLE_GRACE  = 24 hours;  // MATCHED → emergencyRefundMatch
 
     // ── TIMELOCK / FEE STATE ───────────────────────────────
     uint256 public feeBps = 0;
     uint256 public pendingFeeBps;
     uint256 public feeChangeAvailableAt;
     uint256 public constant FEE_TIMELOCK = 48 hours;
-    uint256 public constant FEE_MAX = 100; // max 1%
+    uint256 public constant FEE_MAX      = 100;        // max 1%
 
     // ── IMMUTABLES ─────────────────────────────────────────
     IERC20  public immutable usdc;
@@ -84,6 +103,7 @@ contract OrderbookMarket is ReentrancyGuard, Pausable {
     address public immutable feeDistributor;
     address public immutable referralRegistry;
     address public immutable multisig;
+    address public immutable factory;
     bytes32 public immutable pythFeedId;
     uint256 public immutable duration;
 
@@ -94,25 +114,28 @@ contract OrderbookMarket is ReentrancyGuard, Pausable {
     mapping(uint256 => Order) public orders;
     mapping(uint256 => Match) public matches;
 
-    // Pending queues
+    // Bounded scan + index back-reference so queue removal is O(1).
+    uint256 public constant MAX_MATCH_SCAN = 32;
     uint256[] public pendingUpQueue;
     uint256[] public pendingDownQueue;
+    mapping(uint256 => uint256) private _queueIndex; // orderId → (idx+1); 0 = not queued
 
-    // trader → their orderIds
+    // trader → their orderIds (append-only)
     mapping(address => uint256[]) public traderOrders;
 
-    // matchIds that need settlement (for keeper/resolver)
+    // matchIds that need settlement
     uint256[] public pendingSettlements;
 
     // ── EVENTS ─────────────────────────────────────────────
-    event OrderPlaced  (uint256 indexed orderId, address indexed trader, Direction dir, uint256 amount);
-    event OrderMatched (uint256 indexed matchId, uint256 upId, uint256 downId, uint256 entryPrice);
-    event LPMatched    (uint256 indexed matchId, uint256 orderId, uint256 entryPrice);
-    event MatchSettled (uint256 indexed matchId, bool upWon, uint256 entry, uint256 exit);
-    event OrderRefunded(uint256 indexed orderId, address trader, uint256 amount);
-    event Claimed      (uint256 indexed orderId, address trader, uint256 payout);
-    event FeeChangeProposed(uint256 newFeeBps, uint256 availableAt);
-    event FeeChanged   (uint256 newFeeBps);
+    event OrderPlaced       (uint256 indexed orderId, address indexed trader, Direction dir, uint256 amount);
+    event OrderMatched      (uint256 indexed matchId, uint256 upId,    uint256 downId, uint256 amount, uint256 entryPrice);
+    event LPMatched         (uint256 indexed matchId, uint256 orderId, uint256 amount, uint256 entryPrice);
+    event OrderFilled       (uint256 indexed orderId, uint256 totalFilled); // emitted once filledAmount == amount
+    event MatchSettled      (uint256 indexed matchId, bool upWon, uint256 entry, uint256 exit);
+    event OrderRefunded     (uint256 indexed orderId, address trader, uint256 amount); // partial when amount < order.amount
+    event Claimed           (uint256 indexed orderId, address trader, uint256 payout);
+    event FeeChangeProposed (uint256 newFeeBps, uint256 availableAt);
+    event FeeChanged        (uint256 newFeeBps);
 
     // ── CONSTRUCTOR ────────────────────────────────────────
     constructor(
@@ -131,110 +154,207 @@ contract OrderbookMarket is ReentrancyGuard, Pausable {
         feeDistributor   = _feeDistributor;
         referralRegistry = _referralRegistry;
         multisig         = _multisig;
+        factory          = msg.sender;
         pythFeedId       = _pythFeedId;
         duration         = _duration;
     }
 
     // ── PLACE BET ──────────────────────────────────────────
-    /**
-     * @notice Place a bet.
-     *         Immediately tries PvP match → LP match → queue.
-     */
+    /// @notice Place a bet relying on the keeper to keep Pyth fresh.
     function placeBet(
         Direction dir,
         uint256   amount,
         address   referrer,
-        uint256   expectedPrice,  // passed from frontend via Pyth
-        uint256   slippageBps     // allowed deviation, e.g. 50 = 0.5%
+        uint256   expectedPrice,
+        uint256   slippageBps
     ) external nonReentrant whenNotPaused returns (uint256 orderId) {
+        return _placeBet(dir, amount, referrer, expectedPrice, slippageBps);
+    }
+
+    /// @notice Place a bet AND push a fresh Pyth update inline.
+    function placeBetWithPyth(
+        Direction dir,
+        uint256   amount,
+        address   referrer,
+        uint256   expectedPrice,
+        uint256   slippageBps,
+        bytes[] calldata priceUpdateData
+    ) external payable nonReentrant whenNotPaused returns (uint256 orderId) {
+        if (priceUpdateData.length > 0) {
+            address pythAddress = IOracleResolver(resolver).pyth();
+            uint256 updateFee   = IPyth(pythAddress).getUpdateFee(priceUpdateData);
+            require(msg.value >= updateFee, "pyth fee");
+            IPyth(pythAddress).updatePriceFeeds{value: updateFee}(priceUpdateData);
+            uint256 refund = msg.value - updateFee;
+            if (refund > 0) {
+                (bool ok, ) = msg.sender.call{value: refund}("");
+                require(ok, "refund failed");
+            }
+        } else {
+            require(msg.value == 0, "no eth expected");
+        }
+        return _placeBet(dir, amount, referrer, expectedPrice, slippageBps);
+    }
+
+    function _placeBet(
+        Direction dir,
+        uint256   amount,
+        address   referrer,
+        uint256   expectedPrice,
+        uint256   slippageBps
+    ) internal returns (uint256 orderId) {
         require(amount >= MIN_BET,        "below min");
         require(amount <= MAX_BET,        "above max");
         require(referrer != msg.sender,   "self referral");
+        require(expectedPrice > 0,        "expectedPrice zero");
 
         uint256 actualPrice = _getCurrentPrice();
 
         uint256 diff = actualPrice > expectedPrice
             ? actualPrice - expectedPrice
             : expectedPrice - actualPrice;
-
-        uint256 spread = diff * 10_000 / expectedPrice;
+        uint256 spread = (diff * 10_000) / expectedPrice;
         require(spread <= slippageBps, "price slippage exceeded");
 
         usdc.safeTransferFrom(msg.sender, address(this), amount);
 
-        // Register referral on first touch — best-effort, must not block the bet.
         if (referrer != address(0) && referralRegistry != address(0)) {
             try IReferralRegistry(referralRegistry).register(msg.sender, referrer) {} catch {}
         }
 
         orderId = nextOrderId++;
         orders[orderId] = Order({
-            trader:    msg.sender,
-            direction: dir,
-            amount:    amount,
-            referrer:  referrer,
-            status:    OrderStatus.PENDING,
-            placedAt:  block.timestamp,
-            matchId:   0,
-            payout:    0
+            trader:             msg.sender,
+            direction:          dir,
+            amount:             amount,
+            filledAmount:       0,
+            referrer:           referrer,
+            status:             OrderStatus.PENDING,
+            placedAt:           block.timestamp,
+            matchId:            0,
+            pendingSettlements: 0,
+            payout:             0,
+            unmatchedRefunded:  false
         });
         traderOrders[msg.sender].push(orderId);
 
         emit OrderPlaced(orderId, msg.sender, dir, amount);
 
-        // Try match immediately
-        _tryMatch(orderId, dir, amount, actualPrice);
+        _tryMatch(orderId, dir, actualPrice);
     }
 
     // ── MATCHING LOGIC ─────────────────────────────────────
-    /**
-     * @notice Match attempt: first orderbook, then LP.
-     */
+    /// @notice Multi-fill matching: PvP queue first, then LP, then re-queue
+    ///         any remaining portion (down to MIN_BET; dust is refunded).
     function _tryMatch(
         uint256   orderId,
         Direction dir,
-        uint256   amount,
         uint256   currentPrice
     ) internal {
-        // Layer 1: find PvP opponent in queue
+        Order storage o = orders[orderId];
         uint256[] storage oppositeQueue = dir == Direction.UP
             ? pendingDownQueue
             : pendingUpQueue;
 
-        for (uint256 i = 0; i < oppositeQueue.length; i++) {
-            uint256 candidateId = oppositeQueue[i];
-            Order storage candidate = orders[candidateId];
+        uint256 scanned = 0;
+        uint256 i       = 0;
 
-            // Skip stale or already matched
-            if (candidate.status != OrderStatus.PENDING) continue;
-            if (block.timestamp - candidate.placedAt > MATCH_TIMEOUT) continue;
+        // Layer 1 — bounded PvP scan with multi-fill.
+        while (
+            i < oppositeQueue.length &&
+            scanned < MAX_MATCH_SCAN &&
+            o.filledAmount < o.amount
+        ) {
+            uint256 candidateId      = oppositeQueue[i];
+            Order  storage candidate = orders[candidateId];
+            scanned++;
 
-            // Match! Take minimum amount
-            uint256 matchAmount = amount < candidate.amount ? amount : candidate.amount;
+            // Lazy eviction of dead/expired orders.
+            if (
+                candidate.status != OrderStatus.PENDING ||
+                candidate.unmatchedRefunded ||
+                block.timestamp > candidate.placedAt + MATCH_TIMEOUT
+            ) {
+                _removeAt(oppositeQueue, i);
+                continue;
+            }
+
+            uint256 myRemaining        = o.amount         - o.filledAmount;
+            uint256 candidateRemaining = candidate.amount - candidate.filledAmount;
+            if (candidateRemaining == 0) {
+                _removeAt(oppositeQueue, i);
+                continue;
+            }
+
+            uint256 matchAmount = myRemaining < candidateRemaining
+                ? myRemaining
+                : candidateRemaining;
+
             _createMatch(orderId, candidateId, dir, matchAmount, currentPrice, false);
 
-            // Remove from queue
-            _removeFromQueue(oppositeQueue, i);
-            return;
-        }
+            // Update both orders.
+            _registerFill(o, matchAmount);
+            _registerFill(candidate, matchAmount);
 
-        // Layer 2: try LP pool
-        if (liquidityPool != address(0)) {
-            uint256 matchId = nextMatchId; // will be used by _createMatch
-            bool lpMatched = ILiquidityPool(liquidityPool).tryMatch(
-                orderId, amount, dir == Direction.UP, matchId
-            );
-            if (lpMatched) {
-                _createMatch(orderId, 0, dir, amount, currentPrice, true);
-                return;
+            // Candidate fully filled → remove from queue.
+            if (candidate.filledAmount == candidate.amount) {
+                candidate.status = OrderStatus.MATCHED;
+                emit OrderFilled(candidateId, candidate.filledAmount);
+                _removeAt(oppositeQueue, i);
+                // i stays — last element was swapped here.
+            } else {
+                i++;
             }
         }
 
-        // Layer 3: add to pending queue
-        if (dir == Direction.UP) {
-            pendingUpQueue.push(orderId);
+        // Layer 2 — LP fallback for whatever remains.
+        if (
+            liquidityPool != address(0) &&
+            o.filledAmount < o.amount
+        ) {
+            uint256 remaining   = o.amount - o.filledAmount;
+            uint256 reservedId  = nextMatchId; // hint for LP bookkeeping; final id chosen in _createMatch
+            uint256 lpMatched   = ILiquidityPool(liquidityPool).tryMatch(
+                orderId, remaining, dir == Direction.UP, reservedId
+            );
+            require(lpMatched <= remaining, "lp overmatched");
+
+            if (lpMatched > 0) {
+                _createMatch(orderId, 0, dir, lpMatched, currentPrice, true);
+                _registerFill(o, lpMatched);
+            }
+        }
+
+        // Layer 3 — finalize.
+        if (o.filledAmount == o.amount) {
+            o.status = OrderStatus.MATCHED;
+            emit OrderFilled(orderId, o.filledAmount);
+        } else if (o.filledAmount > 0 && (o.amount - o.filledAmount) < MIN_BET) {
+            // Sub-MIN_BET dust on a partially-filled order: refund the dust now.
+            uint256 dust = o.amount - o.filledAmount;
+            o.unmatchedRefunded = true;
+            usdc.safeTransfer(o.trader, dust);
+            o.status = OrderStatus.MATCHED;
+            emit OrderRefunded(orderId, o.trader, dust);
+            emit OrderFilled  (orderId, o.filledAmount);
         } else {
-            pendingDownQueue.push(orderId);
+            // Queue the unmatched portion (>= MIN_BET).
+            if (dir == Direction.UP) {
+                pendingUpQueue.push(orderId);
+                _queueIndex[orderId] = pendingUpQueue.length;
+            } else {
+                pendingDownQueue.push(orderId);
+                _queueIndex[orderId] = pendingDownQueue.length;
+            }
+        }
+    }
+
+    /// @dev Bookkeeping after a single match is created against the given order.
+    function _registerFill(Order storage o, uint256 matchAmount) internal {
+        o.filledAmount       += matchAmount;
+        o.pendingSettlements += 1;
+        if (o.matchId == 0) {
+            o.matchId = nextMatchId - 1; // _createMatch already incremented
         }
     }
 
@@ -263,117 +383,220 @@ contract OrderbookMarket is ReentrancyGuard, Pausable {
             lpMatch:     isLpMatch
         });
 
-        orders[orderId].status  = OrderStatus.MATCHED;
-        orders[orderId].matchId = matchId;
-
-        if (!isLpMatch) {
-            orders[oppositeId].status  = OrderStatus.MATCHED;
-            orders[oppositeId].matchId = matchId;
-            emit OrderMatched(matchId, upId, downId, entryPrice);
+        if (isLpMatch) {
+            emit LPMatched(matchId, orderId, amount, entryPrice);
         } else {
-            emit LPMatched(matchId, orderId, entryPrice);
+            emit OrderMatched(matchId, upId, downId, amount, entryPrice);
         }
 
-        // Track for settlement
         pendingSettlements.push(matchId);
     }
 
     // ── SETTLE ─────────────────────────────────────────────
-    /**
-     * @notice Called by OracleResolver after duration expires.
-     */
-    function settleMatch(
-        uint256 matchId,
-        uint256 exitPrice
-    ) external {
+    function settleMatch(uint256 matchId, uint256 exitPrice)
+        external
+        nonReentrant
+    {
         require(msg.sender == resolver, "only resolver");
         Match storage m = matches[matchId];
-        require(!m.settled,                  "already settled");
+        require(m.amount > 0,                  "match not found");
+        require(!m.settled,                    "already settled");
         require(block.timestamp >= m.settleAt, "too early");
 
         m.settled   = true;
         m.exitPrice = exitPrice;
         m.upWon     = exitPrice > m.entryPrice;
 
-        // Update order statuses
         if (!m.lpMatch) {
-            // PvP: settle both orders
             _settleOrder(m.upOrderId,   m.upWon,  m);
             _settleOrder(m.downOrderId, !m.upWon, m);
         } else {
-            // LP match: find the user's order (non-zero id) and settle it
-            bool userIsUp = m.upOrderId != 0;
-            uint256 userOrderId = userIsUp ? m.upOrderId : m.downOrderId;
-            bool userWon = userIsUp ? m.upWon : !m.upWon;
+            bool    userIsUp     = m.upOrderId != 0;
+            uint256 userOrderId  = userIsUp ? m.upOrderId : m.downOrderId;
+            bool    userWon      = userIsUp ? m.upWon : !m.upWon;
 
             _settleOrder(userOrderId, userWon, m);
 
             if (!userWon) {
-                // LP won: transfer both stakes (user's + LP's) to pool
+                // LP won: send both stakes back to the pool.
                 usdc.safeTransfer(liquidityPool, m.amount * 2);
             }
-            // If user won: market keeps funds for user to claim via claim()
-
-            // Notify LP pool of result (updates accounting)
             ILiquidityPool(liquidityPool).onMatchSettled(matchId, m.upWon);
         }
 
         emit MatchSettled(matchId, m.upWon, m.entryPrice, exitPrice);
     }
 
-    function _settleOrder(
-        uint256 orderId,
-        bool    won,
-        Match storage m
-    ) internal {
+    /// @dev Accumulate per-match payout into the order. Only flip status to
+    ///      SETTLED when nothing is pending AND the order is closed
+    ///      (fully filled OR its unmatched portion was refunded).
+    function _settleOrder(uint256 orderId, bool won, Match storage m) internal {
         Order storage o = orders[orderId];
-        o.status = OrderStatus.SETTLED;
+        require(o.pendingSettlements > 0, "no pending settlements");
+        o.pendingSettlements -= 1;
 
         if (won) {
             uint256 totalPool = m.amount * 2;
             uint256 fee       = (totalPool * feeBps) / 10_000;
-            o.payout = totalPool - fee;
-            
+            uint256 net       = totalPool - fee;
+            o.payout += net;
+
             if (fee > 0 && feeDistributor != address(0)) {
                 usdc.safeTransfer(feeDistributor, fee);
                 IFeeDistributor(feeDistributor).distributeFee(fee, o.referrer);
             }
+        }
+
+        if (
+            o.pendingSettlements == 0 &&
+            (o.filledAmount == o.amount || o.unmatchedRefunded)
+        ) {
+            o.status = OrderStatus.SETTLED;
         }
     }
 
     // ── CLAIM ──────────────────────────────────────────────
     function claim(uint256 orderId) external nonReentrant {
         Order storage o = orders[orderId];
-        require(o.trader == msg.sender,          "not your order");
-        require(o.status == OrderStatus.SETTLED, "not settled");
-        require(o.payout > 0,                    "nothing to claim");
+        require(o.trader == msg.sender,    "not your order");
+        require(o.pendingSettlements == 0, "settlements pending");
+        require(o.status != OrderStatus.CLAIMED, "already claimed");
+        require(
+            o.status == OrderStatus.SETTLED ||
+            // graceful: allow claim if all settled but status not yet promoted
+            (o.filledAmount > 0 && (o.filledAmount == o.amount || o.unmatchedRefunded)),
+            "not settled"
+        );
+        require(o.payout > 0, "nothing to claim");
 
-        o.status = OrderStatus.CLAIMED;
-        usdc.safeTransfer(msg.sender, o.payout);
+        uint256 p = o.payout;
+        o.payout  = 0;
+        o.status  = OrderStatus.CLAIMED;
+        usdc.safeTransfer(msg.sender, p);
 
-        emit Claimed(orderId, msg.sender, o.payout);
+        emit Claimed(orderId, msg.sender, p);
     }
 
-    // ── REFUND EXPIRED ─────────────────────────────────────
-    /**
-     * @notice Refund bets that didn't match within MATCH_TIMEOUT.
-     *         Called by keeper or by the user themselves.
-     */
+    // ── EMERGENCY REFUND (matched-but-unsettled) ───────────
+    /// @notice Refund a matched-but-unsettled match after SETTLE_GRACE.
+    function emergencyRefundMatch(uint256 matchId) external nonReentrant {
+        Match storage m = matches[matchId];
+        require(m.amount > 0,                                  "match not found");
+        require(!m.settled,                                    "already settled");
+        require(block.timestamp > m.settleAt + SETTLE_GRACE,   "grace not over");
+
+        m.settled = true;
+
+        if (!m.lpMatch) {
+            Order storage up = orders[m.upOrderId];
+            Order storage dn = orders[m.downOrderId];
+            _forceRefundOrder(up);
+            _forceRefundOrder(dn);
+            usdc.safeTransfer(up.trader, m.amount);
+            usdc.safeTransfer(dn.trader, m.amount);
+            emit OrderRefunded(m.upOrderId,   up.trader, m.amount);
+            emit OrderRefunded(m.downOrderId, dn.trader, m.amount);
+            _refundUnmatchedTail(m.upOrderId, up);
+            _refundUnmatchedTail(m.downOrderId, dn);
+        } else {
+            uint256 userOrderId = m.upOrderId != 0 ? m.upOrderId : m.downOrderId;
+            Order storage o = orders[userOrderId];
+            _forceRefundOrder(o);
+            usdc.safeTransfer(o.trader,      m.amount);
+            usdc.safeTransfer(liquidityPool, m.amount);
+            emit OrderRefunded(userOrderId, o.trader, m.amount);
+            ILiquidityPool(liquidityPool).onMatchRefunded(matchId);
+            _refundUnmatchedTail(userOrderId, o);
+        }
+    }
+
+    /// @dev When emergency-refunding a match, force the affected order into
+    ///      REFUNDED. Other matches of the same order (if any) can still
+    ///      emergencyRefundMatch their own funds independently.
+    function _forceRefundOrder(Order storage o) internal {
+        if (o.pendingSettlements > 0) o.pendingSettlements -= 1;
+        o.status = OrderStatus.REFUNDED;
+    }
+
+    /// @dev If the order also has an unmatched tail still in the queue, refund
+    ///      it now so funds aren't stranded. Idempotent on `unmatchedRefunded`.
+    function _refundUnmatchedTail(uint256 orderId, Order storage o) internal {
+        if (o.unmatchedRefunded) return;
+        uint256 tail = o.amount - o.filledAmount;
+        if (tail == 0) return;
+        o.unmatchedRefunded = true;
+        _removeFromQueueByOrderId(orderId, o.direction);
+        usdc.safeTransfer(o.trader, tail);
+        emit OrderRefunded(orderId, o.trader, tail);
+    }
+
+    /// @dev Counter decrement + status promotion shared by normal settlement.
+    function _decrementSettlement(Order storage o) internal {
+        if (o.pendingSettlements > 0) o.pendingSettlements -= 1;
+        if (o.status == OrderStatus.PENDING || o.status == OrderStatus.MATCHED) {
+            if (
+                o.pendingSettlements == 0 &&
+                (o.filledAmount == o.amount || o.unmatchedRefunded || o.filledAmount == 0)
+            ) {
+                o.status = o.filledAmount == 0
+                    ? OrderStatus.REFUNDED
+                    : OrderStatus.SETTLED;
+            }
+        }
+    }
+
+    // ── REFUND EXPIRED (unmatched portion) ─────────────────
+    /// @notice Refund the *unmatched* portion of an order after MATCH_TIMEOUT.
+    ///         For a fully-unmatched order (filledAmount == 0) this is the
+    ///         entire stake and the order becomes REFUNDED.
+    ///         For a partially-filled order, only (amount - filledAmount) is
+    ///         returned; the matched portion continues to settle normally.
     function refundExpired(uint256 orderId) external nonReentrant {
         Order storage o = orders[orderId];
-        require(o.status == OrderStatus.PENDING,                   "not pending");
-        require(block.timestamp > o.placedAt + MATCH_TIMEOUT,     "not expired");
+        // Check idempotency BEFORE status so a second call surfaces the
+        // specific reason instead of a generic "wrong status".
+        require(!o.unmatchedRefunded, "already refunded");
+        require(
+            o.status == OrderStatus.PENDING || o.status == OrderStatus.MATCHED,
+            "wrong status"
+        );
+        require(block.timestamp > o.placedAt + MATCH_TIMEOUT, "not expired");
 
-        o.status = OrderStatus.REFUNDED;
-        usdc.safeTransfer(o.trader, o.amount);
+        uint256 unmatched = o.amount - o.filledAmount;
+        require(unmatched > 0, "nothing to refund");
 
-        emit OrderRefunded(orderId, o.trader, o.amount);
+        o.unmatchedRefunded = true;
+        _removeFromQueueByOrderId(orderId, o.direction);
+
+        if (o.filledAmount == 0) {
+            o.status = OrderStatus.REFUNDED;
+        } else if (o.pendingSettlements == 0) {
+            // All matches already settled by now → promote to SETTLED.
+            o.status = OrderStatus.SETTLED;
+        }
+
+        usdc.safeTransfer(o.trader, unmatched);
+        emit OrderRefunded(orderId, o.trader, unmatched);
     }
 
     // ── HELPERS ────────────────────────────────────────────
-    function _removeFromQueue(uint256[] storage queue, uint256 index) internal {
-        queue[index] = queue[queue.length - 1];
+    function _removeAt(uint256[] storage queue, uint256 index) internal {
+        uint256 lastIdx = queue.length - 1;
+        uint256 removed = queue[index];
+        if (index != lastIdx) {
+            uint256 moved = queue[lastIdx];
+            queue[index]  = moved;
+            _queueIndex[moved] = index + 1;
+        }
         queue.pop();
+        _queueIndex[removed] = 0;
+    }
+
+    function _removeFromQueueByOrderId(uint256 orderId, Direction dir) internal {
+        uint256 idx1 = _queueIndex[orderId];
+        if (idx1 == 0) return;
+        uint256[] storage q = dir == Direction.UP ? pendingUpQueue : pendingDownQueue;
+        _removeAt(q, idx1 - 1);
     }
 
     // ── VIEWS ──────────────────────────────────────────────
@@ -385,22 +608,46 @@ contract OrderbookMarket is ReentrancyGuard, Pausable {
         return traderOrders[trader];
     }
 
-    /**
-     * @notice Returns matchIds that are ready for settlement.
-     *         Used by keeper/resolver to know which matches to settle.
-     */
-    function getPendingSettlements() external view returns (uint256[] memory ready) {
-        uint256 count = 0;
-        for (uint256 i = 0; i < pendingSettlements.length; i++) {
-            Match storage m = matches[pendingSettlements[i]];
-            if (!m.settled && block.timestamp >= m.settleAt) {
-                count++;
-            }
-        }
+    /// @notice Returns matchIds that are ready for settlement, capped by `limit`.
+    ///         Use `limit = 0` for "all ready" (legacy behaviour).
+    function getReadySettlements(uint256 offset, uint256 limit)
+        external
+        view
+        returns (uint256[] memory ready)
+    {
+        uint256 total = pendingSettlements.length;
+        if (offset >= total) return new uint256[](0);
 
+        uint256 end = limit == 0 || offset + limit > total ? total : offset + limit;
+
+        // Two-pass to size the array.
+        uint256 count = 0;
+        for (uint256 i = offset; i < end; i++) {
+            Match storage m = matches[pendingSettlements[i]];
+            if (!m.settled && block.timestamp >= m.settleAt) count++;
+        }
         ready = new uint256[](count);
         uint256 idx = 0;
-        for (uint256 i = 0; i < pendingSettlements.length; i++) {
+        for (uint256 i = offset; i < end; i++) {
+            Match storage m = matches[pendingSettlements[i]];
+            if (!m.settled && block.timestamp >= m.settleAt) {
+                ready[idx++] = pendingSettlements[i];
+            }
+        }
+    }
+
+    /// @notice Legacy view — same as getReadySettlements(0, 0). Retained for
+    ///         existing callers; prefer getReadySettlements with pagination.
+    function getPendingSettlements() external view returns (uint256[] memory ready) {
+        uint256 total = pendingSettlements.length;
+        uint256 count = 0;
+        for (uint256 i = 0; i < total; i++) {
+            Match storage m = matches[pendingSettlements[i]];
+            if (!m.settled && block.timestamp >= m.settleAt) count++;
+        }
+        ready = new uint256[](count);
+        uint256 idx = 0;
+        for (uint256 i = 0; i < total; i++) {
             Match storage m = matches[pendingSettlements[i]];
             if (!m.settled && block.timestamp >= m.settleAt) {
                 ready[idx++] = pendingSettlements[i];
@@ -419,15 +666,17 @@ contract OrderbookMarket is ReentrancyGuard, Pausable {
     // ── INTERNAL PYTH PRICE ────────────────────────────────
     function _getCurrentPrice() internal view returns (uint256) {
         address pythAddress = IOracleResolver(resolver).pyth();
-        // 60 seconds max age
         IPyth.Price memory p = IPyth(pythAddress).getPriceNoOlderThan(pythFeedId, 60);
+        require(p.price > 0, "non-positive price");
 
         int32 expo = p.expo;
         uint256 price = uint256(int256(p.price));
         if (expo < 0) {
+            // forge-lint: disable-next-line(unsafe-typecast)
             uint256 divisor = 10 ** uint32(-expo);
-            return price * 1e18 / divisor;
+            return (price * 1e18) / divisor;
         } else {
+            // forge-lint: disable-next-line(unsafe-typecast)
             return price * 1e18 * (10 ** uint32(expo));
         }
     }
@@ -435,21 +684,27 @@ contract OrderbookMarket is ReentrancyGuard, Pausable {
     // ── ADMIN ──────────────────────────────────────────────
     function proposeNewFee(uint256 newFeeBps) external {
         require(msg.sender == multisig, "only multisig");
-        require(newFeeBps <= FEE_MAX, "fee too high");
-        pendingFeeBps = newFeeBps;
+        require(newFeeBps <= FEE_MAX,   "fee too high");
+        pendingFeeBps        = newFeeBps;
         feeChangeAvailableAt = block.timestamp + FEE_TIMELOCK;
         emit FeeChangeProposed(newFeeBps, feeChangeAvailableAt);
     }
 
     function applyNewFee() external {
-        require(msg.sender == multisig, "only multisig");
-        require(feeChangeAvailableAt != 0, "no proposal");
-        require(block.timestamp >= feeChangeAvailableAt, "timelock");
-        feeBps = pendingFeeBps;
+        require(msg.sender == multisig,                     "only multisig");
+        require(feeChangeAvailableAt != 0,                  "no proposal");
+        require(block.timestamp >= feeChangeAvailableAt,    "timelock");
+        feeBps               = pendingFeeBps;
         feeChangeAvailableAt = 0;
         emit FeeChanged(feeBps);
     }
 
     function pause()   external { require(msg.sender == multisig, "only multisig"); _pause();   }
     function unpause() external { require(msg.sender == multisig, "only multisig"); _unpause(); }
+
+    /// @notice Emergency pause callable by MarketFactory (feed deauthorized).
+    function pauseByFactory() external {
+        require(msg.sender == factory, "only factory");
+        _pause();
+    }
 }

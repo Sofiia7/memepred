@@ -52,9 +52,16 @@ contract LiquidityPool is ERC4626, ReentrancyGuard, Pausable, Ownable {
     mapping(address => bool) public isAuthorizedMarket;
 
     // ── GENESIS ────────────────────────────────────────────
-    mapping(address => bool) public isGenesis;
-    mapping(address => bool) public hasBeenLP;  // tracks first-time depositors
+    // NOTE: Genesis status is derived from GenesisNFT ownership at any moment
+    //       (NFT is the right; transfer the NFT → transfer the boost).
+    //       hasBeenLP records first-time depositors so a single Genesis NFT
+    //       is minted at most once per LP.
+    mapping(address => bool) public hasBeenLP;
     uint256 public genesisCount;
+
+    // Cached per-LP weight (shares × boost). Kept in sync with totalFeeWeight
+    // on every event that can change it: mint, burn, NFT transfer.
+    mapping(address => uint256) private _lpWeight;
 
     // ── EXPOSURE ───────────────────────────────────────────
     uint256 public totalExposure;
@@ -114,26 +121,33 @@ contract LiquidityPool is ERC4626, ReentrancyGuard, Pausable, Ownable {
     /// @dev totalAssets excludes pending fees so the fee stream is isolated
     ///      from share-price growth.
     function totalAssets() public view override returns (uint256) {
-        return IERC20(asset()).balanceOf(address(this)) - totalPendingFees;
+        // Clamp on underflow: if the vault took losses big enough that balance
+        // dropped below totalPendingFees, share-price falls to 0 instead of
+        // reverting every view call. Pending fees become a socialised loss
+        // claimed against whatever balance remains.
+        uint256 bal = IERC20(asset()).balanceOf(address(this));
+        return bal > totalPendingFees ? bal - totalPendingFees : 0;
+    }
+
+    /// @notice True iff the vault holds enough USDC to back every accrued
+    ///         pending fee. Off-chain monitors should alert when this is false.
+    function isFullyBacked() external view returns (bool) {
+        return IERC20(asset()).balanceOf(address(this)) >= totalPendingFees;
     }
 
     /// @dev Shares are soulbound. Allow mint (from=0) and burn (to=0) only.
     function _update(address from, address to, uint256 value) internal override {
         require(from == address(0) || to == address(0), "soulbound");
 
-        // Accrue fees up to current index BEFORE changing weights / balances.
+        // Accrue fees up to current index BEFORE changing balances.
         if (from != address(0)) _accrueFees(from);
         if (to   != address(0)) _accrueFees(to);
 
-        // Update fee weight tracking on mint/burn.
-        if (from == address(0)) {
-            totalFeeWeight += _weightOf(to, value);
-        } else if (to == address(0)) {
-            uint256 w = _weightOf(from, value);
-            totalFeeWeight = totalFeeWeight > w ? totalFeeWeight - w : 0;
-        }
-
         super._update(from, to, value);
+
+        // Re-sync cached weight AFTER balances move.
+        if (from != address(0)) _syncWeight(from);
+        if (to   != address(0)) _syncWeight(to);
     }
 
     /// @dev Withdraws are constrained by locked exposure across all markets.
@@ -159,20 +173,19 @@ contract LiquidityPool is ERC4626, ReentrancyGuard, Pausable, Ownable {
         require(assets >= MIN_DEPOSIT, "below min deposit");
 
         bool firstTime = !hasBeenLP[receiver];
+        bool getGenesis = firstTime && genesisCount < GENESIS_MAX;
         if (firstTime) {
             hasBeenLP[receiver] = true;
-            if (genesisCount < GENESIS_MAX) {
-                isGenesis[receiver] = true;
+            if (getGenesis) {
                 genesisCount += 1;
+                // Mint NFT BEFORE super.deposit so _syncWeight inside the mint
+                // path picks up Genesis weight correctly.
+                genesisNFT.mint(receiver, genesisCount);
+                emit GenesisMinted(receiver, genesisCount);
             }
         }
 
         shares = super.deposit(assets, receiver);
-
-        if (firstTime && isGenesis[receiver]) {
-            genesisNFT.mint(receiver, genesisCount);
-            emit GenesisMinted(receiver, genesisCount);
-        }
     }
 
     /// @dev mint(shares, receiver) — also subject to MIN_DEPOSIT and Genesis.
@@ -187,20 +200,17 @@ contract LiquidityPool is ERC4626, ReentrancyGuard, Pausable, Ownable {
         require(assets >= MIN_DEPOSIT, "below min deposit");
 
         bool firstTime = !hasBeenLP[receiver];
+        bool getGenesis = firstTime && genesisCount < GENESIS_MAX;
         if (firstTime) {
             hasBeenLP[receiver] = true;
-            if (genesisCount < GENESIS_MAX) {
-                isGenesis[receiver] = true;
+            if (getGenesis) {
                 genesisCount += 1;
+                genesisNFT.mint(receiver, genesisCount);
+                emit GenesisMinted(receiver, genesisCount);
             }
         }
 
         assets = super.mint(shares, receiver);
-
-        if (firstTime && isGenesis[receiver]) {
-            genesisNFT.mint(receiver, genesisCount);
-            emit GenesisMinted(receiver, genesisCount);
-        }
     }
 
     function withdraw(uint256 assets, address receiver, address owner_)
@@ -252,34 +262,62 @@ contract LiquidityPool is ERC4626, ReentrancyGuard, Pausable, Ownable {
         uint256 amount,
         bool    userIsUp,
         uint256 matchId
-    ) external onlyAuthorizedMarket nonReentrant whenNotPaused returns (bool matched) {
+    )
+        external
+        onlyAuthorizedMarket
+        nonReentrant
+        whenNotPaused
+        returns (uint256 matchedAmount)
+    {
         address market = msg.sender;
 
         uint256 ta = totalAssets();
-        if (ta == 0) return false;
+        if (ta == 0 || amount == 0) return 0;
 
-        uint256 globalCap   = ta * GLOBAL_MAX_EXPOSURE_BPS     / 10_000;
-        uint256 marketCap   = ta * PER_MARKET_MAX_EXPOSURE_BPS / 10_000;
-        uint256 globalAvail = globalCap > totalExposure         ? globalCap - totalExposure         : 0;
-        uint256 marketAvail = marketCap > marketExposure[market]? marketCap - marketExposure[market]: 0;
+        uint256 globalCap   = (ta * GLOBAL_MAX_EXPOSURE_BPS)     / 10_000;
+        uint256 marketCap   = (ta * PER_MARKET_MAX_EXPOSURE_BPS) / 10_000;
+        uint256 globalAvail = globalCap > totalExposure          ? globalCap - totalExposure          : 0;
+        uint256 marketAvail = marketCap > marketExposure[market] ? marketCap - marketExposure[market] : 0;
         uint256 maxMatch    = globalAvail < marketAvail ? globalAvail : marketAvail;
 
-        if (maxMatch == 0) return false;
+        if (maxMatch == 0) return 0;
 
-        uint256 matchAmount = amount <= maxMatch ? amount : maxMatch;
+        matchedAmount = amount <= maxMatch ? amount : maxMatch;
 
-        totalExposure              += matchAmount;
-        marketExposure[market]     += matchAmount;
+        totalExposure              += matchedAmount;
+        marketExposure[market]     += matchedAmount;
         activeMatches[market][matchId] = ActiveMatch({
-            amount:    matchAmount,
+            amount:    matchedAmount,
             lpIsDown:  userIsUp,
             settled:   false
         });
 
-        IERC20(asset()).safeTransfer(market, matchAmount);
+        IERC20(asset()).safeTransfer(market, matchedAmount);
 
-        emit MatchTaken(market, matchId, orderId, matchAmount);
-        return true;
+        emit MatchTaken(market, matchId, orderId, matchedAmount);
+    }
+
+    /**
+     * @notice Called by an authorized market when a match is emergency-refunded
+     *         (matched but never settled within OrderbookMarket.SETTLE_GRACE).
+     *         Just unlocks exposure — market has already returned the LP stake.
+     *         No P&L change; no fee accrual.
+     */
+    function onMatchRefunded(uint256 matchId)
+        external
+        onlyAuthorizedMarket
+        nonReentrant
+    {
+        address market = msg.sender;
+        ActiveMatch storage am = activeMatches[market][matchId];
+        require(am.amount > 0, "match not found");
+        require(!am.settled,   "already settled");
+        am.settled = true;
+
+        totalExposure          -= am.amount;
+        marketExposure[market] -= am.amount;
+
+        emit MatchResult(market, matchId, false, am.amount);
     }
 
     function onMatchSettled(uint256 matchId, bool upWon)
@@ -311,15 +349,52 @@ contract LiquidityPool is ERC4626, ReentrancyGuard, Pausable, Ownable {
         emit MatchResult(market, matchId, lpWon, am.amount);
     }
 
+    // ── GENESIS HOOK (callable only by GenesisNFT) ─────────
+    /**
+     * @notice Called by GenesisNFT on every transfer (incl. mint/burn) so the
+     *         pool can reflect the new Genesis owner in the fee-stream weights.
+     *         No-op for self-transfers.
+     */
+    function onGenesisTransfer(address from, address to) external {
+        require(msg.sender == address(genesisNFT), "only genesis nft");
+        if (from == to) return;
+        // Accrue pending fees with the OLD weight before resyncing.
+        if (from != address(0)) _accrueFees(from);
+        if (to   != address(0)) _accrueFees(to);
+        if (from != address(0)) _syncWeight(from);
+        if (to   != address(0)) _syncWeight(to);
+    }
+
     // ── FEE STREAM ─────────────────────────────────────────
-    function _weightOf(address lp, uint256 shareAmount) internal view returns (uint256) {
-        return isGenesis[lp]
-            ? (shareAmount * GENESIS_BOOST_BPS) / 10_000
-            : shareAmount;
+    /// @dev Genesis status is derived from NFT ownership — transfer the NFT,
+    ///      transfer the boost.
+    function isGenesis(address lp) public view returns (bool) {
+        return address(genesisNFT) != address(0) && genesisNFT.balanceOf(lp) > 0;
+    }
+
+    function _intendedWeight(address lp) internal view returns (uint256) {
+        uint256 sh = balanceOf(lp);
+        if (sh == 0) return 0;
+        return isGenesis(lp) ? (sh * GENESIS_BOOST_BPS) / 10_000 : sh;
     }
 
     function _currentWeight(address lp) internal view returns (uint256) {
-        return _weightOf(lp, balanceOf(lp));
+        return _lpWeight[lp];
+    }
+
+    /// @dev Reconcile _lpWeight[lp] and totalFeeWeight with the LP's
+    ///      current intent (balance × boost). Must run AFTER fees are accrued.
+    function _syncWeight(address lp) internal {
+        uint256 oldW = _lpWeight[lp];
+        uint256 newW = _intendedWeight(lp);
+        if (newW == oldW) return;
+        if (newW > oldW) {
+            totalFeeWeight += newW - oldW;
+        } else {
+            uint256 d = oldW - newW;
+            totalFeeWeight = totalFeeWeight > d ? totalFeeWeight - d : 0;
+        }
+        _lpWeight[lp] = newW;
     }
 
     function _accrueFee(uint256 amount) internal {

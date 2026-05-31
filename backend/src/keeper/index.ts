@@ -4,6 +4,9 @@ import { refundExpiredOrders }    from './refundExpired.js'
 import { indexerTick }            from './indexer.js'
 import { recordPricesOnChain }    from './onchainPriceRecorder.js'
 import { settlePendingMarkets }   from './resolveKeeper.js'
+import { oracleWatchdogTick }     from './oracleWatchdog.js'
+import { createMissingMarkets }   from './marketCreator.js'
+import { invariantTick }          from './invariantMonitor.js'
 import { runMigrations }          from '../db/migrate.js'
 import { pg }                     from '../db/pg.js'
 import { redis }                  from '../db/redis.js'
@@ -34,8 +37,11 @@ async function start() {
   await loop('indexer',              indexerTick,            45_000)
   await loop('resolveKeeper',        settlePendingMarkets,   60_000)
   await loop('refundExpired',        refundExpiredOrders,    5 * 60_000)
+  await loop('oracleWatchdog',       oracleWatchdogTick,     90_000)
+  await loop('marketCreator',        createMissingMarkets,   5 * 60_000)
+  await loop('invariantMonitor',     invariantTick,          60_000)
 
-  console.log('Keeper running: priceOffchain/30s, priceOnchain/30s, snapshots/60s, indexer/45s, resolver/60s, refund/5m')
+  console.log('Keeper running: priceOffchain/30s, priceOnchain/30s, snapshots/60s, indexer/45s, resolver/60s, refund/5m, watchdog/90s, createMarkets/5m, invariant/60s')
 }
 
 start().catch((err) => {

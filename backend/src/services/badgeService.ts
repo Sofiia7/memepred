@@ -1,6 +1,7 @@
 import { createWalletClient, http } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
-import { base } from 'viem/chains'
+import { base, baseSepolia } from 'viem/chains'
+const chain = process.env.CHAIN_ID === '8453' ? base : baseSepolia
 import { pg }   from '../db/pg.js'
 import { BADGE_NFT_ABI, BADGE_NFT_ADDRESS, BASE_RPC_URL } from '../config.js'
 
@@ -9,7 +10,7 @@ const account = process.env.BADGE_MINTER_KEY
   : null
 
 const client = account
-  ? createWalletClient({ account, chain: base, transport: http(BASE_RPC_URL) })
+  ? createWalletClient({ account, chain, transport: http(BASE_RPC_URL) })
   : null
 
 interface TraderStats {
@@ -87,15 +88,18 @@ export async function checkAndMintBadges(traderAddress: string) {
 }
 
 async function getTraderStats(address: string): Promise<TraderStats> {
+  // Sprint 3.3: rewritten against orders. "Won" derives from payout > 0.
+  // Volume uses filled_amount so a half-filled-then-refunded order doesn't
+  // inflate stats.
   const result = await pg.query(`
     SELECT
-      COUNT(*)                                           AS total_bets,
-      COUNT(*) FILTER (WHERE won = true)                AS won_bets,
-      COALESCE(SUM(amount_usdc), 0)                     AS total_volume,
-      COUNT(*) FILTER (WHERE feed_symbol = 'PEPE')      AS pepe_bets,
-      COUNT(*) FILTER (WHERE feed_symbol = 'BRETT')     AS brett_bets
-    FROM bets
-    WHERE trader_address = $1 AND settled_at IS NOT NULL
+      COUNT(*)                                                       AS total_bets,
+      COUNT(*) FILTER (WHERE COALESCE(payout_usdc, 0) > 0)           AS won_bets,
+      COALESCE(SUM(filled_amount), 0)                                 AS total_volume,
+      COUNT(*) FILTER (WHERE feed_symbol = 'PEPE')                   AS pepe_bets,
+      COUNT(*) FILTER (WHERE feed_symbol = 'BRETT')                  AS brett_bets
+    FROM orders
+    WHERE trader_address = $1 AND status IN ('SETTLED', 'CLAIMED')
   `, [address.toLowerCase()])
 
   const streak = await pg.query(

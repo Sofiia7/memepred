@@ -40,6 +40,7 @@ contract FeeDistributor is Ownable, ReentrancyGuard {
     uint256 public constant NFT_BPS      = 2000; // 20%
 
     mapping(address => uint256) public referralBalance;
+    uint256 public totalReferralOwed;
 
     event MarketFactorySet (address indexed factory);
     event MarketAuthorized (address indexed market);
@@ -99,6 +100,7 @@ contract FeeDistributor is Ownable, ReentrancyGuard {
         uint256 toRef = referrer == address(0) ? 0 : (totalFee * REF_BPS) / 10_000;
         if (toRef > 0) {
             referralBalance[referrer] += toRef;
+            totalReferralOwed         += toRef;
             emit ReferralCredited(referrer, toRef);
         }
 
@@ -119,6 +121,7 @@ contract FeeDistributor is Ownable, ReentrancyGuard {
         amount = referralBalance[msg.sender];
         require(amount > 0, "nothing to claim");
         referralBalance[msg.sender] = 0;
+        totalReferralOwed          -= amount;
         usdc.safeTransfer(msg.sender, amount);
         emit ReferralClaimed(msg.sender, amount);
     }
@@ -135,5 +138,14 @@ contract FeeDistributor is Ownable, ReentrancyGuard {
     function setNftRewardsPool(address _nft) external onlyOwner {
         require(_nft != address(0), "zero");
         nftRewardsPool = _nft;
+    }
+
+    /// @notice Sweep accumulated rounding dust (USDC in the contract beyond what
+    ///         is owed to referrers via pull-pattern) to the treasury.
+    function sweepDust() external onlyOwner returns (uint256 dust) {
+        uint256 bal = usdc.balanceOf(address(this));
+        if (bal <= totalReferralOwed) return 0;
+        dust = bal - totalReferralOwed;
+        usdc.safeTransfer(treasury, dust);
     }
 }

@@ -1,13 +1,25 @@
 # Secrets & Credentials
 .env
 .env.*
+!.env.example
 *.key
 *.pem
 *.json
 !package.json
 !tsconfig.json
 !openclaw.json
+!pnpm-lock.json
+!.github/**/*.json
+!subgraph/**/*.json
+!frontend/**/*.json
+!backend/**/*.json
+!contracts/**/*.json
 secrets.json
+
+# Foundry / build artifacts inside contracts that we still want ignored
+contracts/out/**/*.json
+contracts/cache/**/*.json
+contracts/broadcast/**/*.json
 
 # Python
 __pycache__/
@@ -32,3 +44,17 @@ logs/
 contracts/lib/openzeppelin-contracts/
 contracts/out/
 contracts/cache/
+.testwallets/
+
+# Claude session state
+.claude/
+
+# npm lockfiles (project uses pnpm)
+package-lock.json
+**/package-lock.json
+
+# forge-std generated test fixtures
+contracts/lib/forge-std/test/fixtures/
+
+# wrangler build temp
+workers/.wrangler/

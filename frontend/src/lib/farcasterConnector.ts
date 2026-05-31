@@ -35,7 +35,7 @@ export function farcasterMiniApp() {
 
     async setup() { await loadProvider() },
 
-    async connect() {
+    async connect(_params?: any): Promise<any> {
       const p = await loadProvider()
       if (!p) throw new UserRejectedRequestError(new Error('Not in a Farcaster Mini App'))
       const accounts = await p.request({ method: 'eth_requestAccounts' }) as string[]

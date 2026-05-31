@@ -1,10 +1,33 @@
 {
+  "_comment": "Sprint 5 — Mini App manifest. Replace accountAssociation triple after running `npx @farcaster/miniapp-cli sign` against memepred.xyz.",
   "accountAssociation": {
     "header": "REPLACE_WITH_DEV_PORTAL_SIGNED_HEADER",
     "payload": "REPLACE_WITH_DEV_PORTAL_SIGNED_PAYLOAD",
     "signature": "REPLACE_WITH_DEV_PORTAL_SIGNED_SIGNATURE"
   },
+  "miniapp": {
+    "version": "1",
+    "name": "MemePred",
+    "iconUrl": "https://memepred.xyz/icon-512.png",
+    "homeUrl": "https://memepred.xyz",
+    "imageUrl": "https://memepred.xyz/og-cover.png",
+    "buttonTitle": "🎯 Predict",
+    "splashImageUrl": "https://memepred.xyz/splash.png",
+    "splashBackgroundColor": "#000000",
+    "webhookUrl": "https://api.memepred.xyz/api/farcaster/webhook",
+    "subtitle": "Memecoin PvP prediction markets",
+    "description": "Bet UP or DOWN on memecoin prices over 5min – 24h. PvP orderbook + LP fallback. USDC settled by Pyth. Non-custodial. Auto-spawned markets for /clanker tokens with price feeds.",
+    "primaryCategory": "finance",
+    "tags": ["prediction", "memecoin", "clanker", "base", "pvp", "usdc"],
+    "heroImageUrl": "https://memepred.xyz/og-cover.png",
+    "tagline": "Bet on memes. Win USDC.",
+    "ogTitle": "MemePred — memecoin prediction markets",
+    "ogDescription": "PvP UP/DOWN markets on PEPE, DOGE, and Clanker tokens. Pyth-settled, USDC payouts. Genesis LP NFT for the first 20.",
+    "ogImageUrl": "https://memepred.xyz/og-cover.png",
+    "noindex": false
+  },
   "frame": {
+    "_deprecated": "Kept for back-compat with older clients that still read `frame` instead of `miniapp`. New clients read `miniapp` above.",
     "version": "1",
     "name": "MemePred",
     "iconUrl": "https://memepred.xyz/icon.png",
@@ -13,10 +36,6 @@
     "buttonTitle": "🎯 Predict",
     "splashImageUrl": "https://memepred.xyz/splash.png",
     "splashBackgroundColor": "#0b0b0f",
-    "webhookUrl": "https://api.memepred.xyz/api/farcaster/webhook",
-    "subtitle": "Meme-coin prediction markets",
-    "description": "Bet USDC on meme-coin price direction. PvP orderbook + LP fallback. Built on Base.",
-    "primaryCategory": "finance",
-    "tags": ["prediction", "memecoin", "base", "trading", "defi"]
+    "webhookUrl": "https://api.memepred.xyz/api/farcaster/webhook"
   }
 }

@@ -1,11 +1,20 @@
-import { useState, useCallback } from 'react'
+/**
+ * usePlaceBet — Sprint 4.1 + 4.2
+ *
+ * 4.1: Decodes OrderPlaced from the receipt logs and exposes `orderId`. UI
+ *      can redirect to /order/:address/:orderId immediately after confirm.
+ * 4.2: Reads `market.pythFeedId()` on-chain instead of using a global
+ *      VITE_PYTH_FEED_ID. Per-market feeds are correct for multi-coin.
+ */
+import { useState, useCallback, useEffect } from 'react'
 import {
   useWriteContract,
   useWaitForTransactionReceipt,
   useReadContract,
-  useAccount
+  useAccount,
+  usePublicClient,
 } from 'wagmi'
-import { parseUnits, maxUint256, type Address } from 'viem'
+import { parseUnits, maxUint256, decodeEventLog, type Address, type Hash } from 'viem'
 import { CONTRACTS, ORDERBOOK_MARKET_ABI, ERC20_ABI } from '../lib/contracts'
 
 export type Direction = 0 | 1  // 0=UP, 1=DOWN
@@ -15,8 +24,8 @@ interface UsePlaceBetArgs {
   direction:     Direction
   amountUsd:     string
   referrer?:     Address
-  expectedPrice: bigint   // Pyth price at bet time
-  slippageBps?:  number   // allowed slippage (default 50 = 0.5%)
+  expectedPrice: bigint
+  slippageBps?:  number
 }
 
 type BetStep = 'idle' | 'approving' | 'approved' | 'betting' | 'confirmed' | 'error'
@@ -27,76 +36,134 @@ export function usePlaceBet({
   amountUsd,
   referrer = '0x0000000000000000000000000000000000000000',
   expectedPrice,
-  slippageBps = 100 // Default 1%
+  slippageBps = 100,
 }: UsePlaceBetArgs) {
 
   const { address } = useAccount()
+  const publicClient = usePublicClient()
   const [step, setStep] = useState<BetStep>('idle')
   const [error, setError] = useState<string>()
   const [orderId, setOrderId] = useState<bigint>()
 
   const amountWei = parseUnits(amountUsd || '0', 6)
 
+  // ── 4.2: per-market pythFeedId from the market contract ───
+  const { data: marketFeedId } = useReadContract({
+    address: marketAddress,
+    abi: ORDERBOOK_MARKET_ABI,
+    functionName: 'pythFeedId',
+  })
+
   const { data: allowance, refetch: refetchAllowance } = useReadContract({
     address: CONTRACTS.USDC,
-    abi:     ERC20_ABI,
+    abi: ERC20_ABI,
     functionName: 'allowance',
     args: [address!, marketAddress],
-    query: { enabled: !!address }
+    query: { enabled: !!address },
   })
 
   const { writeContractAsync: approve, data: approveTxHash } = useWriteContract()
-
-  useWaitForTransactionReceipt({
-    hash: approveTxHash,
-    query: { enabled: !!approveTxHash }
-  })
+  useWaitForTransactionReceipt({ hash: approveTxHash, query: { enabled: !!approveTxHash } })
 
   const { writeContractAsync: placeBet, data: betTxHash } = useWriteContract()
-
-  useWaitForTransactionReceipt({
+  const { data: betReceipt, isSuccess: betReceiptOk } = useWaitForTransactionReceipt({
     hash: betTxHash,
-    query: { enabled: !!betTxHash }
+    query: { enabled: !!betTxHash },
   })
+
+  // ── 4.1: decode OrderPlaced log → orderId state ───────────
+  useEffect(() => {
+    if (!betReceiptOk || !betReceipt) return
+    for (const log of betReceipt.logs) {
+      // We only care about logs emitted by the market we just called.
+      if (log.address.toLowerCase() !== marketAddress.toLowerCase()) continue
+      try {
+        const decoded = decodeEventLog({
+          abi: ORDERBOOK_MARKET_ABI,
+          data: log.data,
+          topics: log.topics,
+        }) as any
+        if (decoded.eventName === 'OrderPlaced') {
+          setOrderId(decoded.args.orderId as bigint)
+          break
+        }
+      } catch {
+        // not an OrderPlaced log — skip
+      }
+    }
+  }, [betReceiptOk, betReceipt, marketAddress])
 
   const execute = useCallback(async () => {
     if (!address || amountWei === 0n) return
     setError(undefined)
+    setOrderId(undefined)
 
     try {
       if (!allowance || allowance < amountWei) {
         setStep('approving')
         await approve({
           address: CONTRACTS.USDC,
-          abi:     ERC20_ABI,
+          abi: ERC20_ABI,
           functionName: 'approve',
-          args: [marketAddress, maxUint256]
+          args: [marketAddress, maxUint256],
         })
         await refetchAllowance()
       }
 
       setStep('betting')
-      await placeBet({
-        address:      marketAddress,
-        abi:          ORDERBOOK_MARKET_ABI,
-        functionName: 'placeBet',
-        args: [direction, amountWei, referrer, expectedPrice, slippageBps]
-      })
+
+      // 4.2: fetch fresh Pyth VAA for THIS market's feedId, not a global one.
+      let priceUpdateData: `0x${string}`[] = []
+      let pythFeeWei = 0n
+      if (marketFeedId) {
+        try {
+          const hermes = import.meta.env.VITE_PYTH_HERMES || 'https://hermes.pyth.network'
+          const r = await fetch(
+            `${hermes}/v2/updates/price/latest?ids[]=${marketFeedId}&encoding=hex&parsed=false`,
+          )
+          if (r.ok) {
+            const j = (await r.json()) as { binary: { data: string[] } }
+            priceUpdateData = j.binary.data.map((h) =>
+              (h.startsWith('0x') ? h : `0x${h}`) as `0x${string}`,
+            )
+            pythFeeWei = 100_000_000_000_000n // 0.0001 ETH buffer, contract refunds excess
+          }
+        } catch {
+          // Hermes down → fall back to bare placeBet path; contract uses keeper's recent push.
+        }
+      }
+
+      if (priceUpdateData.length > 0) {
+        await placeBet({
+          address: marketAddress,
+          abi: ORDERBOOK_MARKET_ABI,
+          functionName: 'placeBetWithPyth',
+          args: [direction, amountWei, referrer, expectedPrice, BigInt(slippageBps), priceUpdateData],
+          value: pythFeeWei,
+        })
+      } else {
+        await placeBet({
+          address: marketAddress,
+          abi: ORDERBOOK_MARKET_ABI,
+          functionName: 'placeBet',
+          args: [direction, amountWei, referrer, expectedPrice, BigInt(slippageBps)],
+        })
+      }
 
       setStep('confirmed')
     } catch (err: any) {
       setStep('error')
       setError(err?.shortMessage || err?.message || 'Transaction failed')
     }
-  }, [address, amountWei, allowance, direction, marketAddress, referrer, expectedPrice, slippageBps])
+  }, [address, amountWei, allowance, direction, marketAddress, referrer, expectedPrice, slippageBps, marketFeedId, approve, refetchAllowance, placeBet])
 
   return {
     execute,
     step,
     error,
     betTxHash,
-    orderId,
-    isLoading:   step === 'approving' || step === 'betting',
-    isConfirmed: step === 'confirmed'
+    orderId, // Sprint 4.1: now populated after confirmation
+    isLoading: step === 'approving' || step === 'betting',
+    isConfirmed: step === 'confirmed',
   }
 }

@@ -74,9 +74,11 @@ export async function marketsRoutes(app: FastifyInstance) {
       downPool:   parseFloat(r.down_pool),
     }
 
+    // Sprint 3.3: orders instead of bets. "won" is derived from payout.
     const bets = await pg.query(
-      `SELECT trader_address, direction, amount_usdc, won, payout_usdc, placed_at
-       FROM bets WHERE market_address = $1 ORDER BY placed_at DESC`,
+      `SELECT trader_address, direction, amount_usdc, filled_amount,
+              COALESCE(payout_usdc, 0) > 0 AS won, payout_usdc, placed_at, status
+       FROM orders WHERE market_address = $1 ORDER BY placed_at DESC`,
       [p.address]
     )
 
@@ -91,11 +93,11 @@ export async function marketsRoutes(app: FastifyInstance) {
     const cached = await redis.get(cacheKey)
     if (cached) return JSON.parse(cached)
 
-    // Total volume (sum of bet amounts in last 24h)
+    // Total volume (sum of filled USDC at risk in last 24h)
     const volRes = await pg.query<{ vol: string }>(
-      `SELECT COALESCE(SUM(amount_usdc), 0)::text AS vol
-         FROM bets
-        WHERE placed_at >= NOW() - INTERVAL '24 hours'`
+      `SELECT COALESCE(SUM(filled_amount), 0)::text AS vol
+         FROM orders
+        WHERE placed_at >= NOW() - INTERVAL '24 hours'`,
     )
     const volume24h = parseFloat(volRes.rows[0]?.vol ?? '0')
 

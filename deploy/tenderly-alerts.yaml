@@ -1,0 +1,93 @@
+# Sprint 5.4 — Tenderly alert manifest
+#
+# Import into Tenderly: Dashboard → Alerts → Import. Each alert listens to
+# the event/condition described, posts to Discord (DISCORD_WEBHOOK_URL).
+#
+# Replace ${MARKET_FACTORY}, ${ORACLE_RESOLVER}, ${LIQUIDITY_POOL},
+# ${DISCORD_WEBHOOK_URL}, ${PAGERDUTY_KEY} with real values.
+
+project: memepred
+network: base-sepolia            # change to "base" for mainnet
+deliveryChannels:
+  discord:
+    url: ${DISCORD_WEBHOOK_URL}
+  pagerduty:
+    integrationKey: ${PAGERDUTY_KEY}
+
+alerts:
+  - name: MarketRefunded — emergency refund triggered
+    description: A match was emergency-refunded (oracle/keeper failure).
+    severity: high
+    expression:
+      type: event_emitted
+      contract: ${ORACLE_RESOLVER}
+      event: MarketRefunded(address,string)
+    delivery: [discord, pagerduty]
+
+  - name: OrderbookMarket paused
+    description: A market was paused (auto by emergencyPauser, or by multisig).
+    severity: critical
+    expression:
+      type: event_emitted
+      anyContract: true        # any OrderbookMarket clone
+      event: Paused(address)
+    delivery: [discord, pagerduty]
+
+  - name: Fee changed on a market
+    description: Multisig executed applyNewFee.
+    severity: info
+    expression:
+      type: event_emitted
+      anyContract: true
+      event: FeeChanged(uint256)
+    delivery: [discord]
+
+  - name: Large LP withdrawal (>10% of vault)
+    description: A withdrawal that drained > 10% of LP vault in a single tx.
+    severity: high
+    expression:
+      type: event_emitted
+      contract: ${LIQUIDITY_POOL}
+      event: Withdraw(address,address,address,uint256,uint256)
+      filter:
+        # >10% of totalAssets at the time of the event
+        condition: assets > totalAssets() * 0.10
+    delivery: [discord]
+
+  - name: OracleResolver ETH balance low
+    description: Resolver ETH < 0.05 ETH (Pyth fees will start to fail soon).
+    severity: high
+    expression:
+      type: balance_below
+      address: ${ORACLE_RESOLVER}
+      thresholdEth: 0.05
+    delivery: [discord]
+
+  - name: OracleResolver ETH balance critical
+    description: Resolver ETH < 0.005 ETH (next settle WILL fail).
+    severity: critical
+    expression:
+      type: balance_below
+      address: ${ORACLE_RESOLVER}
+      thresholdEth: 0.005
+    delivery: [discord, pagerduty]
+
+  - name: Multisig ownership change
+    description: Any contract's owner transferred away from the multisig.
+    severity: critical
+    expression:
+      type: event_emitted
+      anyContract: true
+      event: OwnershipTransferred(address,address)
+      filter:
+        condition: previousOwner == "${MULTISIG_ADDRESS}"
+    delivery: [discord, pagerduty]
+
+  - name: Emergency pauser changed
+    description: MarketFactory emergencyPauser address rotated.
+    severity: high
+    expression:
+      type: event_emitted
+      contract: ${MARKET_FACTORY}
+      event: EmergencyPauserSet(address)
+    delivery: [discord]

@@ -10,6 +10,7 @@ import { leaderboardRoutes } from './routes/leaderboard.js'
 import { profileRoutes }     from './routes/profile.js'
 import { referralRoutes }    from './routes/referral.js'
 import poolRoutes            from './routes/pool.js'
+import { keeperHealthRoutes } from './routes/keeperHealth.js'
 import { pg }                from './db/pg.js'
 import { runMigrations }     from './db/migrate.js'
 import { redis }             from './db/redis.js'
@@ -17,13 +18,16 @@ import { PORT }              from './config.js'
 
 const app = Fastify({ logger: true })
 
-await app.register(cors, {
-  origin: [
-    'https://memepred.xyz',
-    'http://localhost:3000',
-    'http://localhost:5173'
-  ]
-})
+const DEFAULT_ORIGINS = [
+  'https://memepred.xyz',
+  'http://localhost:3000',
+  'http://localhost:5173'
+]
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || '')
+  .split(',').map(s => s.trim()).filter(Boolean)
+const corsOrigins = allowedOrigins.length > 0 ? allowedOrigins : DEFAULT_ORIGINS
+
+await app.register(cors, { origin: corsOrigins })
 
 await app.register(rateLimit, {
   max: 100,
@@ -36,6 +40,7 @@ await app.register(leaderboardRoutes, { prefix: '/api/leaderboard' })
 await app.register(profileRoutes,     { prefix: '/api/profile' })
 await app.register(referralRoutes,    { prefix: '/api/referral' })
 await app.register(poolRoutes)        // mounts /api/pool/*
+await app.register(keeperHealthRoutes)// mounts /api/keeper/health
 
 app.get('/health', async () => ({ status: 'ok', ts: Date.now() }))
 
