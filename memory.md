@@ -59,11 +59,14 @@ was non-functional (env.ts assertEnv throws on missing). Added 13 VITE_* vars (c
 STILL TODO (ops): VITE_API_URL not set — needs a REAL public backend URL (only local docker
 exists). Vite bakes env at BUILD → prod redeploy required after VITE_API_URL is decided,
 else site still shows fatal env screen. Old 0x59385ca6 set DEAD.
-CONFIRMED-BROKEN (5H.3 was NOT actually done): invariantMonitor.ts + 003_invariants.sql use
-naive expected = deposits-claims-refunds and actual = sum(market USDC only) — ignores LP-pool
-injections + FeeDistributor → false 'critical' once LP matching active. No migration 004 exists.
-Needs a real LP-aware accounting fix (not cosmetic). Migration 002 duplicate (002_add_order_id
-+ 002_orderbook_schema) is COSMETIC only — files are independent, no ordering bug.
+FIXED 2026-07-02 (5H.3 done for real): migration 004_invariant_lp_fix.sql redefines the
+invariant per-market as A+B+C = unmatched-refundable-remainder + 2×(unsettled-match amount)
++ unclaimed-payout. LP-agnostic (LP-injected funds are the counterparty side of B and cancel
+on LP win as the match flips settled). invariantMonitor.ts logic unchanged — reads the
+corrected protocol_usdc_summary.expected_onchain_balance vs Σ on-chain balanceOf(market).
+Verified via seeded rollback test: expected=31 on A7/B16/C8, CLAIMED/REFUNDED excluded.
+004 uses DROP+CREATE (003's view columns differ) and is idempotent. Migration 002 duplicate
+(002_add_order_id + 002_orderbook_schema) is COSMETIC only — files independent, no ordering bug.
 Secrets rotated same day — see docs/SECRET-ROTATION.md. Diagnostic: scripts/check-testnet.sh.
 Local docker stack (postgres/redis/backend) verified up on rotated secrets; keeper svc left OFF.
 

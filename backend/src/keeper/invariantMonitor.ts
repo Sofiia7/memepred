@@ -3,11 +3,18 @@
  *
  * Periodic USDC conservation check across the orderbook.
  *
+ * Per-market invariant (LP-aware, see migration 004): a market's on-chain USDC
+ * balance must equal what it still OWES —
+ *   A unmatched refundable remainder + B funds locked in unsettled matches (2×)
+ *   + C settled-but-unclaimed user winnings.
+ * LP-injected funds are the counterparty side of B and cancel on LP win (2×amount
+ * leaves to the pool as the match flips to settled), so LP flow no longer drifts.
+ * Pool/FeeDistributor solvency is out of scope (LiquidityPool.isFullyBacked()).
+ *
  * Loop:
- *   1. Sum deposits / claims / refunds from `orders` table.
- *   2. Sum on-chain USDC balance across all known market addresses.
- *   3. Compare: expected_balance = deposits - claims - refunds.
- *      drift = abs(actual - expected).
+ *   1. expected = Σ per-market (A+B+C)  ← protocol_usdc_summary.expected_onchain_balance
+ *   2. actual   = Σ on-chain USDC balanceOf(market) across all known markets.
+ *   3. drift = abs(actual - expected).
  *   4. Write a row into invariant_snapshots with alert_level:
  *        ok       — drift ≤ 1 USDC (rounding + indexer lag)
  *        warn     — drift ≤ 10 USDC (indexer probably catching up)
