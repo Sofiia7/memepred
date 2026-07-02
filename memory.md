@@ -43,6 +43,20 @@ DEAD — old resolver 0x2D0a8a10 has ~0.0006 ETH stuck.
 PROVEN on-chain: deploy ✓, marketCreator role (keeper spawns markets w/o owner) ✓,
 market auto-authorizes on LP pool ✓.
 
+CONFIG RECONCILIATION (2026-07-02): found deploy/.env + frontend/.env.local (and the
+deployed Vercel frontend) were still pointed at an OLD, undocumented deploy
+(factory 0x59385ca6…, resolver 0xbbd2dab7…, badge 0x90d22B3e…) that LACKS the marketCreator
+role model — verified on-chain: 0x59385ca6.marketCreator() REVERTS, keeper 0xbFa0 has no
+roles there. Repointed deploy/.env + frontend/.env.local to the CURRENT 0xFA747 set (above)
+and switched deploy KEEPER_PRIVATE_KEY off the reused deployer key to the real keeper key
+(keeper.json 0xbFa0 — verified marketCreator on factory + KEEPER_ROLE on resolver 0x697BDC64).
+Old 0x59385ca6 set now DEAD (its markets 0x79f25…/0xF617… abandoned).
+STILL TODO (ops, off-machine): (a) update VERCEL project env to the 0xFA747 set — the
+deployed site still serves the dead 0x59385ca6 set until then; (b) BADGE_NFT 0x25d87695 has
+MINTER_ROLE granted to NOBODY → owner must addMinter(0xb183…) AND fund 0xb183 (0 ETH now).
+Secrets rotated same day — see docs/SECRET-ROTATION.md. Diagnostic: scripts/check-testnet.sh.
+Local docker stack (postgres/redis/backend) verified up on rotated secrets; keeper svc left OFF.
+
 FUNDING (low!): deployer ~0.0002, keeper ~0.0003, new resolver ~0.0004 ETH.
 For a real 48h / 50-bot soak the user MUST top up: deployer+keeper ~0.05 ETH each,
 resolver ~0.02 ETH, plus testnet USDC faucet for bot funding wallet. .env deduped (.env.before-dedup backup).
