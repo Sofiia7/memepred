@@ -51,9 +51,19 @@ roles there. Repointed deploy/.env + frontend/.env.local to the CURRENT 0xFA747 
 and switched deploy KEEPER_PRIVATE_KEY off the reused deployer key to the real keeper key
 (keeper.json 0xbFa0 — verified marketCreator on factory + KEEPER_ROLE on resolver 0x697BDC64).
 Old 0x59385ca6 set now DEAD (its markets 0x79f25…/0xF617… abandoned).
-STILL TODO (ops, off-machine): (a) update VERCEL project env to the 0xFA747 set — the
-deployed site still serves the dead 0x59385ca6 set until then; (b) BADGE_NFT 0x25d87695 has
-MINTER_ROLE granted to NOBODY → owner must addMinter(0xb183…) AND fund 0xb183 (0 ETH now).
+DONE 2026-07-02: (a) BADGE_NFT 0x25d87695 addMinter(0xb183…) — MINTER_ROLE granted, verified
+(tx 0xe45c67b96282921b91d39bfe7971dd7b579eb09b8a186427fd0d41560b433d67); 0xb183 STILL needs
+ETH gas (0 now). (b) Vercel project (memepred-frontend) had ZERO env vars → deployed prod site
+was non-functional (env.ts assertEnv throws on missing). Added 13 VITE_* vars (canonical
+0xFA747 set + rpc/network/pyth/graph) to PRODUCTION via CLI.
+STILL TODO (ops): VITE_API_URL not set — needs a REAL public backend URL (only local docker
+exists). Vite bakes env at BUILD → prod redeploy required after VITE_API_URL is decided,
+else site still shows fatal env screen. Old 0x59385ca6 set DEAD.
+CONFIRMED-BROKEN (5H.3 was NOT actually done): invariantMonitor.ts + 003_invariants.sql use
+naive expected = deposits-claims-refunds and actual = sum(market USDC only) — ignores LP-pool
+injections + FeeDistributor → false 'critical' once LP matching active. No migration 004 exists.
+Needs a real LP-aware accounting fix (not cosmetic). Migration 002 duplicate (002_add_order_id
++ 002_orderbook_schema) is COSMETIC only — files are independent, no ordering bug.
 Secrets rotated same day — see docs/SECRET-ROTATION.md. Diagnostic: scripts/check-testnet.sh.
 Local docker stack (postgres/redis/backend) verified up on rotated secrets; keeper svc left OFF.
 
