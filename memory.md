@@ -11,7 +11,7 @@ Original findings (all now fixed — see "Sprint 5.5" section below for what cha
 
 ## Sprint 5.5 — audit fixes session (2026-07-05)
 
-All done via TDD (forge test, red→green), branch `sprint-0-5-hardening`, NOT committed yet (user hasn't asked for a commit). 144 forge tests green (was 130). Frontend/backend typecheck clean.
+All done via TDD (forge test, red→green), branch `sprint-0-5-hardening`. Committed 2026-07-05 (commit 25dd51e) once user asked to proceed with the audit plan. 144 forge tests green (was 130). Frontend/backend typecheck clean.
 
 Contracts changed: OrderbookMarket.sol (pendingSettlementsHead, LP_TAKER_FEE_BPS, MAX_TRADER_LP_EXPOSURE, _tryLpMatch extracted to fix stack-too-deep), OracleResolver.sol (TWAP_WINDOW_CAP/MIN_TWAP_WINDOW/_twapWindowFor), MarketFactory.sol (MIN_CREATE_INTERVAL dedup guard).
 Tests added: OrderbookMarketAccounting.t.sol (+1), LiquidityPool.t.sol (+3), MarketFactory.t.sol (+5), OracleResolver.t.sol (+5, closed the resolveOrderbookMatch/Batch coverage gap — those are the ACTUAL functions resolveKeeper.ts calls and had near-zero coverage before).
@@ -41,6 +41,63 @@ MarketChart.tsx "volume mode stub" noted in the original audit is STALE — the 
 
 Still blocked, unchanged: Sepolia redeploy (Task #5, wallets being topped up now), public backend URL (Task #6, needs a hosting decision), 48h soak (Task #7, blocked on #5), external audit/bug bounty/mainnet (Task #11, needs explicit go-ahead + real money).
 
+## Full audit + grant-prep session (2026-07-05, later same day)
+
+User asked for a full ТЗ-vs-code audit (competitors, security, gaps), then "фаза а б с делай" — execute the audit's recommended plan — plus start grant prep.
+
+**Deploy-set confusion RESOLVED — a 3rd, undocumented deploy is the real canonical one.**
+Before touching memory, verified live on-chain rather than trusting any prior note (all previous
+entries below about "CURRENT contracts = 0xFA747…" are now STALE). `.env` / `frontend/.env.local` /
+`subgraph/subgraph.yaml` all already point at a **3rd deploy**, factory `0x77cb2EE5695CfFD3bD2043afe7eb910Ec0fe71b0`,
+that was never logged in memory. Checked on-chain and it is fully wired — better than the documented
+2nd deploy:
+- `factory.owner()` = `0xAA1a14ad2f57fc79Ac14b2Cf5e2968Fdaeb9047F` (multisig stand-in) — full ownership
+  handoff succeeded this time (unlike the 2nd deploy's documented out-of-gas mid-handoff).
+- `marketCreator()` and `emergencyPauser()` both = keeper `0xbFa0…` ✓; resolver `KEEPER_ROLE` granted to
+  keeper ✓; badge NFT `MINTER_ROLE` granted to badge-minter `0xb183…` ✓.
+- LP pool / GenesisNFT / FeeDistributor / ReferralRegistry all owner()'d by the multisig stand-in and
+  correctly point `marketFactory()` back at `0x77cb2EE5…`.
+- All 13 Tier A feeds whitelisted (PEPE/DOGE + 11 Base-native memes from `docs/sprint5/pyth-feeds-base-memes.md`).
+- **16 markets already auto-spawned on the PEPE feed** by the keeper's `marketCreator` cron (5-min
+  rollover) — but `nextOrderId() == 1` on the oldest one, i.e. **zero real orders ever placed**. This
+  is almost certainly why the keeper wallet is now down to dust (see funding check below): the
+  create-market cron kept firing every 5 min and burned through whatever gas it had, with no bot-harness
+  or real users ever exercising the markets it made.
+
+**Superseded:** the 2nd deploy documented below (factory `0xFA747ac474eF282B6BEFAb787cF949454b826e51`,
+deployer-owned, marketCreator set manually) and the earlier `0x59385ca6…` set are both DEAD — nothing
+points at them anymore. Do not redeploy again without checking on-chain state first; this session found
+memory itself was two deploys behind reality.
+
+**Actual current Sepolia wallet balances (checked via `cast balance`, not assumed):**
+deployer `0x12f9B9…` = 0.000599 ETH, keeper `0xbFa008…` = 0.0000033 ETH (dust — cannot cover even one
+tx), badge-minter `0xb183b0…` = 0 ETH. The "funding (low!)" note further down this file is stale by an
+order of magnitude — real numbers are worse. **48h soak (Task #7) is still hard-blocked on funding**;
+told the user directly rather than assuming a prior top-up happened.
+
+**Security fixes from the full audit (3 findings, all TDD, commit 7e3dfcb, 176 forge tests green):**
+- S1: `OrderbookMarket.settleMatch` had no upper bound on settlement age — a keeper resuming after
+  24h+ downtime could settle a match on whatever price was current at resume time instead of being
+  forced onto `emergencyRefundMatch`. Fixed: reverts past `settleAt + SETTLE_GRACE` with "settlement
+  window expired".
+- S4: `ReferralRegistry.generateCode(referrer)` was callable by anyone for any address (griefing, not
+  fund-loss). Fixed: `require(msg.sender == referrer)` + collision guard on the bytes6 code. Verified
+  frontend (`useReferral.ts`) already always calls it with the connected wallet's own address — no
+  frontend change needed.
+- S5: `MarketFactory.getAllFeedIds()` returned removed feeds forever (off-chain `marketCreator.ts`
+  polls this) and `addFeed` duplicated re-added feeds in the backing array. Fixed: view now filters to
+  `allowedFeeds==true`; add is dedup'd via a `_feedSeen` mapping.
+
+Not yet done from the audit's Phase A: coverage still short of the 95% target (GenesisNFT/OracleResolver/
+OrderbookMarket branch gaps); backend hosting decision still open (see docs/legal, deploy/docker-compose.yml
+already assumes a Linux VPS + Caddy — this Windows dev machine is not that VPS).
+
+**Grant prep started:** identified Pyth Ecosystem Developer Grants (paid in PYTH, not USD) as a second
+track alongside CEF — good fit given the duration-scaled TWAP + spread-anomaly-guard work is a genuinely
+novel Pyth integration pattern worth writing up. CEF note in `docs/sprint5/cef-application.md` still has
+its 2 documented blockers open (Farcaster `accountAssociation` signature — only Sofia can do this in
+Warpcast Dev Tools; public `VITE_API_URL` — needs the VPS decision above).
+
 ## Sprint progress
 
 - [x] Sprint 0 — Toolchain & CI hotfix (migration 001 fixed, .nvmrc/.foundry-version/.tool-versions, root package.json + pnpm-workspace.yaml, .github/workflows/ci.yml + scripts/ci-db-smoke.mjs, .env.example refresh, .gitignore negation rules)
@@ -51,7 +108,11 @@ Still blocked, unchanged: Sepolia redeploy (Task #5, wallets being topped up now
 - [~] Sprint 5 — Testnet soak + CEF apply (in progress; CONTRACTS DEPLOYED to Base Sepolia, VerifyRoles ALL GREEN)
 - [ ] Sprint 6 — Audit & Legal
 
-## Base Sepolia deployment (chainId 84532) — CURRENT (2nd deploy, with marketCreator role)
+## Base Sepolia deployment (chainId 84532) — SUPERSEDED (2nd deploy). See the
+## "Full audit + grant-prep session (2026-07-05)" entry above for the REAL
+## current deploy (3rd, factory 0x77cb2EE5695CfFD3bD2043afe7eb910Ec0fe71b0),
+## verified fully-wired on-chain. Everything below this line describes a dead
+## deploy; kept only as handoff-mechanics history, not as current state.
 
 EOAs (same across deploys; keys in .testwallets/):
 - Deployer / testnet admin: 0x12f9B9De75ccEa7be573F643A99AAA63b9448BD2  (owns all contracts — see handoff note)
@@ -111,9 +172,11 @@ Verified via seeded rollback test: expected=31 on A7/B16/C8, CLAIMED/REFUNDED ex
 Secrets rotated same day — see docs/SECRET-ROTATION.md. Diagnostic: scripts/check-testnet.sh.
 Local docker stack (postgres/redis/backend) verified up on rotated secrets; keeper svc left OFF.
 
-FUNDING (low!): deployer ~0.0002, keeper ~0.0003, new resolver ~0.0004 ETH.
-For a real 48h / 50-bot soak the user MUST top up: deployer+keeper ~0.05 ETH each,
-resolver ~0.02 ETH, plus testnet USDC faucet for bot funding wallet. .env deduped (.env.before-dedup backup).
+FUNDING (STALE — see 2026-07-05 audit session entry above for real current balances,
+checked via `cast balance`, not this note's numbers): deployer ~0.0002, keeper ~0.0003,
+new resolver ~0.0004 ETH. For a real 48h / 50-bot soak the user MUST top up: deployer+keeper
+~0.05 ETH each, resolver ~0.02 ETH, plus testnet USDC faucet for bot funding wallet.
+.env deduped (.env.before-dedup backup).
 - [ ] Sprint 7 — Mainnet launch
 
 ## ⚠ Sprint 5 — Clanker Ecosystem Fund (CEF) plan — DO NOT FORGET
