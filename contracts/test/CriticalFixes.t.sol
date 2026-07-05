@@ -104,6 +104,32 @@ contract CriticalFixesTest is Test {
         market.settleMatch(1, ENTRY_PRICE + 100);
     }
 
+    // ── S1 (audit 2026-07-05): settleMatch must not accept a settlement
+    //    once the SETTLE_GRACE window has elapsed. Before this fix, a keeper
+    //    that came back online after 24h+ of downtime could still call
+    //    settleMatch with whatever the CURRENT price happened to be — settling
+    //    the match on a price from long after the intended settlement time
+    //    instead of routing to the fair, symmetric emergencyRefundMatch path.
+    function test_SettleMatch_Reverts_AfterGraceWindowExpired() public {
+        vm.prank(alice);
+        market.placeBet(OrderbookMarket.Direction.UP,   25e6, address(0), ENTRY_PRICE, 100);
+        vm.prank(bob);
+        market.placeBet(OrderbookMarket.Direction.DOWN, 25e6, address(0), ENTRY_PRICE, 100);
+
+        // Keeper was down for a long time — well past the point where
+        // settlement is still meaningful.
+        vm.warp(block.timestamp + DURATION + market.SETTLE_GRACE() + 1);
+
+        vm.prank(resolver);
+        vm.expectRevert("settlement window expired");
+        market.settleMatch(1, ENTRY_PRICE + 100);
+
+        // The correct recovery path still works.
+        market.emergencyRefundMatch(1);
+        OrderbookMarket.Order memory ao = market.getOrder(1);
+        assertEq(uint(ao.status), uint(OrderbookMarket.OrderStatus.REFUNDED));
+    }
+
     function test_C2_EmergencyRefundMatch_RevertsBeforeGrace() public {
         vm.prank(alice);
         market.placeBet(OrderbookMarket.Direction.UP,   25e6, address(0), ENTRY_PRICE, 100);

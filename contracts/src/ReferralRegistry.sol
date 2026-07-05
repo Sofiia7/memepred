@@ -54,10 +54,17 @@ contract ReferralRegistry is Ownable {
     }
 
     // ── GENERATE CODE ──────────────────────────────────────
+    /// @notice Audit fix (S4, 2026-07-05): only a referrer can generate their
+    ///         own code — previously anyone could spend an arbitrary address's
+    ///         one-time code slot without consent. Also guards against the
+    ///         (astronomically unlikely, but non-zero in a 48-bit space)
+    ///         event that two different referrers hash to the same code.
     function generateCode(address referrer) external returns (bytes6 code) {
+        require(msg.sender == referrer,               "only self");
         require(referrerToCode[referrer] == bytes6(0), "code exists");
 
         code = bytes6(keccak256(abi.encodePacked(referrer, block.timestamp, blockhash(block.number - 1))));
+        require(codeToReferrer[code] == address(0), "code collision, retry");
         codeToReferrer[code] = referrer;
         referrerToCode[referrer] = code;
 

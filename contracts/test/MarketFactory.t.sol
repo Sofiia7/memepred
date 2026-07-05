@@ -84,6 +84,26 @@ contract MarketFactoryTest is Test {
         assertEq(ids.length, 2);
     }
 
+    // Audit fix (S5, 2026-07-05): getAllFeedIds() is what the off-chain
+    // keeper (marketCreator.ts) polls to decide which feeds to spawn markets
+    // for. Before this fix it kept returning removed feeds forever, forcing
+    // every caller to separately re-check allowedFeeds() to avoid acting on
+    // stale entries.
+    function test_GetAllFeedIds_ExcludesRemovedFeed() public {
+        factory.removeFeed(FEED_PEPE);
+        bytes32[] memory ids = factory.getAllFeedIds();
+        assertEq(ids.length, 1);
+        assertEq(ids[0], FEED_DOGE);
+    }
+
+    function test_AddFeed_ReAdd_DoesNotDuplicateInList() public {
+        factory.removeFeed(FEED_PEPE);
+        factory.addFeed(FEED_PEPE); // re-add the same feed
+        bytes32[] memory ids = factory.getAllFeedIds();
+        assertEq(ids.length, 2, "re-adding an existing feed must not duplicate it");
+        assertTrue(factory.allowedFeeds(FEED_PEPE));
+    }
+
     // ── createMarket ──────────────────────────────────────
     function test_CreateMarket_AuthorizesLP() public {
         vm.prank(resolver);

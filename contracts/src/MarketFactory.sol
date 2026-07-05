@@ -42,6 +42,7 @@ contract MarketFactory is Ownable {
 
     mapping(bytes32 => bool) public allowedFeeds;
     bytes32[] public feedIds;
+    mapping(bytes32 => bool) private _feedSeen; // tracks membership in feedIds[] to prevent dup pushes on re-add
 
     /// @notice Low-trust hot wallet allowed to call `pauseMarketsForFeed`
     ///         (e.g. the keeper) when an oracle feed goes stale. Cannot unpause;
@@ -131,7 +132,10 @@ contract MarketFactory is Ownable {
 
     function addFeed(bytes32 feedId) external onlyOwner {
         allowedFeeds[feedId] = true;
-        feedIds.push(feedId);
+        if (!_feedSeen[feedId]) {
+            _feedSeen[feedId] = true;
+            feedIds.push(feedId);
+        }
     }
 
     function removeFeed(bytes32 feedId) external onlyOwner {
@@ -171,8 +175,21 @@ contract MarketFactory is Ownable {
         return activeMarkets[feedId];
     }
 
+    /// @notice Returns only currently-enabled feeds (Audit fix S5, 2026-07-05:
+    ///         previously returned every feed ever added, including removed
+    ///         ones, forcing every caller — notably the off-chain keeper's
+    ///         marketCreator.ts — to separately re-check allowedFeeds()).
     function getAllFeedIds() external view returns (bytes32[] memory) {
-        return feedIds;
+        uint256 count = 0;
+        for (uint256 i = 0; i < feedIds.length; i++) {
+            if (allowedFeeds[feedIds[i]]) count++;
+        }
+        bytes32[] memory active = new bytes32[](count);
+        uint256 idx = 0;
+        for (uint256 i = 0; i < feedIds.length; i++) {
+            if (allowedFeeds[feedIds[i]]) active[idx++] = feedIds[i];
+        }
+        return active;
     }
 
     function _isDurationAllowed(uint256 dur) internal view returns (bool) {

@@ -50,6 +50,7 @@ contract ReferralRegistryTest is Test {
     }
 
     function test_GenerateCode() public {
+        vm.prank(alice);
         registry.generateCode(alice);
         bytes6 code = registry.referrerToCode(alice);
         assertTrue(code != bytes6(0));
@@ -57,8 +58,19 @@ contract ReferralRegistryTest is Test {
     }
 
     function test_GenerateCode_OnlyOnce() public {
+        vm.prank(alice);
         registry.generateCode(alice);
+        vm.prank(alice);
         vm.expectRevert("code exists");
+        registry.generateCode(alice);
+    }
+
+    // Audit fix (S4, 2026-07-05): generateCode(referrer) was callable by
+    // anyone for any address — no way to steal funds, but it let a
+    // griefer spend an arbitrary address's "first code" slot without consent.
+    function test_GenerateCode_Reverts_NotSelf() public {
+        vm.prank(bob); // bob tries to generate a code on alice's behalf
+        vm.expectRevert("only self");
         registry.generateCode(alice);
     }
 

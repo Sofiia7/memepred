@@ -455,6 +455,12 @@ contract OrderbookMarket is ReentrancyGuard, Pausable {
         require(m.amount > 0,                  "match not found");
         require(!m.settled,                    "already settled");
         require(block.timestamp >= m.settleAt, "too early");
+        // Audit fix (S1, 2026-07-05): a keeper resuming after a long outage
+        // must not settle on whatever price happens to be current at resume
+        // time — that price has nothing to do with the intended settlement
+        // moment. Past SETTLE_GRACE, the only valid path is the symmetric
+        // emergencyRefundMatch (same window emergencyRefundMatch itself uses).
+        require(block.timestamp < m.settleAt + SETTLE_GRACE, "settlement window expired");
 
         m.settled   = true;
         m.exitPrice = exitPrice;
