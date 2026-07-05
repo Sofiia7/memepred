@@ -16,6 +16,7 @@ import {
 } from 'wagmi'
 import { parseUnits, maxUint256, decodeEventLog, type Address, type Hash } from 'viem'
 import { CONTRACTS, ORDERBOOK_MARKET_ABI, ERC20_ABI } from '../lib/contracts'
+import { getPendingReferrer } from '../lib/referral'
 
 export type Direction = 0 | 1  // 0=UP, 1=DOWN
 
@@ -34,7 +35,7 @@ export function usePlaceBet({
   marketAddress,
   direction,
   amountUsd,
-  referrer = '0x0000000000000000000000000000000000000000',
+  referrer = getPendingReferrer(),
   expectedPrice,
   slippageBps = 100,
 }: UsePlaceBetArgs) {

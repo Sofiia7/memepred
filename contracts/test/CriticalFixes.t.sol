@@ -267,6 +267,7 @@ contract CriticalFixesTest is Test {
 
         // Let them all go stale.
         vm.warp(block.timestamp + market.MATCH_TIMEOUT() + 1);
+        pyth.setPrice(bytes32("PEPE/USD"), 914200, -8);
 
         // Now a fresh UP order — scan must stay bounded (< 500k gas).
         uint256 g = gasleft();
@@ -286,6 +287,7 @@ contract CriticalFixesTest is Test {
         market.placeBet(OrderbookMarket.Direction.UP, 5e6, address(0), ENTRY_PRICE, 100);
 
         vm.warp(block.timestamp + market.MATCH_TIMEOUT() + 1);
+        pyth.setPrice(bytes32("PEPE/USD"), 914200, -8);
         market.refundExpired(1);
 
         // New UP order should sit in queue, not match the refunded stale id.

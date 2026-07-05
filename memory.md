@@ -1,5 +1,46 @@
 # Memory Log for memepred
 
+## FULL AUDIT 2026-07-04 — findings, then FIXED 2026-07-05 (see below)
+
+Original findings (all now fixed — see "Sprint 5.5" section below for what changed):
+- **P0 settlement stall**: OrderbookMarket.pendingSettlements is append-only; getReadySettlements(0,25) permanently empties after first 25 settled matches/market → new matches never settle. **FIXED**: head-pointer compaction (pendingSettlementsHead).
+- **P1 LP economics**: LP pool had zero taker-fee/edge, 60s stale entry price exploitable. **FIXED**: LP_TAKER_FEE_BPS (1% on LP-match user wins) + MAX_TRADER_LP_EXPOSURE (300e6 per-trader cap per market instance). Entry-price staleness (60s) NOT yet tightened — see Task #12 follow-up below.
+- **P1 exit-price design**: flat 5-min TWAP ≈ whole match period for 5-min markets. **FIXED**: TWAP window now scales to duration/5 (capped at 5 min, floored at 30s) via OracleResolver._twapWindowFor.
+- **P2 product gaps**: no /refer page, no ShareCard, 6/16 badges TODO. **FIXED**: /refer page added, referral ?ref= capture wired end-to-end (was completely dead before — Composer.tsx never passed referrer!), ShareCard added to OrderStatusCard, all 16 badge conditions implemented.
+- **P2 MarketFactory dedup**: no guard against duplicate (feedId,duration) markets. **FIXED**: MIN_CREATE_INTERVAL=60s cooldown per slot.
+
+## Sprint 5.5 — audit fixes session (2026-07-05)
+
+All done via TDD (forge test, red→green), branch `sprint-0-5-hardening`, NOT committed yet (user hasn't asked for a commit). 144 forge tests green (was 130). Frontend/backend typecheck clean.
+
+Contracts changed: OrderbookMarket.sol (pendingSettlementsHead, LP_TAKER_FEE_BPS, MAX_TRADER_LP_EXPOSURE, _tryLpMatch extracted to fix stack-too-deep), OracleResolver.sol (TWAP_WINDOW_CAP/MIN_TWAP_WINDOW/_twapWindowFor), MarketFactory.sol (MIN_CREATE_INTERVAL dedup guard).
+Tests added: OrderbookMarketAccounting.t.sol (+1), LiquidityPool.t.sol (+3), MarketFactory.t.sol (+5), OracleResolver.t.sol (+5, closed the resolveOrderbookMatch/Batch coverage gap — those are the ACTUAL functions resolveKeeper.ts calls and had near-zero coverage before).
+Coverage: OracleResolver.sol 73.56%→97.70% line. Repo total 77.14%→79.45% line. NOT at 95% target yet (GenesisNFT edge cases, LiquidityPool/MarketFactory branch coverage still gaps) — flagged as follow-up before external audit submission, not silently claimed done.
+
+Frontend changed: lib/referral.ts (new — ?ref= capture + localStorage persistence), App.tsx (wired capture + /refer route), usePlaceBet.ts (referrer defaults to captured referral now, was always zero-address), ShareCard.tsx (new), OrderStatusCard.tsx (+ShareCard on won/claimed), pages/Refer.tsx (new), Portfolio.tsx (link to /refer), index.css (+.osc-* and .share-* — OrderStatusCard was COMPLETELY unstyled since Sprint 4.3, never had CSS at all until now).
+Backend changed: badgeService.ts — implemented all 6 remaining badge conditions (Sniper=streak>=10, Speed=played a 5-min market, To The Moon=won on a >=10% price move, Champion=#1 weekly leaderboard right now, Connector/Network=5/20 active referrals).
+Verified in browser via Preview tool (dev server, VITE_DISABLE_GEOBLOCK=1 added to frontend/.env.local for local-no-backend dev — gitignored, not committed): /refer renders correctly, ?ref= capture fires the resolve call correctly, .osc-* styling applies.
+
+**BLOCKED — needs user action:**
+- Sepolia redeploy (Task #5): deployer/keeper/resolver wallets have ~0.003/0.003/0.0014 ETH — NOT enough for a full 6-contract redeploy + role wiring (same failure mode as the documented prior deploy that ran out of gas mid-script). Needs testnet ETH top-up before redeploy can proceed.
+- Ops/public backend URL (Task #6): needs a real hosting decision (VPS/cloud), not something to pick autonomously.
+- 48h bot-harness soak (Task #7): blocked on #5.
+- External audit + bug bounty + mainnet deploy (Task #11): real money / external party, explicitly waiting for user go-ahead per the audit's own recommendation (don't pay for an audit before fixing known issues — which is now done).
+
+## Sprint 5.5 continued (same day, 2026-07-05) — while user tops up Sepolia wallets
+
+Kept going per user's "work all sprints while I fund wallets" instruction. All contract-side, no funded wallet needed.
+
+**Entry-price staleness (was deferred, now done):** ENTRY_MAX_PRICE_AGE 60s→45s (named constant, was inline `60` in OrderbookMarket._getCurrentPrice). Chose 45s not 20s: tightening further would need the keeper's onchainPriceRecorder push cadence (30s in keeper/index.ts) shortened too, which triples the chronically-underfunded keeper wallet's gas spend — not worth it since placeBetWithPyth (frontend's preferred path when Hermes is reachable) already isn't staleness-bound at all. MockPyth.getPriceNoOlderThan now actually reverts on stale price (was ignoring the `age` param entirely — a real, separate testing gap, since it means this protection had NEVER been exercised anywhere). Fixed the resulting 15 test failures across OrderbookMarketAccounting.t.sol/Integration.t.sol/CriticalFixes.t.sol/OracleResolver.t.sol by refreshing pyth.setPrice at the right points (mostly: real feeds keep publishing continuously, so refreshing per-tick in loops is the *correct* simulation, not a workaround). Root cause of the Integration.t.sol block of 5 was interesting: setUp() itself does a 48h warp to test the fee-timelock, staling the price for every single test in the file — fixed by refreshing price at the end of setUp. New tests proving the protection actually works now: OrderbookMarket.t.sol test_PlaceBet_Reverts_StalePrice / test_PlaceBet_Succeeds_AfterRefreshingStalePrice.
+
+**Coverage push (continued from 79.45%):** added GenesisNFT.t.sol (didn't exist at all — 11 tests, one Solidity gotcha found: try/catch does NOT catch "call to address with no code", only real reverts from callee code — had to use a real mock contract as liquidityPool in test setup, not a plain address, matching how production always has a real contract there anyway), sweepDust tests in FeeDistributor.t.sol, pauseMarketsForFeed/setEmergencyPauser tests in MarketFactory.t.sol, mint()/withdraw()/maxRedeem()/isFullyBacked()/availableForMatching() tests in LiquidityPool.t.sol (these ERC4626 entrypoints were never touched — only deposit()/redeem() were tested before).
+
+**Coverage result: 5 of 8 core contracts now 100% line coverage** (BadgeNFT, FeeDistributor, LiquidityPool, MarketFactory, ReferralRegistry). Remaining: GenesisNFT 90.91%, OracleResolver 97.70%, OrderbookMarket 95.48%. Repo total line coverage 77.14%→84.22% this session (branch 70.19%→75.37%). 172 forge tests green (was 130 at session start).
+
+MarketChart.tsx "volume mode stub" noted in the original audit is STALE — the component has since been rewritten with only price/prob modes, no volume stub exists anymore. Not a real gap; don't chase it.
+
+Still blocked, unchanged: Sepolia redeploy (Task #5, wallets being topped up now), public backend URL (Task #6, needs a hosting decision), 48h soak (Task #7, blocked on #5), external audit/bug bounty/mainnet (Task #11, needs explicit go-ahead + real money).
+
 ## Sprint progress
 
 - [x] Sprint 0 — Toolchain & CI hotfix (migration 001 fixed, .nvmrc/.foundry-version/.tool-versions, root package.json + pnpm-workspace.yaml, .github/workflows/ci.yml + scripts/ci-db-smoke.mjs, .env.example refresh, .gitignore negation rules)

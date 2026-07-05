@@ -76,6 +76,11 @@ contract IntegrationTest is Test {
         vm.warp(block.timestamp + 48 hours + 1);
         market.applyNewFee();
         vm.stopPrank();
+
+        // The 48h timelock warp above staled the oracle price set earlier
+        // in this function — refresh it so every test starts with a fresh
+        // price baseline regardless of the timelock simulation.
+        pyth.setPrice(FEED, 1000, 0);
     }
 
     // ── B2/B5: createMarket authorizes everywhere ────────

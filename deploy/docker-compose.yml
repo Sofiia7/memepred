@@ -85,6 +85,8 @@ services:
       LIQUIDITY_POOL:            ${LIQUIDITY_POOL}
       KEEPER_PRIVATE_KEY:        ${KEEPER_PRIVATE_KEY}
       BADGE_MINTER_PRIVATE_KEY:  ${BADGE_MINTER_PRIVATE_KEY}
+      INDEXER_START_BLOCK:       ${INDEXER_START_BLOCK}
+      CHAIN_ID:                  ${CHAIN_ID:-84532}
 
   caddy:
     image: caddy:2-alpine

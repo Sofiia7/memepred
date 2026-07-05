@@ -176,4 +176,106 @@ contract MarketFactoryTest is Test {
         assertEq(ob.pythFeedId(),              FEED_PEPE);
         assertEq(ob.duration(),                15 minutes);
     }
+
+    // ── duplicate-market guard (Sprint 5.5 audit fix) ─────
+    /// @notice Defense in depth: the off-chain keeper (marketCreator.ts)
+    ///         already dedupes via a DB lookup, but that DB can be stale or
+    ///         desynced. This guards on-chain against a buggy/retried caller
+    ///         spawning two live markets for the same (feedId, duration)
+    ///         back-to-back.
+    function test_CreateMarket_Reverts_DuplicateWithinCooldown() public {
+        vm.startPrank(resolver);
+        factory.createMarket(FEED_PEPE, 15 minutes);
+        vm.expectRevert("duplicate market slot");
+        factory.createMarket(FEED_PEPE, 15 minutes);
+        vm.stopPrank();
+    }
+
+    function test_CreateMarket_DifferentDuration_NotBlockedByCooldown() public {
+        vm.startPrank(resolver);
+        factory.createMarket(FEED_PEPE, 15 minutes);
+        address m2 = factory.createMarket(FEED_PEPE, 5 minutes); // different duration, same feed
+        vm.stopPrank();
+        assertTrue(pool.isAuthorizedMarket(m2));
+    }
+
+    function test_CreateMarket_DifferentFeed_NotBlockedByCooldown() public {
+        vm.startPrank(resolver);
+        factory.createMarket(FEED_PEPE, 15 minutes);
+        address m2 = factory.createMarket(FEED_DOGE, 15 minutes); // different feed, same duration
+        vm.stopPrank();
+        assertTrue(pool.isAuthorizedMarket(m2));
+    }
+
+    function test_CreateMarket_AllowedAfterCooldown() public {
+        vm.startPrank(resolver);
+        factory.createMarket(FEED_PEPE, 15 minutes);
+        vm.warp(block.timestamp + factory.MIN_CREATE_INTERVAL() + 1);
+        address m2 = factory.createMarket(FEED_PEPE, 15 minutes);
+        vm.stopPrank();
+        assertTrue(pool.isAuthorizedMarket(m2));
+    }
+
+    /// @notice The guard must not fight the intended off-chain rollover
+    ///         strategy: marketCreator.ts recreates a market once the
+    ///         current one is ~50% of its way to close (CREATE_LEAD_RATIO),
+    ///         which for the shortest allowed duration (5 min) is 150s —
+    ///         comfortably above any sane anti-duplicate cooldown.
+    function test_CreateMarket_EarlyRolloverAt50Percent_StillWorks() public {
+        vm.startPrank(resolver);
+        factory.createMarket(FEED_PEPE, 5 minutes); // shortest allowed duration
+        vm.warp(block.timestamp + 5 minutes / 2);
+        address m2 = factory.createMarket(FEED_PEPE, 5 minutes);
+        vm.stopPrank();
+        assertTrue(pool.isAuthorizedMarket(m2));
+    }
+
+    // ── emergency pause (Sprint 5.5 coverage hardening) ───
+    function test_SetEmergencyPauser_OnlyOwner() public {
+        vm.prank(makeAddr("rogue"));
+        vm.expectRevert();
+        factory.setEmergencyPauser(keeper);
+
+        factory.setEmergencyPauser(keeper);
+        assertEq(factory.emergencyPauser(), keeper);
+    }
+
+    function test_PauseMarketsForFeed_ByOwner() public {
+        vm.prank(resolver);
+        address m = factory.createMarket(FEED_PEPE, 15 minutes);
+
+        factory.pauseMarketsForFeed(FEED_PEPE);
+        assertTrue(OrderbookMarket(m).paused());
+    }
+
+    function test_PauseMarketsForFeed_ByEmergencyPauser() public {
+        factory.setEmergencyPauser(keeper);
+        vm.prank(resolver);
+        address m = factory.createMarket(FEED_PEPE, 15 minutes);
+
+        vm.prank(keeper);
+        factory.pauseMarketsForFeed(FEED_PEPE);
+        assertTrue(OrderbookMarket(m).paused());
+    }
+
+    function test_PauseMarketsForFeed_Reverts_Unauthorized() public {
+        vm.prank(resolver);
+        factory.createMarket(FEED_PEPE, 15 minutes);
+
+        vm.prank(makeAddr("rogue"));
+        vm.expectRevert("not authorized");
+        factory.pauseMarketsForFeed(FEED_PEPE);
+    }
+
+    function test_PauseMarketsForFeed_PausesAllMarketsForThatFeed() public {
+        vm.startPrank(resolver);
+        address m1 = factory.createMarket(FEED_PEPE, 5 minutes);
+        address m2 = factory.createMarket(FEED_PEPE, 15 minutes);
+        vm.stopPrank();
+
+        factory.pauseMarketsForFeed(FEED_PEPE);
+
+        assertTrue(OrderbookMarket(m1).paused());
+        assertTrue(OrderbookMarket(m2).paused());
+    }
 }

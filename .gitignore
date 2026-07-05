@@ -14,6 +14,7 @@
 !frontend/**/*.json
 !backend/**/*.json
 !contracts/**/*.json
+!assets/**/*.json
 secrets.json
 
 # Foundry / build artifacts inside contracts that we still want ignored
@@ -28,6 +29,9 @@ venv/
 .venv/
 .pytest_cache/
 .agent/
+
+# Downloaded font cache (scripts/generate-genesis-nft-art.py)
+.cache/
 
 # JS/Node
 node_modules/

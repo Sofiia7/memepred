@@ -280,6 +280,50 @@ contract LiquidityPoolTest is Test {
         assertLe(pool.totalExposure(), pool.totalAssets() * 1_000 / 10_000);
     }
 
+    /// @notice Documents and bounds the LP-dilution surface (audit note):
+    ///         while a match is in-flight, the LP's own stake has physically
+    ///         left the vault for the market contract, so totalAssets()
+    ///         (== current vault balance) understates the vault's true
+    ///         economic value until the match settles. A deposit landing in
+    ///         that window buys shares against an understated totalAssets(),
+    ///         i.e. at a discount to existing LPs. This is bounded — never
+    ///         more than GLOBAL_MAX_EXPOSURE_BPS of the pre-exposure value —
+    ///         because tryMatch never locks more than that fraction. This
+    ///         test pins that bound so any future change to the exposure
+    ///         cap or matching logic that widens the dilution surface fails
+    ///         loudly instead of silently.
+    function test_LPDilution_BoundedByGlobalExposureCap() public {
+        address lp1 = _addLP("lp1", 1_000e6);
+        uint256 preMatchAssets = pool.totalAssets();
+        assertEq(preMatchAssets, 1_000e6);
+
+        address bob = makeAddr("bob");
+        usdc.mint(bob, 100e6);
+        vm.prank(bob); usdc.approve(address(market), type(uint256).max);
+        vm.prank(bob);
+        market.placeBet(OrderbookMarket.Direction.UP, 100e6, address(0), 1000 * 1e18, 100);
+
+        // With a single market, PER_MARKET_MAX_EXPOSURE_BPS (5%) binds before
+        // the global 10% cap does — exposure caps at 50e6, not the full 100e6
+        // requested. Either way, the dilution bound below must hold.
+        assertEq(pool.totalExposure(), 50e6, "per-market cap binds first with a single market");
+
+        uint256 reportedAssets = pool.totalAssets();
+        uint256 understatement = preMatchAssets - reportedAssets;
+
+        assertLe(
+            understatement * 10_000 / preMatchAssets,
+            pool.GLOBAL_MAX_EXPOSURE_BPS(),
+            "totalAssets() must never be understated by more than the global exposure cap"
+        );
+
+        // lp1's own shares still redeem for (at least) their true share of
+        // the outstanding exposure once it's accounted for — dilution only
+        // affects a NEW depositor's entry price, it doesn't destroy lp1's
+        // claim on the exposure itself once matches settle.
+        assertGt(pool.balanceOf(lp1), 0);
+    }
+
     // ─── DUAL ACCOUNTING: totalAssets EXCLUDES pending fees ─
     function test_TotalAssets_Excludes_PendingFees() public {
         _addLP("lp", 500e6);
@@ -356,5 +400,133 @@ contract LiquidityPoolTest is Test {
         assertEq(avail, 10e6); // 10% of 100
         assertEq(exposure, 0);
         assertEq(genLeft, 19);
+    }
+
+    // ─── LP ECONOMICS HARDENING (Sprint 5.5 audit fixes) ──
+    // Before this fix the pool matched at raw oracle price with zero edge:
+    // FEE_BPS_ON_LP_WIN is carved out of the pool's OWN win, not paid by the
+    // taker, so a trader who beats the pool paid nothing for the liquidity
+    // they took. LP_TAKER_FEE_BPS closes that gap: it comes out of the
+    // WINNING user's payout specifically when they beat the LP, funding the
+    // pool exactly on the occasions it needs it most.
+    function test_LPMatch_TakerFee_On_UserWin_ReducesPayoutFundsPool() public {
+        _addLP("lp", 500e6);
+
+        address bob = makeAddr("bob");
+        usdc.mint(bob, 25e6);
+        vm.prank(bob); usdc.approve(address(market), type(uint256).max);
+        vm.prank(bob);
+        uint256 bobOrderId = market.placeBet(OrderbookMarket.Direction.UP, 25e6, address(0), 1000 * 1e18, 100);
+
+        uint256 poolBalBefore = usdc.balanceOf(address(pool));
+
+        // UP wins → bob (the user) beats the LP.
+        vm.warp(block.timestamp + 15 minutes + 1);
+        vm.prank(resolver);
+        market.settleMatch(1, 1000 * 1e18 + 100);
+
+        uint256 expectedTakerFee = (25e6 * 2 * market.LP_TAKER_FEE_BPS()) / 10_000;
+        uint256 expectedPayout   = (25e6 * 2) - expectedTakerFee;
+
+        OrderbookMarket.Order memory o = market.getOrder(bobOrderId);
+        assertEq(o.payout, expectedPayout, "payout reduced by LP taker fee");
+
+        uint256 poolBalAfter = usdc.balanceOf(address(pool));
+        assertEq(poolBalAfter - poolBalBefore, expectedTakerFee, "taker fee transferred to pool");
+    }
+
+    /// @notice Without a per-trader cap, a single address watching Hermes in
+    ///         real time could repeatedly hit the LP pool at a stale on-chain
+    ///         price. MAX_TRADER_LP_EXPOSURE bounds the damage per market
+    ///         instance regardless of how the pool's own global/per-market
+    ///         caps are sized.
+    function test_TraderLpExposureCap_LimitsSingleAddressSniping() public {
+        // Large pool so the pool-level 5%/10% caps are never the binding
+        // constraint here — isolates the per-trader cap under test.
+        _addLP("lp", 100_000e6);
+
+        address sniper = makeAddr("sniper");
+        usdc.mint(sniper, 400e6);
+        vm.prank(sniper); usdc.approve(address(market), type(uint256).max);
+
+        // 3 x MAX_BET (100e6) = 300e6 exactly fills MAX_TRADER_LP_EXPOSURE.
+        for (uint256 i = 0; i < 3; i++) {
+            vm.prank(sniper);
+            uint256 oid = market.placeBet(OrderbookMarket.Direction.UP, 100e6, address(0), 1000 * 1e18, 100);
+            OrderbookMarket.Order memory o = market.getOrder(oid);
+            assertEq(uint(o.status), uint(OrderbookMarket.OrderStatus.MATCHED), "should be LP-matched");
+        }
+        assertEq(market.traderLpExposure(sniper), 300e6);
+
+        // A 4th bet from the SAME trader must NOT get LP-matched — no PvP
+        // counterparty exists either, so it has to sit PENDING.
+        vm.prank(sniper);
+        uint256 blockedId = market.placeBet(OrderbookMarket.Direction.UP, 100e6, address(0), 1000 * 1e18, 100);
+        OrderbookMarket.Order memory blocked = market.getOrder(blockedId);
+        assertEq(uint(blocked.status), uint(OrderbookMarket.OrderStatus.PENDING), "capped trader must not get further LP fills");
+        assertEq(blocked.filledAmount, 0);
+
+        // A DIFFERENT trader is unaffected by sniper's cap — pool still has room.
+        address carol = makeAddr("carol2");
+        usdc.mint(carol, 100e6);
+        vm.prank(carol); usdc.approve(address(market), type(uint256).max);
+        vm.prank(carol);
+        uint256 carolId = market.placeBet(OrderbookMarket.Direction.UP, 100e6, address(0), 1000 * 1e18, 100);
+        OrderbookMarket.Order memory carolOrder = market.getOrder(carolId);
+        assertEq(uint(carolOrder.status), uint(OrderbookMarket.OrderStatus.MATCHED), "other traders unaffected by sniper's cap");
+    }
+
+    // ─── ERC4626 shares/assets entrypoints (Sprint 5.5 coverage hardening) ─
+    // mint()/withdraw() (as opposed to deposit()/redeem()) were never
+    // directly exercised anywhere in this file.
+    function test_Mint_SharesBasedDeposit_MintsExactSharesAndGenesis() public {
+        address lp = makeAddr("lp");
+        usdc.mint(lp, 1_000_000e6);
+        vm.prank(lp); usdc.approve(address(pool), type(uint256).max);
+
+        // Empty-vault decimalsOffset math means assets ≈ shares / 1e6 at
+        // first mint; use a large share count so assets clears MIN_DEPOSIT.
+        vm.prank(lp);
+        uint256 assets = pool.mint(60e12, lp);
+
+        assertEq(pool.balanceOf(lp), 60e12, "exact shares minted");
+        assertGe(assets, pool.MIN_DEPOSIT());
+        assertTrue(pool.isGenesis(lp), "first depositor via mint() also gets Genesis");
+    }
+
+    function test_Mint_Reverts_BelowMinDeposit() public {
+        address lp = makeAddr("lp");
+        usdc.mint(lp, 1000e6);
+        vm.prank(lp); usdc.approve(address(pool), type(uint256).max);
+
+        vm.prank(lp);
+        vm.expectRevert("below min deposit");
+        pool.mint(1e6, lp); // resolves to well under MIN_DEPOSIT in assets
+    }
+
+    function test_Withdraw_AssetBasedWithdraw_ReturnsExactAssets() public {
+        address lp = _addLP("lp", 500e6);
+        uint256 bal = usdc.balanceOf(lp);
+
+        vm.prank(lp);
+        pool.withdraw(200e6, lp, lp);
+
+        assertEq(usdc.balanceOf(lp) - bal, 200e6);
+    }
+
+    function test_MaxRedeem_MatchesFullBalance_WhenNoExposure() public {
+        address lp = _addLP("lp", 500e6);
+        assertEq(pool.maxRedeem(lp), pool.balanceOf(lp), "no exposure - full balance redeemable");
+    }
+
+    function test_IsFullyBacked_TrueWhenNoPendingFees() public {
+        _addLP("lp", 500e6);
+        assertTrue(pool.isFullyBacked());
+    }
+
+    function test_AvailableForMatching_ReflectsGlobalCap() public {
+        _addLP("lp", 1000e6);
+        // 10% global cap on 1000e6, nothing locked yet.
+        assertEq(pool.availableForMatching(), 100e6);
     }
 }

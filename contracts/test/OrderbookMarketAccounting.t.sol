@@ -310,4 +310,41 @@ contract OrderbookMarketAccountingTest is Test {
         uint256[] memory all = market.getReadySettlements(0, 0);
         assertEq(all.length, 4);
     }
+
+    /// @notice P0 regression (found in Sprint-5 audit): real callers
+    ///         (resolveKeeper.ts, OracleResolver._resolveBatch) always query
+    ///         getReadySettlements(0, maxCount) with a FIXED maxCount, and never
+    ///         advance the offset themselves. Once >= maxCount matches at the
+    ///         front of `pendingSettlements` are settled, a naive [0, maxCount)
+    ///         window scans only settled matches forever and returns empty —
+    ///         even though later, genuinely-ready matches exist right after
+    ///         them. This must not happen: the window has to track past the
+    ///         already-settled prefix automatically.
+    function test_GetReadySettlements_DoesNotStallAfterHeadSettled() public {
+        // Create 3 PvP matches (ids 1,2,3).
+        for (uint256 i = 0; i < 3; i++) {
+            vm.prank(alice); market.placeBet(OrderbookMarket.Direction.UP,   10e6, address(0), ENTRY_PRICE, 100);
+            vm.prank(bob);   market.placeBet(OrderbookMarket.Direction.DOWN, 10e6, address(0), ENTRY_PRICE, 100);
+        }
+        vm.warp(block.timestamp + DURATION + 1);
+
+        // Settle all 3 via the resolver — these now occupy the front of
+        // `pendingSettlements` with `settled == true` forever.
+        for (uint256 matchId = 1; matchId <= 3; matchId++) {
+            resolver.settleMatch(address(market), matchId, ENTRY_PRICE + 1e18);
+        }
+
+        // A 4th match is created AFTER the first 3 are already settled.
+        // Refresh the mock oracle price — a lot of time has passed.
+        pyth.setPrice(FEED, 9142, -8);
+        vm.prank(alice); market.placeBet(OrderbookMarket.Direction.UP,   10e6, address(0), ENTRY_PRICE, 100);
+        vm.prank(bob);   market.placeBet(OrderbookMarket.Direction.DOWN, 10e6, address(0), ENTRY_PRICE, 100);
+        vm.warp(block.timestamp + DURATION + 1);
+
+        // Keeper queries with the SAME fixed window size (3) it always uses,
+        // starting at offset 0 — exactly how resolveKeeper.ts behaves.
+        uint256[] memory ready = market.getReadySettlements(0, 3);
+        assertEq(ready.length, 1, "match #4 must be visible, not hidden behind 3 already-settled matches");
+        assertEq(ready[0], 4);
+    }
 }

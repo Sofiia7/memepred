@@ -28,6 +28,18 @@ contract MarketFactory is Ownable {
 
     uint256[] public allowedDurations;
 
+    /// @notice Defense-in-depth cooldown against duplicate markets. The
+    ///         off-chain keeper (marketCreator.ts) already dedupes by
+    ///         querying its own DB before calling createMarket, but that DB
+    ///         can be stale or desynced from chain state — this guards
+    ///         on-chain against two live markets ever existing for the same
+    ///         (feedId, duration) back-to-back. Kept short (well under the
+    ///         shortest allowed duration's 50%-early-rollover point) so it
+    ///         never fights the intended "create the next market once the
+    ///         current one is halfway to close" rollover strategy.
+    uint256 public constant MIN_CREATE_INTERVAL = 60 seconds;
+    mapping(bytes32 => uint256) public lastCreatedAt; // key = keccak256(feedId, duration)
+
     mapping(bytes32 => bool) public allowedFeeds;
     bytes32[] public feedIds;
 
@@ -87,6 +99,13 @@ contract MarketFactory is Ownable {
         );
         require(allowedFeeds[feedId], "feed not whitelisted");
         require(_isDurationAllowed(duration), "duration not allowed");
+
+        bytes32 slot = keccak256(abi.encodePacked(feedId, duration));
+        require(
+            lastCreatedAt[slot] == 0 || block.timestamp >= lastCreatedAt[slot] + MIN_CREATE_INTERVAL,
+            "duplicate market slot"
+        );
+        lastCreatedAt[slot] = block.timestamp;
 
         OrderbookMarket m = new OrderbookMarket(
             usdc,

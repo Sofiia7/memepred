@@ -19,6 +19,7 @@ import type { Address } from 'viem'
 import { formatUnits } from 'viem'
 import { ORDERBOOK_MARKET_ABI } from '../lib/contracts'
 import { useOrderStatus } from '../hooks/useOrderStatus'
+import { ShareCard } from './ShareCard'
 
 interface Props {
   marketAddress: Address
@@ -128,6 +129,7 @@ export function OrderStatusCard({
             {txPending ? 'Processing…' : `Claim $${payoutUsd}`}
           </button>
         )}
+        {won && <ShareCard direction={dir} amountUsd={filledUsd} payoutUsd={payoutUsd} />}
       </div>
     )
   }
@@ -138,6 +140,7 @@ export function OrderStatusCard({
       <div className="osc osc-claimed">
         <div className="osc-head">✓ Claimed</div>
         <div className="osc-meta">{dir} · received ${payoutUsd}</div>
+        <ShareCard direction={dir} amountUsd={filledUsd} payoutUsd={payoutUsd} />
       </div>
     )
   }

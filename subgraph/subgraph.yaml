@@ -9,9 +9,9 @@ dataSources:
     name: MarketFactory
     network: base-sepolia
     source:
-      address: "0x59385ca69a4ca9628a411a6a0655c3eaf7507316"
+      address: "0x77cb2ee5695cffd3bd2043afe7eb910ec0fe71b0"
       abi: MarketFactory
-      startBlock: 41926633
+      startBlock: 43746690
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7
@@ -30,9 +30,9 @@ dataSources:
     name: LiquidityPool
     network: base-sepolia
     source:
-      address: "0xaf3acfce41417de5c973cc214e170c73480b068a"
+      address: "0x135a31e7f1b24bf60a65696961a4807410e6d81c"
       abi: LiquidityPool
-      startBlock: 41926633
+      startBlock: 43746690
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7
@@ -63,9 +63,9 @@ dataSources:
     name: ReferralRegistry
     network: base-sepolia
     source:
-      address: "0x206982f0341a0668f26325e16eb0e8259767c666"
+      address: "0x447abad4ab84736017bb838683a8c28ee8d3c814"
       abi: ReferralRegistry
-      startBlock: 41926633
+      startBlock: 43746690
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7
@@ -86,9 +86,9 @@ dataSources:
     name: FeeDistributor
     network: base-sepolia
     source:
-      address: "0xb61ed4c59d340e3379775974a71f3c78f0888af2"
+      address: "0xd579c54d71d69f08e27b63731b271b6f53425b43"
       abi: FeeDistributor
-      startBlock: 41926633
+      startBlock: 43746690
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7
@@ -109,9 +109,9 @@ dataSources:
     name: BadgeNFT
     network: base-sepolia
     source:
-      address: "0x90d22B3eFd2A344a9f4eC262FD51B44381725617"
+      address: "0x5ccafe75326191ad44b1e5eb53e6a0d38a96185b"
       abi: BadgeNFT
-      startBlock: 41926633
+      startBlock: 43746690
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7
@@ -130,9 +130,9 @@ dataSources:
     name: GenesisNFT
     network: base-sepolia
     source:
-      address: "0xac7787dfb45ca8726cdf38585964f2281dae3e07"
+      address: "0x32027445a249f8ea43758f5a661c8458cd3961d7"
       abi: GenesisNFT
-      startBlock: 41926633
+      startBlock: 43746690
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7

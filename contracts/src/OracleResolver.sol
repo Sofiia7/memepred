@@ -24,7 +24,15 @@ contract OracleResolver is AccessControl {
     mapping(bytes32 => PricePoint[]) public priceHistory;
     mapping(bytes32 => uint256) public historyHead;
 
-    uint256 public constant TWAP_WINDOW = 5 minutes;
+    // Exit TWAP window is scaled to the market's own duration instead of a
+    // flat constant (Sprint 5.5 audit fix): for a 5-minute market, a flat
+    // 5-minute window covers the ENTIRE match, so "exit price" ends up
+    // being "average price over the whole bet" — heavily diluted by stale
+    // early-period ticks — instead of a short, representative end-of-period
+    // close. Longer markets (1h/4h/24h) still cap at TWAP_WINDOW_CAP so the
+    // window never grows unreasonably large.
+    uint256 public constant TWAP_WINDOW_CAP = 5 minutes;
+    uint256 public constant MIN_TWAP_WINDOW = 30 seconds;
     uint256 public constant MAX_PRICE_AGE = 60; // секунд
     uint256 public constant MAX_SPREAD_BPS = 200; // 2% — если больше → отмена рынка
 
@@ -79,8 +87,8 @@ contract OracleResolver is AccessControl {
         uint256 updateFee = pyth.getUpdateFee(priceUpdateData);
         pyth.updatePriceFeeds{value: updateFee}(priceUpdateData);
 
-        // TWAP exit price
-        uint256 exitTwap = _getTWAP(feedId);
+        // TWAP exit price, windowed to this market's own duration.
+        uint256 exitTwap = _getTWAP(feedId, _twapWindowFor(m.duration()));
 
         // Anomaly check
         IPyth.Price memory spot = pyth.getPriceNoOlderThan(feedId, MAX_PRICE_AGE);
@@ -133,7 +141,7 @@ contract OracleResolver is AccessControl {
         uint256 updateFee = pyth.getUpdateFee(priceUpdateData);
         pyth.updatePriceFeeds{value: updateFee}(priceUpdateData);
 
-        uint256 exitTwap = _getTWAP(feedId);
+        uint256 exitTwap = _getTWAP(feedId, _twapWindowFor(m.duration()));
 
         // Anomaly check: TWAP vs spot.
         IPyth.Price memory spot = pyth.getPriceNoOlderThan(feedId, MAX_PRICE_AGE);
@@ -155,10 +163,20 @@ contract OracleResolver is AccessControl {
     }
 
     // ── TWAP ───────────────────────────────────────────────
-    function _getTWAP(bytes32 feedId) internal view returns (uint256) {
+    /// @dev Scales the exit TWAP window to a market's own duration so short
+    ///      markets don't average over their entire lifetime. Floored at
+    ///      MIN_TWAP_WINDOW, capped at TWAP_WINDOW_CAP.
+    function _twapWindowFor(uint256 duration) internal pure returns (uint256) {
+        uint256 scaled = duration / 5;
+        if (scaled > TWAP_WINDOW_CAP)  return TWAP_WINDOW_CAP;
+        if (scaled < MIN_TWAP_WINDOW)  return MIN_TWAP_WINDOW;
+        return scaled;
+    }
+
+    function _getTWAP(bytes32 feedId, uint256 window) internal view returns (uint256) {
         PricePoint[] storage history = priceHistory[feedId];
         uint256 head   = historyHead[feedId];
-        uint256 cutoff = block.timestamp > TWAP_WINDOW ? block.timestamp - TWAP_WINDOW : 0;
+        uint256 cutoff = block.timestamp > window ? block.timestamp - window : 0;
         uint256 sum = 0;
         uint256 count = 0;
 

@@ -165,7 +165,10 @@ contract OrderbookMarketTest is Test {
         vm.prank(alice);
         market.claim(orderId);
 
-        assertEq(usdc.balanceOf(alice) - balBefore, 50e6); // 25*2
+        // 25*2 = 50e6 gross, minus LP_TAKER_FEE_BPS (1%) charged on LP-match
+        // wins to fund the pool (Sprint 5.5 LP-economics fix).
+        uint256 expectedFee = (50e6 * market.LP_TAKER_FEE_BPS()) / 10_000;
+        assertEq(usdc.balanceOf(alice) - balBefore, 50e6 - expectedFee);
     }
 
     // ── REVERTS ───────────────────────────────────────────
@@ -185,6 +188,26 @@ contract OrderbookMarketTest is Test {
         vm.prank(alice);
         vm.expectRevert("self referral");
         market.placeBet(OrderbookMarket.Direction.UP, 10e6, alice, ENTRY_PRICE, 100);
+    }
+
+    /// @dev Sprint 5.5: proves ENTRY_MAX_PRICE_AGE actually blocks a stale
+    ///      Pyth price. Before this session MockPyth ignored the `age` arg
+    ///      entirely, so this protection existed in the contract but had
+    ///      never been exercised by any test.
+    function test_PlaceBet_Reverts_StalePrice() public {
+        vm.warp(block.timestamp + market.ENTRY_MAX_PRICE_AGE() + 1);
+        vm.prank(alice);
+        vm.expectRevert("stale price");
+        market.placeBet(OrderbookMarket.Direction.UP, 25e6, address(0), ENTRY_PRICE, 100);
+    }
+
+    function test_PlaceBet_Succeeds_AfterRefreshingStalePrice() public {
+        vm.warp(block.timestamp + market.ENTRY_MAX_PRICE_AGE() + 1);
+        pyth.setPrice(bytes32("PEPE/USD"), 914200, -8); // refresh
+        vm.prank(alice);
+        uint256 orderId = market.placeBet(OrderbookMarket.Direction.UP, 25e6, address(0), ENTRY_PRICE, 100);
+        OrderbookMarket.Order memory o = market.getOrder(orderId);
+        assertEq(o.amount, 25e6, "bet placed once price is fresh again");
     }
 
     function test_Claim_Reverts_NotYourOrder() public {

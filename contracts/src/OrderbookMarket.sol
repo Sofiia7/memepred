@@ -89,6 +89,32 @@ contract OrderbookMarket is ReentrancyGuard, Pausable {
     uint256 public constant MATCH_TIMEOUT = 5 minutes; // PENDING → refundExpired
     uint256 public constant SETTLE_GRACE  = 24 hours;  // MATCHED → emergencyRefundMatch
 
+    // Sprint 5.5 audit fix: was 60s (exploitable by real-time Hermes
+    // watchers sniping the LP pool at a stale entry price). Tightened to
+    // 45s — 1.5x margin over the keeper's existing 30s on-chain price-push
+    // cadence (backend/src/keeper/index.ts onchainPriceRecorder) so normal
+    // placeBet() calls keep working without requiring a keeper cadence
+    // change (which would triple the keeper's Pyth-update gas spend — the
+    // keeper wallet is already chronically low on funds). placeBetWithPyth
+    // (the frontend's preferred path when Hermes is reachable) always pays
+    // for a fresh update inline and is unaffected by this value either way.
+    uint256 public constant ENTRY_MAX_PRICE_AGE = 45;
+
+    // ── LP ECONOMICS (Sprint 5.5 audit fix) ────────────────
+    // PvP matches never cost the pool anything; only LP-matched wagers put
+    // the pool's capital at risk. Charging this fee ONLY when the user beats
+    // the LP (i.e. only ever taken out of a payout the pool would otherwise
+    // pay in full) gives the pool a structural edge instead of a flat 0% EV
+    // against informed order flow.
+    uint256 public constant LP_TAKER_FEE_BPS = 100; // 1% of totalPool on LP-match user wins
+
+    // Caps how much of the pool a single address can draw against within one
+    // market instance's lifetime (markets are recreated every few minutes,
+    // which naturally resets this), independent of the pool's own global/
+    // per-market exposure caps. Bounds the damage from an address repeatedly
+    // hitting the LP at a favorable/stale price.
+    uint256 public constant MAX_TRADER_LP_EXPOSURE = 300e6; // 3x MAX_BET
+
     // ── TIMELOCK / FEE STATE ───────────────────────────────
     uint256 public feeBps = 0;
     uint256 public pendingFeeBps;
@@ -123,8 +149,17 @@ contract OrderbookMarket is ReentrancyGuard, Pausable {
     // trader → their orderIds (append-only)
     mapping(address => uint256[]) public traderOrders;
 
+    // trader → cumulative amount matched against the LP pool this market
+    // instance's lifetime. Bounded by MAX_TRADER_LP_EXPOSURE.
+    mapping(address => uint256) public traderLpExposure;
+
     // matchIds that need settlement
     uint256[] public pendingSettlements;
+    // Matches at indices < pendingSettlementsHead are ALL already settled.
+    // Advanced amortized-O(1) on every settle so getReadySettlements(0, N)
+    // (the only pattern real callers use) keeps seeing new ready matches
+    // instead of re-scanning an ever-growing settled prefix forever.
+    uint256 public pendingSettlementsHead;
 
     // ── EVENTS ─────────────────────────────────────────────
     event OrderPlaced       (uint256 indexed orderId, address indexed trader, Direction dir, uint256 amount);
@@ -307,22 +342,12 @@ contract OrderbookMarket is ReentrancyGuard, Pausable {
             }
         }
 
-        // Layer 2 — LP fallback for whatever remains.
-        if (
-            liquidityPool != address(0) &&
-            o.filledAmount < o.amount
-        ) {
-            uint256 remaining   = o.amount - o.filledAmount;
-            uint256 reservedId  = nextMatchId; // hint for LP bookkeeping; final id chosen in _createMatch
-            uint256 lpMatched   = ILiquidityPool(liquidityPool).tryMatch(
-                orderId, remaining, dir == Direction.UP, reservedId
-            );
-            require(lpMatched <= remaining, "lp overmatched");
-
-            if (lpMatched > 0) {
-                _createMatch(orderId, 0, dir, lpMatched, currentPrice, true);
-                _registerFill(o, lpMatched);
-            }
+        // Layer 2 — LP fallback for whatever remains, bounded by this
+        // trader's remaining MAX_TRADER_LP_EXPOSURE allowance. Extracted to
+        // its own function: keeping these locals out of _tryMatch's frame
+        // avoids "stack too deep" (via_ir is off project-wide; see foundry.toml).
+        if (liquidityPool != address(0) && o.filledAmount < o.amount) {
+            _tryLpMatch(orderId, o, dir, currentPrice);
         }
 
         // Layer 3 — finalize.
@@ -346,6 +371,34 @@ contract OrderbookMarket is ReentrancyGuard, Pausable {
                 pendingDownQueue.push(orderId);
                 _queueIndex[orderId] = pendingDownQueue.length;
             }
+        }
+    }
+
+    /// @dev Layer 2 of _tryMatch: LP fallback bounded by MAX_TRADER_LP_EXPOSURE.
+    function _tryLpMatch(
+        uint256   orderId,
+        Order storage o,
+        Direction dir,
+        uint256   currentPrice
+    ) internal {
+        uint256 remaining  = o.amount - o.filledAmount;
+        uint256 traderUsed = traderLpExposure[o.trader];
+        uint256 traderRoom = MAX_TRADER_LP_EXPOSURE > traderUsed
+            ? MAX_TRADER_LP_EXPOSURE - traderUsed
+            : 0;
+        uint256 lpRequest = remaining < traderRoom ? remaining : traderRoom;
+        if (lpRequest == 0) return;
+
+        uint256 reservedId = nextMatchId; // hint for LP bookkeeping; final id chosen in _createMatch
+        uint256 lpMatched  = ILiquidityPool(liquidityPool).tryMatch(
+            orderId, lpRequest, dir == Direction.UP, reservedId
+        );
+        require(lpMatched <= lpRequest, "lp overmatched");
+
+        if (lpMatched > 0) {
+            traderLpExposure[o.trader] = traderUsed + lpMatched;
+            _createMatch(orderId, 0, dir, lpMatched, currentPrice, true);
+            _registerFill(o, lpMatched);
         }
     }
 
@@ -406,6 +459,7 @@ contract OrderbookMarket is ReentrancyGuard, Pausable {
         m.settled   = true;
         m.exitPrice = exitPrice;
         m.upWon     = exitPrice > m.entryPrice;
+        _advancePendingSettlementsHead();
 
         if (!m.lpMatch) {
             _settleOrder(m.upOrderId,   m.upWon,  m);
@@ -439,6 +493,13 @@ contract OrderbookMarket is ReentrancyGuard, Pausable {
             uint256 totalPool = m.amount * 2;
             uint256 fee       = (totalPool * feeBps) / 10_000;
             uint256 net       = totalPool - fee;
+
+            if (m.lpMatch) {
+                uint256 lpTakerFee = (totalPool * LP_TAKER_FEE_BPS) / 10_000;
+                net -= lpTakerFee;
+                if (lpTakerFee > 0) usdc.safeTransfer(liquidityPool, lpTakerFee);
+            }
+
             o.payout += net;
 
             if (fee > 0 && feeDistributor != address(0)) {
@@ -486,6 +547,7 @@ contract OrderbookMarket is ReentrancyGuard, Pausable {
         require(block.timestamp > m.settleAt + SETTLE_GRACE,   "grace not over");
 
         m.settled = true;
+        _advancePendingSettlementsHead();
 
         if (!m.lpMatch) {
             Order storage up = orders[m.upOrderId];
@@ -579,6 +641,21 @@ contract OrderbookMarket is ReentrancyGuard, Pausable {
         emit OrderRefunded(orderId, o.trader, unmatched);
     }
 
+    /// @dev Skip pendingSettlementsHead past any consecutive already-settled
+    ///      matches at the front. Matches settle roughly in creation order
+    ///      (settleAt is non-decreasing with matchId since duration is fixed
+    ///      per market), so the front of the array is where settled matches
+    ///      accumulate; this keeps getReadySettlements(0, N) cheap forever
+    ///      instead of re-scanning a growing dead prefix.
+    function _advancePendingSettlementsHead() internal {
+        uint256 head = pendingSettlementsHead;
+        uint256 len  = pendingSettlements.length;
+        while (head < len && matches[pendingSettlements[head]].settled) {
+            head++;
+        }
+        pendingSettlementsHead = head;
+    }
+
     // ── HELPERS ────────────────────────────────────────────
     function _removeAt(uint256[] storage queue, uint256 index) internal {
         uint256 lastIdx = queue.length - 1;
@@ -610,25 +687,30 @@ contract OrderbookMarket is ReentrancyGuard, Pausable {
 
     /// @notice Returns matchIds that are ready for settlement, capped by `limit`.
     ///         Use `limit = 0` for "all ready" (legacy behaviour).
+    /// @dev `offset` is relative to `pendingSettlementsHead`, not the absolute
+    ///      array index: the already-settled prefix is skipped automatically
+    ///      so callers that always pass offset=0 (every real caller does)
+    ///      keep seeing newly-ready matches instead of an ever-empty window.
     function getReadySettlements(uint256 offset, uint256 limit)
         external
         view
         returns (uint256[] memory ready)
     {
         uint256 total = pendingSettlements.length;
-        if (offset >= total) return new uint256[](0);
+        uint256 start = pendingSettlementsHead + offset;
+        if (start >= total) return new uint256[](0);
 
-        uint256 end = limit == 0 || offset + limit > total ? total : offset + limit;
+        uint256 end = limit == 0 || start + limit > total ? total : start + limit;
 
         // Two-pass to size the array.
         uint256 count = 0;
-        for (uint256 i = offset; i < end; i++) {
+        for (uint256 i = start; i < end; i++) {
             Match storage m = matches[pendingSettlements[i]];
             if (!m.settled && block.timestamp >= m.settleAt) count++;
         }
         ready = new uint256[](count);
         uint256 idx = 0;
-        for (uint256 i = offset; i < end; i++) {
+        for (uint256 i = start; i < end; i++) {
             Match storage m = matches[pendingSettlements[i]];
             if (!m.settled && block.timestamp >= m.settleAt) {
                 ready[idx++] = pendingSettlements[i];
@@ -640,14 +722,15 @@ contract OrderbookMarket is ReentrancyGuard, Pausable {
     ///         existing callers; prefer getReadySettlements with pagination.
     function getPendingSettlements() external view returns (uint256[] memory ready) {
         uint256 total = pendingSettlements.length;
+        uint256 head  = pendingSettlementsHead;
         uint256 count = 0;
-        for (uint256 i = 0; i < total; i++) {
+        for (uint256 i = head; i < total; i++) {
             Match storage m = matches[pendingSettlements[i]];
             if (!m.settled && block.timestamp >= m.settleAt) count++;
         }
         ready = new uint256[](count);
         uint256 idx = 0;
-        for (uint256 i = 0; i < total; i++) {
+        for (uint256 i = head; i < total; i++) {
             Match storage m = matches[pendingSettlements[i]];
             if (!m.settled && block.timestamp >= m.settleAt) {
                 ready[idx++] = pendingSettlements[i];
@@ -666,7 +749,7 @@ contract OrderbookMarket is ReentrancyGuard, Pausable {
     // ── INTERNAL PYTH PRICE ────────────────────────────────
     function _getCurrentPrice() internal view returns (uint256) {
         address pythAddress = IOracleResolver(resolver).pyth();
-        IPyth.Price memory p = IPyth(pythAddress).getPriceNoOlderThan(pythFeedId, 60);
+        IPyth.Price memory p = IPyth(pythAddress).getPriceNoOlderThan(pythFeedId, ENTRY_MAX_PRICE_AGE);
         require(p.price > 0, "non-positive price");
 
         int32 expo = p.expo;

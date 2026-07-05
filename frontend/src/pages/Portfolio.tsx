@@ -1,5 +1,6 @@
 import { useAccount, useConnect } from 'wagmi'
 import { useQuery } from '@tanstack/react-query'
+import { Link } from 'react-router-dom'
 import { type Address } from 'viem'
 import { useClaim } from '../hooks/useClaim'
 import { useReferral } from '../hooks/useReferral'
@@ -96,7 +97,12 @@ function ReferralPanel() {
 
   return (
     <>
-      <div className="b-title">Referrals</div>
+      <div className="b-title" style={{ justifyContent: 'space-between' }}>
+        Referrals
+        <Link to="/refer" style={{ fontSize: 10, color: 'var(--base-blue-2)', textTransform: 'none', letterSpacing: 0, marginLeft: 'auto' }}>
+          View all →
+        </Link>
+      </div>
       <StatStrip
         items={[
           { k: 'Friends Referred', v: String(Number(r.myReferralCount ?? 0n)) },

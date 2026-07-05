@@ -21,10 +21,18 @@ contract MockPyth is IPyth {
 
     function updatePriceFeeds(bytes[] calldata) external payable {}
 
+    /// @dev Sprint 5.5 audit fix: real Pyth reverts when the stored price is
+    ///      older than `age`. This was previously a no-op (ignored `age`
+    ///      entirely), which meant staleness protection throughout the
+    ///      codebase (OrderbookMarket.ENTRY_MAX_PRICE_AGE, OracleResolver.
+    ///      MAX_PRICE_AGE) had zero test coverage — a stale price could
+    ///      never actually be exercised in a test.
     function getPriceNoOlderThan(
         bytes32 id,
-        uint256 /* age */
+        uint256 age
     ) external view returns (IPyth.Price memory) {
-        return prices[id];
+        IPyth.Price memory p = prices[id];
+        require(block.timestamp - p.publishTime <= age, "stale price");
+        return p;
     }
 }

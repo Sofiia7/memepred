@@ -146,4 +146,41 @@ contract FeeDistributorTest is Test {
         vm.expectRevert("zero address");
         new FeeDistributor(address(0), treasury, lpSink, nftPool);
     }
+
+    // ─── sweepDust (Sprint 5.5 coverage hardening) ────────
+    function test_SweepDust_OnlyOwner() public {
+        vm.prank(makeAddr("rogue"));
+        vm.expectRevert();
+        dist.sweepDust();
+    }
+
+    function test_SweepDust_ReturnsZero_WhenNoDust() public {
+        assertEq(dist.sweepDust(), 0);
+    }
+
+    function test_SweepDust_ExcludesReferralOwed() public {
+        _push(100e6);
+        vm.prank(market);
+        dist.distributeFee(100e6, ref); // 40e6 (REF_BPS) sits owed, pull pattern
+
+        assertEq(dist.totalReferralOwed(), 40e6);
+        assertEq(usdc.balanceOf(address(dist)), 40e6);
+
+        assertEq(dist.sweepDust(), 0, "no dust - remaining balance is all owed to the referrer");
+    }
+
+    function test_SweepDust_SweepsOnlyExcessBeyondReferralOwed() public {
+        _push(100e6);
+        vm.prank(market);
+        dist.distributeFee(100e6, ref); // 40e6 owed sits in the contract
+
+        // Extra USDC lands directly (rounding dust / accidental transfer).
+        usdc.mint(address(dist), 5e6);
+
+        uint256 before = usdc.balanceOf(treasury);
+        uint256 dust = dist.sweepDust();
+        assertEq(dust, 5e6, "only the extra 5e6 is dust, not the 40e6 owed to the referrer");
+        assertEq(usdc.balanceOf(treasury) - before, 5e6);
+        assertEq(usdc.balanceOf(address(dist)), 40e6, "referrer's owed balance untouched");
+    }
 }
