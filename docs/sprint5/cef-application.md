@@ -19,7 +19,11 @@ do not resubmit the old numbers/process below, they were wrong:**
    to match observed averages so it doesn't read as out of touch with actual
    round sizes. Round cadence/exact eligibility criteria are not fully
    public — mention you're flexible on amount rather than anchoring hard.
-3. **Two blockers found this session — fix before reaching out, not after:**
+3. **Update 2026-07-05 (full-repo audit session):** one of the two blockers
+   below is now FIXED — `frontend/public/` had zero images at all, so every
+   image in the manifest (icon/splash/hero) and index.html's OG tags 404'd;
+   placeholders now exist (`scripts/generate-app-images.py`, commit 35ceaf4).
+   The two REAL remaining blockers (still open, need Sofia's own action):
    - `frontend/public/.well-known/farcaster.json` still has a placeholder
      `accountAssociation`. Until [YOU] sign it in Warpcast Dev Tools (see
      `docs/sprint5/operator-guides.md` §1), the "Mini App" link in this
@@ -28,8 +32,15 @@ do not resubmit the old numbers/process below, they were wrong:**
      Farcaster account's signature; it cannot be done on your behalf.
    - The public backend URL still isn't set (`VITE_API_URL` unset in prod
      Vercel — see project memory) — the live site currently shows a fatal
-     env-config screen instead of the app. Fix this before sending any link
-     to a steward.
+     env-config screen instead of the app. Needs a hosting decision (VPS/
+     Railway/Fly — `deploy/docker-compose.yml` already assumes a Linux VPS
+     + Caddy) before this can be fixed. Fix before sending any link to a steward.
+   - (Minor, separate feature gap, not a CEF blocker): the manifest's
+     `webhookUrl` points at `/api/farcaster/webhook`, which doesn't exist in
+     the backend yet — `promptAddMiniApp()` in `frontend/src/lib/miniapp.ts`
+     will silently no-op server-side if a user opts into notifications. Not
+     needed for a Fresh Clank-stage pitch; flagging so it doesn't get
+     assumed "done" later.
 
 ---
 
@@ -42,11 +53,12 @@ do not resubmit the old numbers/process below, they were wrong:**
 > tradable prediction market — no manual listing step, the keeper picks it
 > up automatically.
 >
-> Where we are: contracts are through internal hardening (172 Foundry tests,
-> LP-vault economics + oracle-freshness fixes just closed), Sepolia
-> soak in progress, Farcaster mini-app wired via @farcaster/miniapp-sdk.
-> Not live on mainnet yet — this is a Fresh Clank-stage ask, not a Builder
-> retroactive one.
+> Where we are: contracts are through internal hardening (176 Foundry tests,
+> LP-vault economics + oracle-freshness + a follow-up security pass just
+> closed), fully deployed and role-wired on Base Sepolia, Farcaster mini-app
+> wired via @farcaster/miniapp-sdk. Sepolia soak has NOT run yet (funding
+> gap on the keeper wallet — being addressed) — not live on mainnet, this is
+> a Fresh Clank-stage ask, not a Builder retroactive one.
 >
 > Would love a Fresh Clank / Activation grant to help fund the mainnet
 > deploy + a short activation window casting live Clanker-token markets as
@@ -80,12 +92,14 @@ do not resubmit the old numbers/process below, they were wrong:**
 
 1. **Clanker-aligned product**: We don't compete with Clanker, we *consume* its
    token list. Every Clanker token with a price feed becomes a market on day one.
-2. **Already shipped**: 172 Foundry tests passing (contracts + LP-vault
-   economics + oracle-freshness hardening closed this cycle), USDC
-   conservation invariant checked every 60s by an off-chain monitor.
-   Sepolia redeploy + 48h soak in progress — do NOT claim "soak passed" to a
-   steward until the actual 48h run in Task #7 has completed and been
-   checked; update this line with the real result before sending.
+2. **Already shipped**: 176 Foundry tests passing (83.4% line / 75.8% branch
+   coverage — 5 of 8 core contracts at 100% line), USDC conservation
+   invariant checked every 60s by an off-chain monitor. Fully deployed and
+   role-wired on Base Sepolia (factory `0x77cb2EE5695CfFD3bD2043afe7eb910Ec0fe71b0`,
+   ownership handed to the multisig, all 13 whitelisted feeds including
+   11 Base-native memes). 48h soak has NOT run yet — do NOT claim "soak
+   passed" to a steward until it actually has; update this line with the
+   real result before sending.
 3. **Farcaster-native (pending your signature)**: Mini App wired via
    @farcaster/miniapp-sdk, but `accountAssociation` in
    `frontend/public/.well-known/farcaster.json` is still a placeholder — it
@@ -139,15 +153,20 @@ do not resubmit the old numbers/process below, they were wrong:**
 
 ## Track record
 
-- **Engineering state at last check**: 172 Foundry tests green, backend/frontend
-  typecheck clean, subgraph builds. Core-contract line coverage 84% overall,
-  5 of 8 contracts at 100% line coverage. Update these numbers from the
-  latest CI run before sending — don't paste stale figures into a pitch.
-- **Sepolia deploy**: `0x...` — fill in the redeployed address once Task #5
-  (redeploy with all fixes) completes; the old deploy predates this cycle's
-  fixes, don't link it.
-- **Subgraph**: `https://api.studio.thegraph.com/query/1753939/memepred-sepolia/v0.0.1`
-  — confirm it's re-pointed at the new deploy's contract addresses before linking it.
+- **Engineering state at last check (2026-07-05)**: 176 Foundry tests green,
+  backend/frontend typecheck clean, subgraph builds. Core-contract line
+  coverage 83.4% overall (75.8% branch), 5 of 8 contracts at 100% line
+  coverage. Re-verify these numbers from the latest CI run before sending —
+  don't paste stale figures into a pitch.
+- **Sepolia deploy**: `0x77cb2EE5695CfFD3bD2043afe7eb910Ec0fe71b0` (MarketFactory).
+  Verified on-chain 2026-07-05: owner() is the multisig stand-in (full
+  handoff succeeded), marketCreator/emergencyPauser both set to the keeper,
+  all 13 feeds whitelisted. 16 markets already auto-spawned on the PEPE
+  feed by the keeper's cron, but zero real orders placed on any of them yet
+  — don't describe this as "tested with real activity."
+- **Subgraph**: `subgraph/subgraph.yaml` is pointed at the current deploy's
+  addresses (verified 2026-07-05) — confirm the hosted/Studio URL you link
+  is the one actually serving this manifest before sending.
 - **Mini App**: `https://memepred.xyz` — will open in Warpcast as a real mini-app
   only after the `accountAssociation` signature (blocker #3, top of file) is done.
   Until then this link opens as a plain webpage, and the public backend URL
