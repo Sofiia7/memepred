@@ -1,5 +1,53 @@
 # Memory Log for memepred
 
+## Backend deployed to VPS (2026-07-06) — first real deploy, live but not public yet
+
+Deployed to the openclaw-bot VPS (89.124.77.59, shared with meteora bot — see
+global CLAUDE.md rule: SSH only as `openclaw-bot_TEST`/openclaw user, never root)
+at `/home/openclaw/memepred`. A STALE prior checkout already existed there (2
+commits, pre-OrderbookMarket architecture, docker never actually booted, no
+volumes) — moved aside to `/home/openclaw/memepred.stale-2026-07-06` rather than
+deleted, then did a clean deploy of current `backend/` + `deploy/` (tarball
+transfer, no git clone — repo is private, VPS has no deploy key).
+
+**Status: postgres/redis/backend/keeper containers are Up and healthy.**
+`curl localhost:3001/health` → 200 ok. Keeper is running all 9 loops; correctly
+catching (not crashing on) the expected `insufficient funds` error from the
+still-underfunded keeper wallet (0xbFa0…, ~0.0000033 ETH) when it tries
+`recordPrice` — this is expected until the wallet is topped up, not a bug.
+
+**Found and fixed a real pre-existing bug**: `deploy/docker-compose.yml`'s
+`caddy` service had no `environment:` block, so `${LETSENCRYPT_EMAIL}` /
+`${API_DOMAIN}` from `.env` never reached the container — Caddy crash-looped
+forever ("wrong argument count ... after 'email'"). Fixed (commit b2a8c52),
+pushed to the VPS, caddy now stable and correctly attempting (and expectedly
+failing, pending DNS) the ACME challenge for `api-origin.memepred.xyz`.
+
+**Blocked on DNS — genuinely needs Sofia, not guessable from here.**
+`memepred.xyz`'s nameservers are `ns1/ns2.vercel-dns.com` (Vercel), NOT
+Cloudflare — so the already-built Cloudflare Worker geo-block
+(`workers/geo-block.ts`, wrangler.toml routes) has nowhere to attach without
+first delegating this domain (or the `api` subdomain) to Cloudflare, which
+is a real architecture decision, not something to silently pick. ALSO: `vercel
+domains ls` under her only Vercel team (`sofiias-projects-03eb3520`) does NOT
+list `memepred.xyz` at all (only `arcbounty.app` shows) — despite the
+Vercel-DNS nameservers, meaning the zone is managed somewhere I don't have
+visibility into (different account/session, or added directly at the
+registrar). Do not assume `vercel dns` commands will work for this domain
+without her confirming where it's actually managed first.
+
+**Recommended (not yet done, her call):** skip the Cloudflare Worker/geo-block
+for now (testnet stage, no compliance urgency yet) and just add a plain A
+record `api.memepred.xyz` → `89.124.77.59` wherever she finds the zone is
+actually managed. Revisit Cloudflare NS delegation as a mainnet-readiness
+task, not a blocker for the Sepolia/CEF-demo stage.
+
+`deploy/.env` on the VPS has fresh POSTGRES_PASSWORD/REDIS_PASSWORD (generated
+this session, not reused from local dev) + the real KEEPER_PRIVATE_KEY/
+BADGE_MINTER_PRIVATE_KEY/contract addresses from local `.env`. Permissions
+locked to 600. `INDEXER_START_BLOCK=43746690` (factory deploy block, matches
+subgraph.yaml).
+
 ## FULL AUDIT 2026-07-04 — findings, then FIXED 2026-07-05 (see below)
 
 Original findings (all now fixed — see "Sprint 5.5" section below for what changed):
