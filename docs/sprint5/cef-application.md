@@ -1,4 +1,4 @@
-# CEF Outreach Draft — MemePred
+# CEF Outreach Draft — FlipTheMeme
 
 **⚠️ Updated [session: 2026-07-05]. Corrections from the previous version of
 this file, verified live against gmfarcaster.com/cef via web search/fetch —
@@ -46,7 +46,7 @@ do not resubmit the old numbers/process below, they were wrong:**
 
 ## Ready-to-send note (paste into the CEF contact form or /CEF cast)
 
-> Hey — building MemePred, a non-custodial PvP prediction market for
+> Hey — building FlipTheMeme, a non-custodial PvP prediction market for
 > memecoins on Base (bet USDC on UP/DOWN over 5min–24h windows, Pyth-settled,
 > winners split the losing side's pool). Looking at it through a Clanker
 > lens: every Clanker token that earns a Pyth feed becomes an instantly
@@ -71,7 +71,7 @@ do not resubmit the old numbers/process below, they were wrong:**
 
 ## TL;DR for the steward
 
-> MemePred is a **non-custodial PvP prediction market for memecoins**, built on
+> FlipTheMeme is a **non-custodial PvP prediction market for memecoins**, built on
 > Base. Users bet USDC on UP/DOWN of a token over a 5-min to 24-hour window;
 > Pyth settles, winners split the loser pot. **Targeted Clanker fit:** we
 > auto-spawn prediction markets the moment a Clanker token gets a Pyth feed —
@@ -167,7 +167,7 @@ do not resubmit the old numbers/process below, they were wrong:**
 - **Subgraph**: `subgraph/subgraph.yaml` is pointed at the current deploy's
   addresses (verified 2026-07-05) — confirm the hosted/Studio URL you link
   is the one actually serving this manifest before sending.
-- **Mini App**: `https://memepred.xyz` — will open in Warpcast as a real mini-app
+- **Mini App**: `https://flipthememe.com` — will open in Warpcast as a real mini-app
   only after the `accountAssociation` signature (blocker #3, top of file) is done.
   Until then this link opens as a plain webpage, and the public backend URL
   blocker means it may show a fatal env-config screen — check it loads before sending.
@@ -180,19 +180,19 @@ do not resubmit the old numbers/process below, they were wrong:**
 **Day-0 prelaunch announcement:**
 > 🧪 prelaunch on base sepolia
 >
-> memepred — PvP prediction markets on memecoins.
+> flipthememe — PvP prediction markets on memecoins.
 > bet UP or DOWN on $PEPE / $DOGE in 5min, 15min, 1h, 4h, 24h windows.
 > usdc settled, non-custodial, pyth-oracled.
 >
 > first 20 LP get a Genesis NFT + 1.5× fee share — forever.
 >
-> miniapp: memepred.xyz
+> miniapp: flipthememe.com
 > /clanker tokens going live as feeds come online.
 >
 > cc @rish @dish @gmfarcaster — would love feedback
 
 **Day-of activation (when first Clanker market spawns):**
-> first /clanker market on memepred is live:
+> first /clanker market on flipthememe is live:
 > $CHRTM ▲ vs ▼ — 1h window
 >
 > reply with your call, screenshot the receipt, get a sat-back from the protocol

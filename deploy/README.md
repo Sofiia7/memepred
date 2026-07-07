@@ -1,4 +1,4 @@
-# MemePred — single-VPS deployment
+# FlipTheMeme — single-VPS deployment
 
 Everything (Postgres + Redis + API + keeper + HTTPS reverse proxy) runs in one
 `docker compose` stack on a single VPS. Tested on Ubuntu 22.04 / 24.04, 2 vCPU
@@ -24,8 +24,8 @@ sudo ufw enable
 ## 2. Clone + configure
 
 ```bash
-git clone https://github.com/YOU/memepred.git ~/memepred
-cd ~/memepred/deploy
+git clone https://github.com/YOU/flipthememe.git ~/flipthememe
+cd ~/flipthememe/deploy
 cp .env.example .env
 # Edit .env — fill contract addresses (after forge deploy), passwords, keys.
 ```
@@ -40,14 +40,14 @@ echo "WORKER_SECRET=$(openssl rand -hex 24)"
 
 ## 3. DNS
 
-Point `api.memepred.xyz` A/AAAA record to your VPS IP via Cloudflare.
+Point `api.flipthememe.com` A/AAAA record to your VPS IP via Cloudflare.
 Set Cloudflare proxy to "DNS-only" (grey cloud) so Caddy can grab Let's Encrypt
 certs directly. After certs are issued, you can enable the orange cloud.
 
 ## 4. Boot
 
 ```bash
-cd ~/memepred/deploy
+cd ~/flipthememe/deploy
 docker compose up -d
 docker compose logs -f
 ```
@@ -61,19 +61,19 @@ First boot:
 Health check:
 
 ```bash
-curl https://api.memepred.xyz/health
+curl https://api.flipthememe.com/health
 # {"status":"ok","ts":1737...}
 ```
 
 ## 5. Backups
 
 Hourly Postgres dumps via cron — drops the gzipped SQL into
-`/var/backups/memepred`, keeps last 30 days.
+`/var/backups/flipthememe`, keeps last 30 days.
 
 ```bash
 crontab -e
 # add:
-0 * * * * /home/USER/memepred/deploy/scripts/backup-db.sh >> /var/log/memepred-backup.log 2>&1
+0 * * * * /home/USER/flipthememe/deploy/scripts/backup-db.sh >> /var/log/flipthememe-backup.log 2>&1
 ```
 
 For real off-site backup later, point a nightly job at `rclone copy` to
@@ -82,7 +82,7 @@ Cloudflare R2 / Backblaze B2 (cheap object storage).
 ## 6. Updates
 
 ```bash
-cd ~/memepred
+cd ~/flipthememe
 git pull
 cd deploy
 docker compose build --pull
@@ -95,7 +95,7 @@ The keeper hot wallet (`KEEPER_PRIVATE_KEY`) needs ETH on Base to pay gas for
 on-chain price updates and resolver calls. Top up via Coinbase / Base bridge:
 
 - Initial: **0.05 ETH** (≈ $130 worth, lasts ~2–3 months under light load).
-- Monitor via the Basescan link in `~/memepred/deploy/MONITORING.md`.
+- Monitor via the Basescan link in `~/flipthememe/deploy/MONITORING.md`.
 
 The `OracleResolver` contract has a `receive() payable` and pays Pyth update fees
 out of its own ETH balance — top it up directly (send ETH to its address):
@@ -104,7 +104,7 @@ out of its own ETH balance — top it up directly (send ETH to its address):
 
 ## 8. Monitoring (free)
 
-- **UptimeRobot** — pings `https://api.memepred.xyz/health` every 5 min, e-mails
+- **UptimeRobot** — pings `https://api.flipthememe.com/health` every 5 min, e-mails
   when down. Free tier covers 50 monitors.
 - **Logs**: `docker compose logs -f --tail=200 backend keeper`.
 - For longer-term log search, optionally pipe to [Axiom](https://axiom.co) free
@@ -116,7 +116,7 @@ out of its own ETH balance — top it up directly (send ETH to its address):
 |---|---|
 | Tail logs | `docker compose logs -f backend keeper` |
 | Restart everything | `docker compose restart` |
-| psql into Postgres | `docker compose exec postgres psql -U memepred memepred` |
+| psql into Postgres | `docker compose exec postgres psql -U flipthememe flipthememe` |
 | Manual migration | runs automatically on boot via `runMigrations()` |
 | **Emergency pause LP** | call `pause()` from your Ledger via Etherscan/Frame |
 | **Emergency pause OrderbookMarket** | call `pause()` on each market from multisig |
@@ -124,7 +124,7 @@ out of its own ETH balance — top it up directly (send ETH to its address):
 ## 10. Going through CDN
 
 The public frontend is hosted on Vercel; the Cloudflare Worker (`workers/geo-block.ts`)
-sits in front of `api.memepred.xyz` and rejects users from sanctioned juridictions.
+sits in front of `api.flipthememe.com` and rejects users from sanctioned juridictions.
 The Worker must inject:
 
 ```

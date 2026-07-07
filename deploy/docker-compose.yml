@@ -1,4 +1,4 @@
-# MemePred — single-VPS production stack.
+# FlipTheMeme — single-VPS production stack.
 # Boots Postgres (TimescaleDB), Redis, the API, the keeper, and Caddy (HTTPS reverse proxy).
 #
 # Usage:

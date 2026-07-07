@@ -53,7 +53,7 @@ Confirm via `/api/keeper/health` (after keeper boot): `resolverEthAlert: ok`.
 ```bash
 cd subgraph
 npx graph build
-npx graph deploy --studio memepred-sepolia
+npx graph deploy --studio flipthememe-sepolia
 ```
 
 Copy the deployed query URL into frontend `.env` as `VITE_GRAPH_URL`.
@@ -66,8 +66,8 @@ docker compose up -d --build
 ```
 
 Verify:
-- [ ] `curl https://api.memepred.xyz/health` → 200
-- [ ] `curl https://api.memepred.xyz/api/keeper/health` → 200 within 5 min
+- [ ] `curl https://api.flipthememe.com/health` → 200
+- [ ] `curl https://api.flipthememe.com/api/keeper/health` → 200 within 5 min
 - [ ] Postgres has the 002 + 003 migrations applied: `\dt` shows
       `orders, matches, order_matches, _ingested_logs, invariant_snapshots`
 
@@ -87,13 +87,13 @@ If empty after 10 min: check keeper logs for `marketCreator` errors.
 ```bash
 cd workers
 npx wrangler secret put WORKER_SECRET   # paste shared secret
-npx wrangler secret put ORIGIN_URL      # https://api-origin.memepred.xyz
+npx wrangler secret put ORIGIN_URL      # https://api-origin.flipthememe.com
 npx wrangler deploy
 ```
 
 Verify:
-- [ ] `curl -H "CF-IPCountry: US" https://api.memepred.xyz/api/geo` → 451
-- [ ] `curl https://api.memepred.xyz/api/geo/config` → `{"blocked":["US",...]}`
+- [ ] `curl -H "CF-IPCountry: US" https://api.flipthememe.com/api/geo` → 451
+- [ ] `curl https://api.flipthememe.com/api/geo/config` → `{"blocked":["US",...]}`
 
 ## 8. Tenderly alerts
 
@@ -138,6 +138,6 @@ Expected: zero critical rows. drift_usdc max ≤ $1 (rounding / indexer lag).
 ## 11. CEF application (parallel — see docs/sprint5/cef-application.md)
 
 While soak is running:
-- [ ] Mini app at `https://memepred.xyz` reachable from Warpcast preview tool
+- [ ] Mini app at `https://flipthememe.com` reachable from Warpcast preview tool
 - [ ] First cast about prelaunch posted, tagging @gmfarcaster @rish @dish
 - [ ] Application form submitted with: Sepolia addresses, demo URL, this checklist as evidence

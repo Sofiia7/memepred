@@ -13,7 +13,7 @@
   тестовый ETH (доли цента) и тестовый USDC. Реальных денег на них нет.
 - **Единственный секрет с реальной ценностью — Pinata** (внешний аккаунт). Уже отозван ✅.
 - Вектор утечки — **НЕ git.** Если `.env` куда-то «засветился», то через: расшаренную/
-  синхронизируемую папку (`C:\Server\memepred`), скриншот, вставку в чат, или проект на Vercel.
+  синхронизируемую папку (`C:\Server\flipthememe`), скриншот, вставку в чат, или проект на Vercel.
   → см. раздел D «Проверить остальные каналы».
 
 **Вывод:** срочной угрозы нет. Это гигиена + правило «тестнет-ключи никогда не переезжают на mainnet».
@@ -25,7 +25,7 @@
 | Секрет | Где лежит | Тип | Утёк в git? | Действие |
 |---|---|---|---|---|
 | `PINATA_API_KEY` | `.env:42` | Внешний API | Нет | **Отозван.** Новый — только когда понадобится IPFS (см. A). В коде **не используется**. |
-| `WORKER_SECRET` | `.env:66`, `deploy/.env:12`, `.testwallets/worker-secret.txt`, + Cloudflare secret воркера `memepred-edge` | HMAC-секрет geo-эндпоинта | Нет | **Ротировать** (см. C1) — он защищает живой `/api/geo`. |
+| `WORKER_SECRET` | `.env:66`, `deploy/.env:12`, `.testwallets/worker-secret.txt`, + Cloudflare secret воркера `flipthememe-edge` | HMAC-секрет geo-эндпоинта | Нет | **Ротировать** (см. C1) — он защищает живой `/api/geo`. |
 | `POSTGRES_PASSWORD` | `.env:72` | Пароль БД | Нет | Ротировать, если backend публично доступен (C2). |
 | `REDIS_PASSWORD` | `.env:73` | Пароль Redis | Нет | Ротировать, если Redis публично доступен (C2). |
 | Deployer `PRIVATE_KEY` `0x3ae5218b…` → `0x12f9B9De…48BD2` | `.env:13`, `deploy/.env:11/25/26` | Ключ EOA (тестнет) | Нет | Burn-метка (B). Владелец всех контрактов. |
@@ -100,7 +100,7 @@
 ## C. Общие/инфра-секреты
 
 ### C1. `WORKER_SECRET` (ротировать — он живой)
-Это shared HMAC между Cloudflare-воркером `memepred-edge` и backend (`x-worker-secret` header).
+Это shared HMAC между Cloudflare-воркером `flipthememe-edge` и backend (`x-worker-secret` header).
 Лежит в **4 местах** — менять во всех одновременно:
 ```bash
 # 1. сгенерировать новый (git bash)
@@ -127,11 +127,11 @@ openssl rand -hex 16   # для REDIS_PASSWORD
 
 ## D. Проверить остальные каналы утечки
 
-- [ ] **Vercel** (dashboard → memepred-frontend → Settings → Environment Variables):
+- [ ] **Vercel** (dashboard → flipthememe-frontend → Settings → Environment Variables):
       у фронта секретов быть не должно — только публичные `VITE_*`. Если там оказался приватный
       ключ или `WORKER_SECRET` — удалить. Эфемерный OIDC-токен Vercel ротирует сам.
-- [ ] **Cloudflare** (воркер `memepred-edge`): после C1 старый `WORKER_SECRET` больше не валиден.
-- [ ] **Папка `C:\Server\memepred`**: не синхронизируется ли в облако (OneDrive/Dropbox/Google Drive)?
+- [ ] **Cloudflare** (воркер `flipthememe-edge`): после C1 старый `WORKER_SECRET` больше не валиден.
+- [ ] **Папка `C:\Server\flipthememe`**: не синхронизируется ли в облако (OneDrive/Dropbox/Google Drive)?
       Если да — `.testwallets/` и `.env` могли утечь туда. Исключить папку из синка.
 - [ ] **История чата/скриншоты**: если `.env` куда-то вставлялся — считать все попавшие туда
       значения скомпрометированными и ротировать по этому runbook.

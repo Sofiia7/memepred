@@ -1,6 +1,6 @@
-# MemePred Subgraph
+# FlipTheMeme Subgraph
 
-Indexes MemePred orderbook markets + LP vault + referrals + badges on Base.
+Indexes FlipTheMeme orderbook markets + LP vault + referrals + badges on Base.
 
 ## Setup
 
@@ -20,7 +20,7 @@ npm install
    done
    ```
 4. `npm run codegen && npm run build`.
-5. `SUBGRAPH_NAME=org/memepred npm run deploy:base`.
+5. `SUBGRAPH_NAME=org/flipthememe npm run deploy:base`.
 
 ## Schema highlights
 

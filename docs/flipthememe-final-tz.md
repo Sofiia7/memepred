@@ -1,4 +1,4 @@
-# MemePred — Полное ТЗ с кодом
+# FlipTheMeme — Полное ТЗ с кодом
 # PvP Prediction Market · мем-коины · Base chain · USDC
 # Версия 3.0 — финальная · Март 2026
 # Готово для Cursor / Codex
@@ -7,7 +7,7 @@
 
 ## КОНТЕКСТ ДЛЯ AI-АССИСТЕНТА
 
-Ты помогаешь строить **MemePred** — децентрализованный PvP prediction market на мем-коины.
+Ты помогаешь строить **FlipTheMeme** — децентрализованный PvP prediction market на мем-коины.
 Пользователи ставят USDC на рост или падение мем-коина за выбранный таймфрейм (5м/15м/1ч/4ч/24ч).
 Победители делят банк проигравших. Протокол берёт 0% на старте, затем 0.5%.
 
@@ -24,7 +24,7 @@
 ## СТРУКТУРА РЕПОЗИТОРИЯ
 
 ```
-memepred/
+flipthememe/
 ├── contracts/          # Solidity · Foundry
 ├── frontend/           # React · Vite
 ├── backend/            # Node.js · Fastify
@@ -920,7 +920,7 @@ contract BadgeNFT is ERC1155, AccessControl {
 
     bytes32 public constant MINTER_ROLE = keccak256("MINTER_ROLE");
 
-    string public name   = "MemePred Badges";
+    string public name   = "FlipTheMeme Badges";
     string public symbol = "MPBADGE";
 
     // badgeId → metadata
@@ -1306,7 +1306,7 @@ const app = Fastify({ logger: true })
 // ── PLUGINS ────────────────────────────────────────────────
 await app.register(cors, {
   origin: [
-    'https://memepred.xyz',
+    'https://flipthememe.com',
     'http://localhost:3000',
     'http://localhost:5173'
   ]
@@ -1975,8 +1975,8 @@ export const config = createConfig({
   ],
   connectors: [
     coinbaseWallet({
-      appName: 'MemePred',
-      appLogoUrl: 'https://memepred.xyz/logo.png',
+      appName: 'FlipTheMeme',
+      appLogoUrl: 'https://flipthememe.com/logo.png',
       preference: 'smartWalletOnly' // Coinbase Smart Wallet
     }),
     metaMask(),
@@ -2547,7 +2547,7 @@ export default {
       return new Response(
         JSON.stringify({
           error:   'region_blocked',
-          message: 'MemePred is not available in your region.',
+          message: 'FlipTheMeme is not available in your region.',
           country
         }),
         {
@@ -2665,7 +2665,7 @@ BASE_RPC_URL=https://mainnet.base.org
 BASESCAN_API_KEY=...
 
 # ── BACKEND ────────────────────────────────────────────────
-DATABASE_URL=postgresql://user:pass@localhost:5432/memepred
+DATABASE_URL=postgresql://user:pass@localhost:5432/flipthememe
 REDIS_URL=redis://localhost:6379
 PORT=3001
 
@@ -2678,8 +2678,8 @@ VITE_ORACLE_RESOLVER=0x...
 VITE_FEE_DISTRIBUTOR=0x...
 VITE_REFERRAL_REGISTRY=0x...
 VITE_BADGE_NFT=0x...
-VITE_API_URL=https://api.memepred.xyz
-VITE_GRAPH_URL=https://api.thegraph.com/subgraphs/name/memepred/base
+VITE_API_URL=https://api.flipthememe.com
+VITE_GRAPH_URL=https://api.thegraph.com/subgraphs/name/flipthememe/base
 
 # ── EXTERNAL ───────────────────────────────────────────────
 PYTH_HERMES_URL=https://hermes.pyth.network
@@ -2742,5 +2742,5 @@ FRONTEND
 
 ---
 
-*MemePred v3.0 · Финальное ТЗ с кодом · Март 2026*
+*FlipTheMeme v3.0 · Финальное ТЗ с кодом · Март 2026*
 *Base chain · PvP · USDC · Pump.fun UX · Non-custodial*

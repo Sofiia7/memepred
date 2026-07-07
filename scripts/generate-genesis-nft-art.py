@@ -53,7 +53,7 @@ def generate() -> None:
         draw.rectangle([40, 40, 960, 960], outline=BASE_BLUE, width=12)
         draw.rectangle([65, 65, 935, 935], outline=TEXT_GREY, width=2)
 
-        draw_centered_text(draw, "MEMEPRED // ON BASE", font_title, 150, TEXT_GREY)
+        draw_centered_text(draw, "FLIPTHEMEME // ON BASE", font_title, 150, TEXT_GREY)
         draw_centered_text(draw, "GENESIS", font_genesis, 220, BASE_BLUE)
         draw_centered_text(draw, f"#{i}", font_number, 380, TEXT_WHITE)
 

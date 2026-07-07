@@ -1,8 +1,8 @@
 {
-  "name": "memepred",
+  "name": "flipthememe",
   "private": true,
   "version": "0.0.0",
-  "description": "MemePred — PvP prediction market on Base (monorepo root)",
+  "description": "FlipTheMeme — PvP prediction market on Base (monorepo root)",
   "packageManager": "pnpm@9.12.0",
   "engines": {
     "node": ">=20.0.0 <21",

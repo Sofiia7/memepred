@@ -1,6 +1,6 @@
-# MemePred — Дополнение к ТЗ
+# FlipTheMeme — Дополнение к ТЗ
 # Модуль: Решение холодного старта
-# Добавить к memepred-final-tz.md
+# Добавить к flipthememe-final-tz.md
 
 ---
 
@@ -689,7 +689,7 @@ contract GenesisNFT is ERC721, Ownable {
 
     event GenesisMinted(address indexed to, uint256 tokenId, uint256 number);
 
-    constructor(string memory _baseURI) ERC721("MemePred Genesis", "MPGEN") Ownable(msg.sender) {
+    constructor(string memory _baseURI) ERC721("FlipTheMeme Genesis", "MPGEN") Ownable(msg.sender) {
         baseURI = _baseURI;
     }
 
@@ -742,7 +742,7 @@ contract GenesisNFT is ERC721, Ownable {
 ### Как анонсировать (Farcaster / Twitter)
 
 ```
-🎴 MemePred Genesis LP — 20 мест
+🎴 FlipTheMeme Genesis LP — 20 мест
 
 Первые 20 провайдеров ликвидности получают:
 → GenesisNFT #1–20 (навсегда уникальный)
@@ -750,7 +750,7 @@ contract GenesisNFT is ERC721, Ownable {
 → Минимум: 50 USDC
 
 Старт: [дата]
-memepred.xyz/genesis
+flipthememe.com/genesis
 ```
 
 ---
@@ -1049,4 +1049,4 @@ BACKEND
 
 ---
 
-*MemePred · Дополнение к ТЗ · Холодный старт · Март 2026*
+*FlipTheMeme · Дополнение к ТЗ · Холодный старт · Март 2026*

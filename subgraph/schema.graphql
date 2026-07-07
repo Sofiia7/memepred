@@ -1,4 +1,4 @@
-# MemePred subgraph schema — orderbook model + LP vault.
+# FlipTheMeme subgraph schema — orderbook model + LP vault.
 
 type Market @entity(immutable: false) {
   id:             ID!              # market address

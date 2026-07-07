@@ -6,7 +6,7 @@
 # Replace ${MARKET_FACTORY}, ${ORACLE_RESOLVER}, ${LIQUIDITY_POOL},
 # ${DISCORD_WEBHOOK_URL}, ${PAGERDUTY_KEY} with real values.
 
-project: memepred
+project: flipthememe
 network: base-sepolia            # change to "base" for mainnet
 deliveryChannels:
   discord:

@@ -1,4 +1,4 @@
-# MemePred — ТЗ на артворк NFT (Badges + Genesis)
+# FlipTheMeme — ТЗ на артворк NFT (Badges + Genesis)
 
 Статус: артворка нет вообще. Оба контракта деплоятся с плейсхолдер-baseURI
 (`ipfs://GENESIS_METADATA/`, `ipfs://YOUR_IPFS_HASH/` в `contracts/script/Deploy.s.sol`).
@@ -87,7 +87,7 @@ function tokenURI(uint256 tokenId) public view override returns (string memory) 
 
 ## 3. Коллекция Genesis (до 20 штук, ERC-721, ПЕРЕДАВАЕМЫЙ NFT)
 
-Из `contracts/src/GenesisNFT.sol` + `docs/memepred-addendum-coldstart.md`:
+Из `contracts/src/GenesisNFT.sol` + `docs/flipthememe-addendum-coldstart.md`:
 - Даёт держателю 1.5× буст к доле комиссий пула — буст переходит вместе с NFT при продаже
 - `genesisNumber` = порядковый номер минта (1–20), не более 20 штук всего
 - **Единственный шаблон**, отличается только числом (порядковый номер, крупно на арте)
@@ -102,7 +102,7 @@ function tokenURI(uint256 tokenId) public view override returns (string memory) 
 ```json
 {
   "name": "Sniper",
-  "description": "10 wins in a row on MemePred.",
+  "description": "10 wins in a row on FlipTheMeme.",
   "image": "ipfs://<CID_IMAGES>/4.png",
   "attributes": [
     { "trait_type": "Rarity", "value": "rare" },
@@ -114,7 +114,7 @@ function tokenURI(uint256 tokenId) public view override returns (string memory) 
 ### Genesis — `{id}.json`
 ```json
 {
-  "name": "MemePred Genesis #7",
+  "name": "FlipTheMeme Genesis #7",
   "description": "Genesis LP #7 — 1.5x fee-share boost, transferable with the NFT.",
   "image": "ipfs://<CID_IMAGES>/7.png",
   "attributes": [

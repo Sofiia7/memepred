@@ -125,7 +125,7 @@ def generate() -> None:
         if style["corners"]:
             draw_corner_accents(draw, style["accent"])
 
-        draw_centered_text(draw, "MEMEPRED BADGE", font_title, 130, TEXT_GREY)
+        draw_centered_text(draw, "FLIPTHEMEME BADGE", font_title, 130, TEXT_GREY)
         draw_centered_text(draw, rarity.upper(), font_rarity, 210, style["accent"])
 
         # Badge name wraps to two lines if too wide for the frame.

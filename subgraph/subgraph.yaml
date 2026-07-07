@@ -1,5 +1,5 @@
 specVersion: 1.0.0
-description: MemePred — orderbook prediction markets on Base
+description: FlipTheMeme — orderbook prediction markets on Base
 schema:
   file: ./schema.graphql
 

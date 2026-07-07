@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# End-to-end deployment for MemePred.
+# End-to-end deployment for FlipTheMeme.
 #
 #   ./scripts/deploy.sh sepolia          # → Base Sepolia (84532)
 #   ./scripts/deploy.sh mainnet          # → Base Mainnet (8453)  ← run twice: dry-run first
@@ -16,7 +16,7 @@
 #   BADGE_MINTER_ADDRESS=0x...
 #   BASE_RPC_URL=https://...
 #   BASESCAN_API_KEY=...
-#   SUBGRAPH_NAME=org/memepred       # optional
+#   SUBGRAPH_NAME=org/flipthememe    # optional
 
 set -euo pipefail
 
@@ -56,12 +56,12 @@ forge script script/Deploy.s.sol:Deploy \
   --rpc-url "$BASE_RPC_URL" \
   --broadcast \
   ${BASESCAN_API_KEY:+--verify --etherscan-api-key "$BASESCAN_API_KEY"} \
-  -vv | tee /tmp/memepred-deploy.log
+  -vv | tee /tmp/flipthememe-deploy.log
 
 # Parse addresses from console.log output.
 extract() {
   local key="$1"
-  grep -E "^  ${key}=" /tmp/memepred-deploy.log | tail -1 | sed -E "s/.*=//; s/[^0-9a-fA-Fx]//g"
+  grep -E "^  ${key}=" /tmp/flipthememe-deploy.log | tail -1 | sed -E "s/.*=//; s/[^0-9a-fA-Fx]//g"
 }
 
 FEE_DISTRIBUTOR="$(extract FEE_DISTRIBUTOR)"
@@ -73,7 +73,7 @@ MARKET_FACTORY="$(extract MARKET_FACTORY)"
 BADGE_NFT="$(extract BADGE_NFT)"
 
 if [[ -z "$MARKET_FACTORY" || -z "$LIQUIDITY_POOL" ]]; then
-  echo "❌ failed to parse addresses — inspect /tmp/memepred-deploy.log"
+  echo "❌ failed to parse addresses — inspect /tmp/flipthememe-deploy.log"
   exit 1
 fi
 
@@ -184,7 +184,7 @@ fi
 cat <<EOF
 
 ═══════════════════════════════════════════════════════════════
- ✅ MemePred deployed on $NETWORK (chainId=$CHAIN_ID)
+ ✅ FlipTheMeme deployed on $NETWORK (chainId=$CHAIN_ID)
 ═══════════════════════════════════════════════════════════════
 
   FeeDistributor:   $FEE_DISTRIBUTOR

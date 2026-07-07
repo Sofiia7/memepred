@@ -1,4 +1,4 @@
-# MemePred — Marketing Playbook (соло-фаундер, бюджет ≤$2K)
+# FlipTheMeme — Marketing Playbook (соло-фаундер, бюджет ≤$2K)
 
 Написан 2026-07-06. Роль: маркетинг-стратегия и готовые шаблоны «что, куда, когда постить».
 Все шаблоны на английском (аудитория — Base/Farcaster crypto-natives), пояснения на русском.
@@ -12,7 +12,7 @@
 **"Polymarket does BTC. We do memes."**
 
 Полная версия (для био, лендинга, питчей):
-> MemePred — 5-minute UP/DOWN prediction markets for memecoins on Base.
+> FlipTheMeme — 5-minute UP/DOWN prediction markets for memecoins on Base.
 > PvP, non-custodial, USDC. Every Clanker launch becomes a market on day one.
 
 Почему это работает:
@@ -71,7 +71,7 @@
 
 **Шаблон 0.1 — интро-каст (первый, закрепить в профиле):**
 ```
-building memepred — 5-min UP/DOWN prediction markets for memecoins on base
+building flipthememe — 5-min UP/DOWN prediction markets for memecoins on base
 
 polymarket does BTC. we do $PEPE, $BRETT, $TOSHI, $DEGEN — and every
 /clanker token that gets a price feed, auto-listed on day one
@@ -86,7 +86,7 @@ building in public here. testnet link in bio 🔵
 
 **Шаблон 0.2 — еженедельный billboard-пост (каждый пн, менять цифры):**
 ```
-memepred week [N] recap:
+flipthememe week [N] recap:
 
 · [X] forge tests green ([+Y] this week)
 · [конкретный фикс/фича недели — 1 строка человеческим языком]
@@ -97,7 +97,7 @@ still pre-mainnet. still 0% fee at launch. genesis LP waitlist: [ссылка/ф
 
 **Шаблон 0.3 — «how it works» серия (ср, 4 штуки по одной в неделю):**
 ```
-how memepred settles a 5-minute market fairly (1/4):
+how flipthememe settles a 5-minute market fairly (1/4):
 
 naive approach: take pyth price at close. problem: one bad tick = wrong winner.
 
@@ -131,7 +131,7 @@ min 50 USDC. waitlist: [ссылка]
 just applied for a /cef fresh clank grant 🤞
 
 the pitch: every clanker token with a pyth feed becomes a prediction
-market on memepred automatically — no listing process, the keeper
+market on flipthememe automatically — no listing process, the keeper
 picks it up within minutes of launch
 
 feedback welcome, especially from folks who've been through CEF before
@@ -141,7 +141,7 @@ feedback welcome, especially from folks who've been through CEF before
 
 **D-7 (за неделю), Farcaster + X:**
 ```
-memepred mainnet: [дата]
+flipthememe mainnet: [дата]
 
 · 5-min to 24h UP/DOWN markets on $PEPE $DOGE $BRETT $TOSHI $DEGEN +8 more
 · 0% protocol fee for the first 3 months
@@ -153,7 +153,7 @@ genesis LP vault opens same day. 20 NFT slots, [N] already claimed.
 
 **D-0 лонч-каст (закрепить; X-версия — тред из 4-5 твитов по тем же пунктам):**
 ```
-memepred is live on base mainnet 🔵
+flipthememe is live on base mainnet 🔵
 
 bet UP or DOWN on memecoins. 5 minutes to 24 hours. winners take the pot.
 
@@ -187,7 +187,7 @@ next market's already open. [ссылка]
 
 Ежедневный формат (5 мин работы, можно автоматизировать через бота позже):
 ```
-today on memepred:
+today on flipthememe:
 🥇 top caller: @[handle] — [N] correct in a row ([badge] badge earned)
 📈 biggest pot: $[TOKEN] [duration] — [X] USDC
 🔥 [юмор/наблюдение одной строкой про сегодняшний мем-рынок]
@@ -195,7 +195,7 @@ today on memepred:
 
 Еженедельно (пн) — метрики, публично и честно:
 ```
-memepred week [N]:
+flipthememe week [N]:
 · volume: $[X] ([+/-]% wow)
 · unique traders: [N]
 · LP vault: $[X] TVL, [X]% realized fee yield
@@ -204,7 +204,7 @@ memepred week [N]:
 
 Клэнкер-токен листится → в течение часа каст в /clanker:
 ```
-$[TICKER] got a pyth feed → it's now tradeable on memepred
+$[TICKER] got a pyth feed → it's now tradeable on flipthememe
 
 first market: 15-min UP/DOWN, opens now. is it going up, anon? [ссылка]
 cc @[deployer токена]

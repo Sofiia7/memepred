@@ -1,4 +1,4 @@
-# Pyth Ecosystem Grants — Developer Grant draft — MemePred
+# Pyth Ecosystem Grants — Developer Grant draft — FlipTheMeme
 
 **Status: draft, not sent.** Written 2026-07-05 alongside the CEF note
 (`docs/sprint5/cef-application.md`) — reuses the same verified facts, same
@@ -20,7 +20,7 @@ assumptions about "how to submit" are still accurate by the time you send.]**
 
 ## Ready-to-send note (adapt to whatever the actual submission channel turns out to be)
 
-> Hey — building MemePred, a non-custodial PvP prediction market for
+> Hey — building FlipTheMeme, a non-custodial PvP prediction market for
 > memecoins on Base. Users bet USDC on UP/DOWN of a token over 5min–24h
 > windows; Pyth price feeds settle every market via a TWAP-based exit
 > price, non-custodial, no manual oracle intervention.

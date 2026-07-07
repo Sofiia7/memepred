@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Deploy MemePred stack to Base Sepolia and write the resulting addresses back
+# Deploy FlipTheMeme stack to Base Sepolia and write the resulting addresses back
 # to ../.env so backend, keeper and frontend pick them up automatically.
 #
 # Usage:  ./scripts/deploy-sepolia.sh
@@ -37,7 +37,7 @@ forge script script/Deploy.s.sol \
   --rpc-url https://sepolia.base.org \
   --broadcast \
   --slow \
-  -vv 2>&1 | tee /tmp/memepred-deploy.log
+  -vv 2>&1 | tee /tmp/flipthememe-deploy.log
 
 # Pull addresses out of the broadcast artifact.
 ART="$ROOT/contracts/broadcast/Deploy.s.sol/84532/run-latest.json"
@@ -46,7 +46,7 @@ echo "Updating $ROOT/.env with new Sepolia addresses..."
 
 extract() {
   # $1 = label printed in script (e.g. "FEE_DISTRIBUTOR=")
-  grep -E "^  $1" /tmp/memepred-deploy.log | head -1 | awk -F= '{print $2}' | tr -d ' '
+  grep -E "^  $1" /tmp/flipthememe-deploy.log | head -1 | awk -F= '{print $2}' | tr -d ' '
 }
 
 FEE_DISTRIBUTOR=$(extract "FEE_DISTRIBUTOR=")

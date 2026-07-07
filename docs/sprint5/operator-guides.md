@@ -20,7 +20,7 @@ paste real ones, Warpcast will refuse to render the app as a mini-app
   Settings → Account → "Custody address".
 - The custody wallet's seed phrase or hardware-wallet access for signing.
 - Your final production domain — **the signature is domain-bound**. If
-  you sign for `staging.memepred.xyz` and serve from `memepred.xyz`, it
+  you sign for `staging.flipthememe.com` and serve from `flipthememe.com`, it
   fails. Sign once you have your real domain pointed at the Vercel /
   Cloudflare deploy.
 
@@ -32,7 +32,7 @@ paste real ones, Warpcast will refuse to render the app as a mini-app
    You'll need to log in with your FID.
 
 2. **Enter your domain** in the "Domain" field — just the host part,
-   e.g. `memepred.xyz` (no scheme, no path).
+   e.g. `flipthememe.com` (no scheme, no path).
 
 3. **Connect the custody wallet.** The tool will prompt for the
    `signTypedData` payload (EIP-712). The structure is:
@@ -42,7 +42,7 @@ paste real ones, Warpcast will refuse to render the app as a mini-app
      "domain": { "name": "Farcaster Frame", "version": "1" },
      "primaryType": "Frame",
      "message": {
-       "domain": "memepred.xyz"
+       "domain": "flipthememe.com"
      }
    }
    ```
@@ -62,21 +62,21 @@ paste real ones, Warpcast will refuse to render the app as a mini-app
 6. **Verify.** After your next deploy:
 
    ```bash
-   curl https://memepred.xyz/.well-known/farcaster.json | jq .
+   curl https://flipthememe.com/.well-known/farcaster.json | jq .
    ```
 
    The accountAssociation block should be your three base64 strings.
    Then validate in the dev tool's "Verify" tab — green checkmark = ok.
 
 7. **Test in Warpcast preview**:
-   <https://farcaster.xyz/~/developers/mini-apps/preview?url=https://memepred.xyz>
+   <https://farcaster.xyz/~/developers/mini-apps/preview?url=https://flipthememe.com>
 
 ### Common pitfalls
 
 - **Signing with the wrong wallet.** Must be the FID custody wallet.
   Smart-wallet FIDs need to use the EOA that registered them.
 - **Wrong domain.** If you set `iconUrl` and `homeUrl` to
-  `https://memepred.xyz/...` but signed for `dev.memepred.xyz`, mini-app
+  `https://flipthememe.com/...` but signed for `dev.flipthememe.com`, mini-app
   validation fails silently. Re-sign with the matching host.
 - **Caching.** Warpcast caches the manifest aggressively. Add `?bust=$(date +%s)`
   to the preview URL to force refetch while iterating.
@@ -93,11 +93,11 @@ into the backend `.env` as `DISCORD_WEBHOOK_URL`.
 1. **Open Discord, go to your server.** If you don't have one, create
    one — Server → Add a Server → "Create my own" → invite-only is fine.
 
-2. **Pick a channel for alerts.** Name it `#memepred-alerts` so it's
+2. **Pick a channel for alerts.** Name it `#flipthememe-alerts` so it's
    obvious. Right-click the channel → Edit Channel → Integrations →
    Webhooks → **New Webhook**.
 
-3. **Configure**: name "MemePred Tenderly" (or whatever), avatar
+3. **Configure**: name "FlipTheMeme Tenderly" (or whatever), avatar
    optional. Click **Copy Webhook URL**. It looks like:
 
    ```
@@ -111,11 +111,11 @@ into the backend `.env` as `DISCORD_WEBHOOK_URL`.
 
    ```bash
    curl -X POST -H 'Content-Type: application/json' \
-     -d '{"content":"smoke test from MemePred ops"}' \
+     -d '{"content":"smoke test from FlipTheMeme ops"}' \
      "$DISCORD_WEBHOOK_URL"
    ```
 
-   You should see the message in `#memepred-alerts` within 1 second.
+   You should see the message in `#flipthememe-alerts` within 1 second.
 
 5. **Put it where it's needed:**
 
@@ -125,7 +125,7 @@ into the backend `.env` as `DISCORD_WEBHOOK_URL`.
 
 ### Want a separate channel per severity?
 
-Repeat steps 2-4 with a `#memepred-critical` channel, and reference
+Repeat steps 2-4 with a `#flipthememe-critical` channel, and reference
 that webhook for the `critical`-tagged alerts in
 `tenderly-alerts.yaml`. PagerDuty is the better channel for true
 3am-wake-up criticals — see step 3 below.
@@ -145,7 +145,7 @@ need a Tenderly project to import it into.
 2. **Create a project**:
 
    - Dashboard → "+ Create project"
-   - Name: `memepred`
+   - Name: `flipthememe`
    - Network: Base (Tenderly supports both Sepolia and mainnet under
      the same project — you switch at alert level)
 
@@ -160,7 +160,7 @@ need a Tenderly project to import it into.
 
    ```bash
    TENDERLY_ACCOUNT=your-account-slug
-   TENDERLY_PROJECT=memepred
+   TENDERLY_PROJECT=flipthememe
    ```
 
 4. **Add the deployed contracts** as monitored addresses. After running
@@ -179,7 +179,7 @@ need a Tenderly project to import it into.
 
    - Settings → Alerting → Notification Channels → "+ Add" → Discord
    - Paste your webhook URL from Section 2.
-   - Test → expect a Tenderly hello message in `#memepred-alerts`.
+   - Test → expect a Tenderly hello message in `#flipthememe-alerts`.
 
 6. **Import the alerts manifest:**
 
@@ -209,7 +209,7 @@ need a Tenderly project to import it into.
    You need a PagerDuty account (14-day free trial enough for the soak)
    and a service "Integration Key" (Events API v2). PagerDuty UI:
 
-   - Services → "+ New Service" → name "MemePred prod"
+   - Services → "+ New Service" → name "FlipTheMeme prod"
    - Integrations → "+ Add" → "Events API v2"
    - Copy the Integration Key (32-char hex)
    - Paste into Tenderly → that's `${PAGERDUTY_KEY}` in the YAML

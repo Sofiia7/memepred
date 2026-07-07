@@ -51,19 +51,19 @@ jobs:
       postgres:
         image: timescale/timescaledb:latest-pg16
         env:
-          POSTGRES_USER: memepred
-          POSTGRES_PASSWORD: memepred
-          POSTGRES_DB: memepred_ci
+          POSTGRES_USER: flipthememe
+          POSTGRES_PASSWORD: flipthememe
+          POSTGRES_DB: flipthememe_ci
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U memepred"
+          --health-cmd "pg_isready -U flipthememe"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
 
     env:
-      DATABASE_URL: postgres://memepred:memepred@localhost:5432/memepred_ci
+      DATABASE_URL: postgres://flipthememe:flipthememe@localhost:5432/flipthememe_ci
 
     steps:
       - uses: actions/checkout@v4
