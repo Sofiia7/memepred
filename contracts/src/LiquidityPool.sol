@@ -106,7 +106,7 @@ contract LiquidityPool is ERC4626, ReentrancyGuard, Pausable, Ownable {
     // ── CONSTRUCTOR ────────────────────────────────────────
     constructor(IERC20 _usdc, address _genesisNFT)
         ERC4626(_usdc)
-        ERC20("MemePred LP Share", "mpLP")
+        ERC20("FlipTheMeme LP Share", "ftmLP")
         Ownable(msg.sender)
     {
         genesisNFT = GenesisNFT(_genesisNFT);

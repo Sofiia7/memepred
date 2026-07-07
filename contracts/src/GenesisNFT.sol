@@ -27,7 +27,7 @@ contract GenesisNFT is ERC721, Ownable {
 
     event GenesisMinted(address indexed to, uint256 tokenId, uint256 number);
 
-    constructor(string memory baseURI_) ERC721("MemePred Genesis", "MPGEN") Ownable(msg.sender) {
+    constructor(string memory baseURI_) ERC721("FlipTheMeme Genesis", "FTMGEN") Ownable(msg.sender) {
         baseTokenURI = baseURI_;
     }
 

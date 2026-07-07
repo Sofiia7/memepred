@@ -15,8 +15,8 @@ contract BadgeNFT is ERC1155, AccessControl {
 
     bytes32 public constant MINTER_ROLE = keccak256("MINTER_ROLE");
 
-    string public name   = "MemePred Badges";
-    string public symbol = "MPBADGE";
+    string public name   = "FlipTheMeme Badges";
+    string public symbol = "FTMBADGE";
 
     // badgeId → metadata
     struct BadgeInfo {
