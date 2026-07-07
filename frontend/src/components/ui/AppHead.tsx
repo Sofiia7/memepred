@@ -11,7 +11,7 @@ export function AppHead() {
     <div className="app-head">
       <div className="logo">
         <span className="sq" />
-        <span className="name">memepred</span>
+        <span className="name">flipthememe</span>
       </div>
       {isConnected ? (
         <button className="connect ghost" onClick={() => disconnect()}>

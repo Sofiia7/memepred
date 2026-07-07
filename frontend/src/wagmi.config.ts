@@ -14,8 +14,8 @@ export const config = createConfig({
     farcasterMiniApp(),
     // Coinbase Smart Wallet — primary connector outside Farcaster.
     coinbaseWallet({
-      appName:    'MemePred',
-      appLogoUrl: 'https://memepred.xyz/icon.png',
+      appName:    'FlipTheMeme',
+      appLogoUrl: 'https://flipthememe.com/icon.png',
       preference: 'smartWalletOnly'
     }),
     metaMask(),

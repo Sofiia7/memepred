@@ -20,14 +20,13 @@
  */
 import {
   createPublicClient,
-  createWalletClient,
   http,
   type Address,
 } from 'viem'
 import { base, baseSepolia } from 'viem/chains'
-import { privateKeyToAccount } from 'viem/accounts'
 import { pg } from '../db/pg.js'
 import { CONTRACTS, MARKET_FACTORY_ABI } from '../config.js'
+import { getKeeperWalletClient } from './keeperWallet.js'
 
 const chain = process.env.CHAIN_ID === '8453' ? base : baseSepolia
 const publicClient = createPublicClient({ chain, transport: http(process.env.BASE_RPC_URL) })
@@ -57,8 +56,8 @@ async function openMarkets(): Promise<OpenMarketRow[]> {
 
 export async function createMissingMarkets() {
   if (!CONTRACTS.MARKET_FACTORY || CONTRACTS.MARKET_FACTORY === '0x') return
-  const key = process.env.KEEPER_PRIVATE_KEY as `0x${string}` | undefined
-  if (!key) return
+  const wallet = getKeeperWalletClient()
+  if (!wallet) return
 
   let feeds: readonly `0x${string}`[]
   try {
@@ -76,8 +75,6 @@ export async function createMissingMarkets() {
 
   const open = await openMarkets()
   const now  = Date.now()
-  const account = privateKeyToAccount(key)
-  const wallet = createWalletClient({ account, chain, transport: http(process.env.BASE_RPC_URL) })
 
   for (const feedId of feeds) {
     for (const dur of DURATIONS_SEC) {

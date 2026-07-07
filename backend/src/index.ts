@@ -19,7 +19,7 @@ import { PORT }              from './config.js'
 const app = Fastify({ logger: true })
 
 const DEFAULT_ORIGINS = [
-  'https://memepred.xyz',
+  'https://flipthememe.com',
   'http://localhost:3000',
   'http://localhost:5173'
 ]
@@ -63,7 +63,7 @@ try {
   await runMigrations()
   await redis.connect()
   await app.listen({ port: PORT, host: '0.0.0.0' })
-  console.log(`MemePred API listening on port ${PORT}`)
+  console.log(`FlipTheMeme API listening on port ${PORT}`)
 } catch (err) {
   app.log.error(err)
   process.exit(1)

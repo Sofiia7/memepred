@@ -23,7 +23,7 @@ export const FEED_IDS: Record<string, string> = {
 
 export const PYTH_HERMES = process.env.PYTH_HERMES_URL || 'https://hermes.pyth.network'
 export const BASE_RPC_URL = process.env.BASE_RPC_URL || 'https://mainnet.base.org'
-export const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://localhost:5432/memepred'
+export const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://localhost:5432/flipthememe'
 export const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379'
 export const PORT = Number(process.env.PORT || 3001)
 

@@ -116,7 +116,7 @@ export function GenesisPage() {
           First 20 LPs earn <em>1.5×</em> fee share <em>forever</em>.
         </h3>
         <div className="gh-sub">
-          Provide USDC to the matching vault, mint a soulbound Genesis NFT, and accrue boosted fees on every market settlement — for as long as memepred exists.
+          Provide USDC to the matching vault, mint a soulbound Genesis NFT, and accrue boosted fees on every market settlement — for as long as flipthememe exists.
         </div>
         <div className="spots">
           <div className="big">{genesisLeft}</div>

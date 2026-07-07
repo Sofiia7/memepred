@@ -7,7 +7,7 @@
  * (40% of the protocol fee!) was dead on arrival. This closes that gap.
  */
 
-const STORAGE_KEY = 'memepred:pendingReferrer'
+const STORAGE_KEY = 'flipthememe:pendingReferrer'
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
 
 /**

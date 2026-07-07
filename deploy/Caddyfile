@@ -3,8 +3,8 @@
     email {$LETSENCRYPT_EMAIL}
 }
 
-# Public API at api.memepred.xyz — change to your domain.
-{$API_DOMAIN:api.memepred.xyz} {
+# Public API at api.flipthememe.com — change to your domain.
+{$API_DOMAIN:api.flipthememe.com} {
     encode gzip zstd
 
     # Security headers — applied to every response.

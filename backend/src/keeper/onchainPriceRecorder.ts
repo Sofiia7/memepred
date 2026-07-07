@@ -1,8 +1,8 @@
-import { createPublicClient, createWalletClient, http, type Address } from 'viem'
+import { createPublicClient, http, type Address } from 'viem'
 import { base, baseSepolia } from 'viem/chains'
 const chain = process.env.CHAIN_ID === '8453' ? base : baseSepolia
-import { privateKeyToAccount } from 'viem/accounts'
 import { FEED_IDS, PYTH_HERMES, ORACLE_RESOLVER_ABI, CONTRACTS } from '../config.js'
+import { getKeeperWalletClient } from './keeperWallet.js'
 
 const publicClient = createPublicClient({ chain, transport: http(process.env.BASE_RPC_URL) })
 
@@ -13,14 +13,11 @@ const publicClient = createPublicClient({ chain, transport: http(process.env.BAS
  * balance for this purpose (top up from treasury).
  */
 export async function recordPricesOnChain() {
-  const key = process.env.KEEPER_PRIVATE_KEY as `0x${string}` | undefined
-  if (!key) { console.warn('KEEPER_PRIVATE_KEY missing — skipping on-chain price record'); return }
+  const wallet = getKeeperWalletClient()
+  if (!wallet) { console.warn('KEEPER_PRIVATE_KEY missing — skipping on-chain price record'); return }
   if (!CONTRACTS.ORACLE_RESOLVER || CONTRACTS.ORACLE_RESOLVER === '0x') {
     console.warn('ORACLE_RESOLVER address missing'); return
   }
-
-  const account = privateKeyToAccount(key)
-  const wallet  = createWalletClient({ account, chain, transport: http(process.env.BASE_RPC_URL) })
 
   for (const [symbol, feedId] of Object.entries(FEED_IDS)) {
     try {

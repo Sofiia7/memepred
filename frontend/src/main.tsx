@@ -42,7 +42,7 @@ function FatalEnvScreen({ missing }: { missing: string[] }) {
       background: '#000', color: '#ff3355', padding: 24,
     }}>
       <div style={{ maxWidth: 540 }}>
-        <div style={{ fontSize: 12, opacity: 0.6, marginBottom: 8 }}>MEMEPRED · CONFIG ERROR</div>
+        <div style={{ fontSize: 12, opacity: 0.6, marginBottom: 8 }}>FLIPTHEMEME · CONFIG ERROR</div>
         <h1 style={{ fontSize: 22, margin: '0 0 12px' }}>Frontend is not configured</h1>
         <p style={{ color: '#ccc', fontSize: 13, lineHeight: 1.5, marginBottom: 16 }}>
           One or more required environment variables are missing or invalid.

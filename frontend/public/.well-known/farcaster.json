@@ -1,41 +1,29 @@
 {
-  "_comment": "Sprint 5 — Mini App manifest. Replace accountAssociation triple after running `npx @farcaster/miniapp-cli sign` against memepred.xyz.",
+  "_comment": "Sprint 5 — Mini App manifest. accountAssociation signed via Warpcast Dev Tools for flipthememe.com. `frame` dropped: current schema rejects manifests providing both `frame` and `miniapp`.",
   "accountAssociation": {
-    "header": "REPLACE_WITH_DEV_PORTAL_SIGNED_HEADER",
-    "payload": "REPLACE_WITH_DEV_PORTAL_SIGNED_PAYLOAD",
-    "signature": "REPLACE_WITH_DEV_PORTAL_SIGNED_SIGNATURE"
+    "header": "eyJmaWQiOjE2NjIyLCJ0eXBlIjoiY3VzdG9keSIsImtleSI6IjB4N0MwNjJkYjc5NEY4MjYwRjlBMkQ0OGRhQTNjQjI2N0VEMjZEODU3QSJ9",
+    "payload": "eyJkb21haW4iOiJmbGlwdGhlbWVtZS5jb20ifQ",
+    "signature": "S10C/wLMyZhhpgAjicCa3HMCithNBZr00BtMxcQCQ2tH4/lHdFuopmbqql+Dgl0mVPcH6IgafdLVKQI30YjW4Bs="
   },
   "miniapp": {
     "version": "1",
-    "name": "MemePred",
-    "iconUrl": "https://memepred.xyz/icon-512.png",
-    "homeUrl": "https://memepred.xyz",
-    "imageUrl": "https://memepred.xyz/og-cover.png",
+    "name": "FlipTheMeme",
+    "iconUrl": "https://flipthememe.com/icon-512.png",
+    "homeUrl": "https://flipthememe.com",
+    "imageUrl": "https://flipthememe.com/og-cover.png",
     "buttonTitle": "🎯 Predict",
-    "splashImageUrl": "https://memepred.xyz/splash.png",
+    "splashImageUrl": "https://flipthememe.com/splash.png",
     "splashBackgroundColor": "#000000",
-    "webhookUrl": "https://api.memepred.xyz/api/farcaster/webhook",
-    "subtitle": "Memecoin PvP prediction markets",
-    "description": "Bet UP or DOWN on memecoin prices over 5min – 24h. PvP orderbook + LP fallback. USDC settled by Pyth. Non-custodial. Auto-spawned markets for /clanker tokens with price feeds.",
+    "webhookUrl": "https://api.flipthememe.com/api/farcaster/webhook",
+    "subtitle": "Memecoin prediction markets",
+    "description": "Bet UP or DOWN on memecoin prices, 5min to 24h. PvP orderbook with LP fallback, USDC settled by Pyth. Non custodial. Auto spawned markets for Clanker tokens.",
     "primaryCategory": "finance",
-    "tags": ["prediction", "memecoin", "clanker", "base", "pvp", "usdc"],
-    "heroImageUrl": "https://memepred.xyz/og-cover.png",
+    "tags": ["prediction", "memecoin", "base", "pvp", "usdc"],
+    "heroImageUrl": "https://flipthememe.com/og-cover.png",
     "tagline": "Bet on memes. Win USDC.",
-    "ogTitle": "MemePred — memecoin prediction markets",
-    "ogDescription": "PvP UP/DOWN markets on PEPE, DOGE, and Clanker tokens. Pyth-settled, USDC payouts. Genesis LP NFT for the first 20.",
-    "ogImageUrl": "https://memepred.xyz/og-cover.png",
+    "ogTitle": "FlipTheMeme Predictions",
+    "ogDescription": "PvP UP or DOWN markets on PEPE, DOGE, and Clanker tokens. Pyth settled, USDC payouts.",
+    "ogImageUrl": "https://flipthememe.com/og-cover.png",
     "noindex": false
-  },
-  "frame": {
-    "_deprecated": "Kept for back-compat with older clients that still read `frame` instead of `miniapp`. New clients read `miniapp` above.",
-    "version": "1",
-    "name": "MemePred",
-    "iconUrl": "https://memepred.xyz/icon.png",
-    "homeUrl": "https://memepred.xyz",
-    "imageUrl": "https://memepred.xyz/embed.png",
-    "buttonTitle": "🎯 Predict",
-    "splashImageUrl": "https://memepred.xyz/splash.png",
-    "splashBackgroundColor": "#0b0b0f",
-    "webhookUrl": "https://api.memepred.xyz/api/farcaster/webhook"
   }
 }

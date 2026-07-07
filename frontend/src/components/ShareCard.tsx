@@ -21,7 +21,7 @@ interface Props {
 export function ShareCard({ direction, amountUsd, payoutUsd }: Props) {
   const [copied, setCopied] = useState(false)
 
-  const text = `🎯 Just won $${payoutUsd} predicting ${direction} on MemePred (staked $${amountUsd}). Predict meme coin prices on Base 👇`
+  const text = `🎯 Just won $${payoutUsd} predicting ${direction} on FlipTheMeme (staked $${amountUsd}). Predict meme coin prices on Base 👇`
   const url = window.location.origin
 
   async function handleShare() {

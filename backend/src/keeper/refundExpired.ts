@@ -1,8 +1,8 @@
-import { createPublicClient, createWalletClient, http, type Address } from 'viem'
+import { createPublicClient, http, type Address } from 'viem'
 import { base, baseSepolia } from 'viem/chains'
 const chain = process.env.CHAIN_ID === '8453' ? base : baseSepolia
-import { privateKeyToAccount } from 'viem/accounts'
 import { pg } from '../db/pg.js'
+import { getKeeperWalletClient } from './keeperWallet.js'
 
 const ORDERBOOK_MARKET_ABI = [
   {
@@ -60,18 +60,11 @@ const publicClient = createPublicClient({
  * Called every 5 minutes by the keeper.
  */
 export async function refundExpiredOrders() {
-  const keeperKey = process.env.KEEPER_PRIVATE_KEY as `0x${string}`
-  if (!keeperKey) {
+  const walletClient = getKeeperWalletClient()
+  if (!walletClient) {
     console.error('KEEPER_PRIVATE_KEY not set, skipping refund')
     return
   }
-
-  const account = privateKeyToAccount(keeperKey)
-  const walletClient = createWalletClient({
-    account,
-    chain,
-    transport: http(process.env.BASE_RPC_URL)
-  })
 
   // Get active market addresses from DB
   const result = await pg.query(

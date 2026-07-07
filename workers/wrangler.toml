@@ -1,17 +1,17 @@
-name = "memepred-edge"
+name = "flipthememe-edge"
 main = "geo-block.ts"
 compatibility_date = "2024-09-01"
 
 # Set the public hostname here. The Worker's route should be /* on this host.
 # The origin host (ORIGIN_URL below) must be a separate hostname that bypasses
-# this Worker — e.g. api-origin.memepred.xyz pointing directly at Caddy.
+# this Worker — e.g. api-origin.flipthememe.com pointing directly at Caddy.
 #
 # routes = [
-#   { pattern = "api.memepred.xyz/*", custom_domain = true }
+#   { pattern = "api.flipthememe.com/*", custom_domain = true }
 # ]
 
 [vars]
-ORIGIN_URL = "https://api-origin.memepred.xyz"
+ORIGIN_URL = "https://api-origin.flipthememe.com"
 
 # WORKER_SECRET must be set with:
 #   wrangler secret put WORKER_SECRET

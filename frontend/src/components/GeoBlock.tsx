@@ -6,7 +6,7 @@ export function GeoBlock() {
         REGION BLOCKED
       </h2>
       <p>
-        memepred is not available in your region due to regulatory restrictions.
+        flipthememe is not available in your region due to regulatory restrictions.
         If you believe this is an error, please contact support.
       </p>
     </div>

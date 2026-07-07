@@ -57,7 +57,7 @@ export function ReferPage() {
           Get <em>40%</em> of the protocol fee from every bet your friends place.
         </h3>
         <div className="gh-sub">
-          Share your link. Once someone bets using it, they're yours forever — you earn a cut of their fees for as long as they trade on MemePred.
+          Share your link. Once someone bets using it, they're yours forever — you earn a cut of their fees for as long as they trade on FlipTheMeme.
         </div>
       </div>
 

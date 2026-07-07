@@ -11,7 +11,7 @@ import { runMigrations }          from '../db/migrate.js'
 import { pg }                     from '../db/pg.js'
 import { redis }                  from '../db/redis.js'
 
-console.log('Starting MemePred Keeper…')
+console.log('Starting FlipTheMeme Keeper…')
 
 async function loop(label: string, fn: () => Promise<unknown>, intervalMs: number) {
   let running = false

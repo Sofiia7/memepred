@@ -47,7 +47,7 @@ def make_icon(size, path):
     d.rectangle([pad, pad, size - pad, pad + bar], fill=BASE_BLUE)
     d.rectangle([pad, size - pad - bar, size - pad, size - pad], fill=BASE_BLUE)
     mark_font = font(int(size * 0.22))
-    centered_text(d, size / 2, size * 0.42, "MP", mark_font, BASE_BLUE)
+    centered_text(d, size / 2, size * 0.42, "FM", mark_font, BASE_BLUE)
     img.save(path)
 
 
@@ -55,7 +55,7 @@ def make_splash(size, path):
     img = Image.new("RGB", (size, size), "#000000")
     d = ImageDraw.Draw(img)
     mark_font = font(int(size * 0.28))
-    centered_text(d, size / 2, size * 0.38, "MP", mark_font, BASE_BLUE)
+    centered_text(d, size / 2, size * 0.38, "FM", mark_font, BASE_BLUE)
     img.save(path)
 
 
@@ -92,7 +92,7 @@ def make_wide(w, h, path, title, subtitle):
 make_icon(1024, os.path.join(OUTPUT_DIR, "icon.png"))
 make_icon(512,  os.path.join(OUTPUT_DIR, "icon-512.png"))
 make_splash(200, os.path.join(OUTPUT_DIR, "splash.png"))
-make_wide(1200, 630, os.path.join(OUTPUT_DIR, "og-cover.png"), "MemePred", "Bet on memes. Win USDC.")
-make_wide(1200, 630, os.path.join(OUTPUT_DIR, "embed.png"),    "MemePred", "PvP prediction markets on Base")
+make_wide(1200, 630, os.path.join(OUTPUT_DIR, "og-cover.png"), "FlipTheMeme", "Bet on memes. Win USDC.")
+make_wide(1200, 630, os.path.join(OUTPUT_DIR, "embed.png"),    "FlipTheMeme", "PvP prediction markets on Base")
 
 print("Generated: icon.png, icon-512.png, splash.png, og-cover.png, embed.png -> frontend/public/")

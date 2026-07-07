@@ -8,14 +8,13 @@
  */
 import {
   createPublicClient,
-  createWalletClient,
   http,
   type Address,
 } from 'viem'
 import { base, baseSepolia } from 'viem/chains'
-import { privateKeyToAccount } from 'viem/accounts'
 import { pg } from '../db/pg.js'
 import { CONTRACTS, PYTH_HERMES } from '../config.js'
+import { getKeeperWalletClient } from './keeperWallet.js'
 
 const chain = process.env.CHAIN_ID === '8453' ? base : baseSepolia
 
@@ -77,12 +76,9 @@ async function fetchHermesUpdate(feedId: `0x${string}`): Promise<`0x${string}`[]
 }
 
 export async function settlePendingMarkets() {
-  const key = process.env.KEEPER_PRIVATE_KEY as `0x${string}` | undefined
-  if (!key) return
+  const wallet = getKeeperWalletClient()
+  if (!wallet) return
   if (!CONTRACTS.ORACLE_RESOLVER || CONTRACTS.ORACLE_RESOLVER === '0x') return
-
-  const account = privateKeyToAccount(key)
-  const wallet = createWalletClient({ account, chain, transport: http(process.env.BASE_RPC_URL) })
 
   const markets = await pendingMarkets()
   for (const market of markets) {

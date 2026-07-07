@@ -1,5 +1,5 @@
 /**
- * MemePred edge router.
+ * FlipTheMeme edge router.
  *
  * Cloudflare Worker that sits in front of the public API.
  *  - Reads `request.cf.country` (set by Cloudflare).
@@ -9,11 +9,11 @@
  *      x-worker-secret   : shared secret so the origin can trust x-country
  *
  * Required Worker secrets / env vars:
- *   ORIGIN_URL       e.g. "https://api.memepred.xyz"
+ *   ORIGIN_URL       e.g. "https://api.flipthememe.com"
  *   WORKER_SECRET    matches backend WORKER_SECRET (used by /api/geo)
  *
- * Deploy: wrangler deploy. Route the Worker to /* on api.memepred.xyz so the
- * direct origin host (e.g. api-origin.memepred.xyz) stays internal.
+ * Deploy: wrangler deploy. Route the Worker to /* on api.flipthememe.com so the
+ * direct origin host (e.g. api-origin.flipthememe.com) stays internal.
  */
 
 export interface Env {
@@ -43,7 +43,7 @@ export default {
       return new Response(
         JSON.stringify({
           error:   'region_blocked',
-          message: 'MemePred is not available in your region.',
+          message: 'FlipTheMeme is not available in your region.',
           country
         }),
         {
