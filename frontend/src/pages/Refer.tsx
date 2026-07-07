@@ -7,9 +7,10 @@
  * /api/referral/list/:address (built on the backend, never rendered
  * anywhere in the frontend until now).
  */
-import { useAccount, useConnect } from 'wagmi'
+import { useAccount } from 'wagmi'
 import { useQuery } from '@tanstack/react-query'
 import { useReferral } from '../hooks/useReferral'
+import { useConnectWallet } from '../hooks/useConnectWallet'
 import { ScreenTitle, StatStrip } from '../components/ui/AppShell'
 import { StarIcon } from '../components/ui/icons'
 import { shortAddr } from '../lib/symbols'
@@ -25,7 +26,7 @@ interface ReferredFriend {
 
 export function ReferPage() {
   const { address, isConnected } = useAccount()
-  const { connect, connectors } = useConnect()
+  const { connectWallet } = useConnectWallet()
   const r = useReferral()
 
   const refLink = r.myCode && r.myCode !== '0x000000000000'
@@ -62,7 +63,7 @@ export function ReferPage() {
       </div>
 
       {!isConnected ? (
-        <button className="cta" onClick={() => connectors[0] && connect({ connector: connectors[0] })}>
+        <button className="cta" onClick={connectWallet}>
           <span className="basesq" />
           CONNECT WALLET TO GET YOUR LINK
         </button>

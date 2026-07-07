@@ -1,13 +1,14 @@
 import { useState } from 'react'
-import { useReadContract, useWriteContract, useAccount, useConnect } from 'wagmi'
+import { useReadContract, useWriteContract, useAccount } from 'wagmi'
 import { parseUnits, maxUint256 } from 'viem'
 import { CONTRACTS, LIQUIDITY_POOL_ABI, ERC20_ABI } from '../lib/contracts'
 import { ScreenTitle } from '../components/ui/AppShell'
 import { StarIcon } from '../components/ui/icons'
+import { useConnectWallet } from '../hooks/useConnectWallet'
 
 export function GenesisPage() {
   const { address, isConnected } = useAccount()
-  const { connect, connectors } = useConnect()
+  const { connectWallet } = useConnectWallet()
   const [depositAmount, setDepositAmount] = useState('50')
   const [isLoading, setIsLoading] = useState(false)
 
@@ -66,7 +67,7 @@ export function GenesisPage() {
 
   async function handleDeposit() {
     if (!address) {
-      connectors[0] && connect({ connector: connectors[0] })
+      connectWallet()
       return
     }
     setIsLoading(true)

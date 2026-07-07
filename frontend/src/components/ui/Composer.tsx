@@ -1,7 +1,8 @@
 import { useState, useMemo, useEffect } from 'react'
-import { useAccount, useConnect } from 'wagmi'
+import { useAccount } from 'wagmi'
 import { usePlaceBet } from '../../hooks/usePlaceBet'
 import { usePythPrice } from '../../hooks/usePythPrice'
+import { useConnectWallet } from '../../hooks/useConnectWallet'
 import { formatDuration } from '../../lib/symbols'
 import { Chev } from './icons'
 import type { PickedBet } from './MarketCard'
@@ -10,7 +11,7 @@ const STAKE_CHIPS = [10, 25, 100, 500]
 
 export function Composer({ picked, onClear }: { picked: PickedBet | null; onClear: () => void }) {
   const { isConnected } = useAccount()
-  const { connect, connectors } = useConnect()
+  const { connectWallet } = useConnectWallet()
   const [stake, setStake] = useState<number>(25)
   const { raw: pythRaw } = usePythPrice(picked?.feedId)
 
@@ -88,7 +89,7 @@ export function Composer({ picked, onClear }: { picked: PickedBet | null; onClea
         disabled={bet.isLoading || stake < 1}
         onClick={() => {
           if (!isConnected) {
-            connectors[0] && connect({ connector: connectors[0] })
+            connectWallet()
             return
           }
           bet.execute()

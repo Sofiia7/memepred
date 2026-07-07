@@ -1,8 +1,9 @@
-import { useAccount, useConnect, useDisconnect } from 'wagmi'
+import { useAccount, useDisconnect } from 'wagmi'
+import { useConnectWallet } from '../../hooks/useConnectWallet'
 
 export function AppHead() {
   const { address, isConnected } = useAccount()
-  const { connect, connectors } = useConnect()
+  const { connectWallet } = useConnectWallet()
   const { disconnect } = useDisconnect()
 
   const shortAddr = address ? `${address.slice(0, 4)}…${address.slice(-4)}` : ''
@@ -18,10 +19,7 @@ export function AppHead() {
           {shortAddr}
         </button>
       ) : (
-        <button
-          className="connect"
-          onClick={() => connectors[0] && connect({ connector: connectors[0] })}
-        >
+        <button className="connect" onClick={connectWallet}>
           <span className="basesq" />
           Sign in
         </button>

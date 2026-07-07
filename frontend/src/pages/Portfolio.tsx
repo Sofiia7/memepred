@@ -1,9 +1,10 @@
-import { useAccount, useConnect } from 'wagmi'
+import { useAccount } from 'wagmi'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { type Address } from 'viem'
 import { useClaim } from '../hooks/useClaim'
 import { useReferral } from '../hooks/useReferral'
+import { useConnectWallet } from '../hooks/useConnectWallet'
 import { ScreenTitle, StatStrip } from '../components/ui/AppShell'
 import { BadgeGrid } from '../components/BadgeGrid'
 import { WalletIcon, Chev } from '../components/ui/icons'
@@ -132,7 +133,7 @@ function ReferralPanel() {
 
 export function Portfolio() {
   const { address, isConnected } = useAccount()
-  const { connect, connectors } = useConnect()
+  const { connectWallet } = useConnectWallet()
 
   const { data: profile, isLoading } = useQuery<Profile>({
     queryKey: ['profile', address],
@@ -150,7 +151,7 @@ export function Portfolio() {
       <>
         <ScreenTitle title="Portfolio" icon={<WalletIcon />} />
         <div className="empty-state" style={{ marginBottom: 16 }}>Connect wallet to view your stats</div>
-        <button className="cta" onClick={() => connectors[0] && connect({ connector: connectors[0] })}>
+        <button className="cta" onClick={connectWallet}>
           <span className="basesq" />
           CONNECT WALLET
         </button>
