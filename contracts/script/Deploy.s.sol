@@ -90,13 +90,13 @@ contract Deploy is Script {
         FeeDistributor   feeDistrib    = new FeeDistributor(e.USDC, e.treasury, e.lpFeeSink, e.nftRewards);
         ReferralRegistry referralReg   = new ReferralRegistry();
         OracleResolver   oracleResolver = new OracleResolver(e.PYTH);
-        GenesisNFT       genesisNFT    = new GenesisNFT("ipfs://GENESIS_METADATA/");
+        GenesisNFT       genesisNFT    = new GenesisNFT("ipfs://bafybeiez6a6hshxe22lkwhvbpjuiiw5ml4gup3sb2spc6nufiflrxbmcjm/");
         LiquidityPool    liquidityPool = new LiquidityPool(IERC20(e.USDC), address(genesisNFT));
         MarketFactory    factory       = new MarketFactory(
             e.USDC, address(oracleResolver), address(feeDistrib),
             address(referralReg), e.multisig, address(liquidityPool)
         );
-        BadgeNFT badges = new BadgeNFT("ipfs://YOUR_IPFS_HASH/");
+        BadgeNFT badges = new BadgeNFT("ipfs://bafybeigqxdfu6uwvvkxn7kccsrufj7hhwd52564qsqmqxcibo5cqy3kyxy/");
 
         console.log("FeeDistributor:",   address(feeDistrib));
         console.log("ReferralRegistry:", address(referralReg));

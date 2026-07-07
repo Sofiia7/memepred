@@ -33,6 +33,10 @@ venv/
 # Downloaded font cache (scripts/generate-genesis-nft-art.py)
 .cache/
 
+# Generated NFT art working files (~37MB) — already pinned on IPFS/Pinata,
+# CIDs are in contracts/script/Deploy.s.sol. Not worth bloating the repo.
+nft-art/
+
 # JS/Node
 node_modules/
 dist/
