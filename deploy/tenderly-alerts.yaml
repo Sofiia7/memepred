@@ -1,18 +1,23 @@
 # Sprint 5.4 — Tenderly alert manifest
 #
-# Import into Tenderly: Dashboard → Alerts → Import. Each alert listens to
-# the event/condition described, posts to Discord (DISCORD_WEBHOOK_URL).
+# Import into Tenderly: Dashboard → Alerts → Import.
 #
-# Replace ${MARKET_FACTORY}, ${ORACLE_RESOLVER}, ${LIQUIDITY_POOL},
-# ${DISCORD_WEBHOOK_URL}, ${PAGERDUTY_KEY} with real values.
+# 2026-07-07: contract addresses below are filled in from the live Sepolia
+# deploy (factory 0x77cb2EE5..., see project memory.md for the full set).
+# Only ${DISCORD_WEBHOOK_URL} is still a placeholder — create a webhook in
+# your Discord server (Server Settings → Integrations → Webhooks → New
+# Webhook → copy URL) and paste it below. PagerDuty is optional (delete the
+# pagerduty lines/`delivery: [..., pagerduty]` entries if you don't have one)
+# — Discord alone is enough to not silently miss a paused market or a
+# drained LP vault.
 
 project: flipthememe
-network: base-sepolia            # change to "base" for mainnet
+network: base-sepolia            # change to "base" once redeployed to mainnet
 deliveryChannels:
   discord:
-    url: ${DISCORD_WEBHOOK_URL}
+    url: ${DISCORD_WEBHOOK_URL}   # <- paste your Discord webhook URL here
   pagerduty:
-    integrationKey: ${PAGERDUTY_KEY}
+    integrationKey: ${PAGERDUTY_KEY}  # optional, leave blank if unused
 
 alerts:
   - name: MarketRefunded — emergency refund triggered
@@ -20,7 +25,7 @@ alerts:
     severity: high
     expression:
       type: event_emitted
-      contract: ${ORACLE_RESOLVER}
+      contract: 0x5f05688B0De438A9B9f5Df65233AEEA5EC1Ce74f
       event: MarketRefunded(address,string)
     delivery: [discord, pagerduty]
 
@@ -47,7 +52,7 @@ alerts:
     severity: high
     expression:
       type: event_emitted
-      contract: ${LIQUIDITY_POOL}
+      contract: 0x135a31E7F1b24Bf60A65696961A4807410E6d81C
       event: Withdraw(address,address,address,uint256,uint256)
       filter:
         # >10% of totalAssets at the time of the event
@@ -59,7 +64,7 @@ alerts:
     severity: high
     expression:
       type: balance_below
-      address: ${ORACLE_RESOLVER}
+      address: 0x5f05688B0De438A9B9f5Df65233AEEA5EC1Ce74f
       thresholdEth: 0.05
     delivery: [discord]
 
@@ -68,7 +73,7 @@ alerts:
     severity: critical
     expression:
       type: balance_below
-      address: ${ORACLE_RESOLVER}
+      address: 0x5f05688B0De438A9B9f5Df65233AEEA5EC1Ce74f
       thresholdEth: 0.005
     delivery: [discord, pagerduty]
 
@@ -80,7 +85,7 @@ alerts:
       anyContract: true
       event: OwnershipTransferred(address,address)
       filter:
-        condition: previousOwner == "${MULTISIG_ADDRESS}"
+        condition: previousOwner == "0xAA1a14ad2f57fc79Ac14b2Cf5e2968Fdaeb9047F"
     delivery: [discord, pagerduty]
 
   - name: Emergency pauser changed
@@ -88,6 +93,6 @@ alerts:
     severity: high
     expression:
       type: event_emitted
-      contract: ${MARKET_FACTORY}
+      contract: 0x77cb2EE5695CfFD3bD2043afe7eb910Ec0fe71b0
       event: EmergencyPauserSet(address)
     delivery: [discord]

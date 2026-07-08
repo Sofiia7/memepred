@@ -2,16 +2,14 @@ name = "flipthememe-edge"
 main = "geo-block.ts"
 compatibility_date = "2024-09-01"
 
-# Set the public hostname here. The Worker's route should be /* on this host.
-# The origin host (ORIGIN_URL below) must be a separate hostname that bypasses
-# this Worker — e.g. api-origin.flipthememe.com pointing directly at Caddy.
-#
-# routes = [
-#   { pattern = "api.flipthememe.com/*", custom_domain = true }
-# ]
-
-[vars]
-ORIGIN_URL = "https://api-origin.flipthememe.com"
+# 2026-07-07: api.flipthememe.com's existing A record (-> VPS) is now
+# Proxied (orange cloud) in Cloudflare, so a plain Route (not "custom
+# domain", which would have Cloudflare try to manage/create its own DNS
+# record for the hostname) attaches this Worker in front of that already-
+# proxied record without touching DNS further.
+routes = [
+  { pattern = "api.flipthememe.com/*", zone_name = "flipthememe.com" }
+]
 
 # WORKER_SECRET must be set with:
 #   wrangler secret put WORKER_SECRET
