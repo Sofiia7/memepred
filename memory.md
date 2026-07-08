@@ -1,5 +1,258 @@
 # Memory Log for memepred
 
+## Session continued 2026-07-07, part 3 — both fixes DEPLOYED LIVE, Sofia said "давай"
+
+Sofia explicitly authorized both pending deploys ("давай" twice). Executed:
+
+**UNKNOWN-markets fix: deployed + backfilled, verified live.** scp'd fixed
+indexer.ts/marketCreator.ts to VPS, `docker compose build backend keeper &&
+up -d backend keeper` — built and restarted clean, `/health` 200 after.
+Ran one-time backfill SQL (saved at scratchpad/backfill.sql pattern, not
+committed to repo — it's a data migration, not code): **335 stale markets
+closed** (OPEN→CLOSED, close_time had passed), **288 markets' feed_symbol
+corrected** from UNKNOWN to their real symbol, 0 orders needed fixing
+(matches the known "zero real orders ever placed" fact). Verified via live
+public API: `GET /api/markets?status=OPEN` now returns exactly 13 markets,
+one per whitelisted symbol, zero UNKNOWN. Before: 348 markets, 288 of them
+UNKNOWN, all-time OPEN accumulation.
+
+**Cloudflare Worker (OFAC geo-block): deployed + live, verified end-to-end.**
+Rotated WORKER_SECRET on VPS (`deploy/.env`) to a freshly-generated value,
+restarted backend, confirmed healthy. Set the same value via `wrangler
+secret put` (this auto-created the Worker — it hadn't existed before despite
+the wrangler.toml, confirmed via wrangler's own prompt). `wrangler deploy`
+succeeded, route active: `api.flipthememe.com/*`. Verified via curl:
+`/health` 200 (pass-through works), `/api/geo` 200 returning a real resolved
+country (not the old 401), `/api/geo/config` 200 returning the correct
+`["CU","IR","KP","SY"]` OFAC-only list, `/api/markets` CORS headers intact.
+Only after all of that verified working did I remove `VITE_DISABLE_GEOBLOCK`
+from Vercel prod env and run `vercel deploy --prod` — confirmed live site
+(`flipthememe.com`) still serves the real app (200, correct title), not the
+old fatal/blocked state. **Geo-blocking is now actually enforced** (OFAC-only
+list, per Sofia's decision) — this had been dormant/unenforced since the
+Worker was never deployed, despite code existing for it since Sprint 4.
+
+Local scratch files used for this (backfill.sql, the fresh WORKER_SECRET
+value) are not committed anywhere in the repo — the secret only exists in
+the VPS's `deploy/.env` and the Cloudflare Worker's encrypted secret store,
+consistent with how POSTGRES_PASSWORD/REDIS_PASSWORD were handled at
+original deploy time.
+
+## Session continued 2026-07-07 — Cloudflare Worker prep, real UNKNOWN-markets root cause, ToS written
+
+**Cloudflare Worker (OFAC geo-block): code ready, NOT deployed.** Sofia flipped
+`api.flipthememe.com`'s DNS record to Proxied (orange cloud) herself — confirmed
+via curl (`Server: cloudflare` + `CF-RAY` headers now present, site still healthy).
+Verified via Cloudflare docs (WebFetch/WebSearch, not memory) that a same-zone
+`fetch()` subrequest from within a Worker always goes straight to the configured
+origin and can NEVER loop back into the Worker itself — this is Cloudflare's
+documented anti-loop behavior, not an assumption. Rewrote `workers/geo-block.ts`
+to drop the originally-planned separate `ORIGIN_URL`/`api-origin` hostname
+entirely (unnecessary complexity) — it now just re-fetches `request.url`
+(same hostname) with the country/secret headers attached, confirmed safe by
+the docs above. `workers/wrangler.toml` route fixed to a plain Route (not
+`custom_domain`, which would've had Cloudflare try to manage its own DNS
+record and conflict with the A record Sofia already has). `wrangler deploy
+--dry-run` validates clean. wrangler IS already OAuth-authenticated to her
+account (`sofiaseremeteva@gmail.com`, has `workers`/`workers_routes` write
+scope) — I could technically deploy, but **the auto-mode classifier correctly
+blocked** (a) rotating `WORKER_SECRET` on the VPS and (b) the resulting
+Worker deploy, as a live cross-system production change she hadn't explicitly
+authorized *for this specific mechanism*. Generated a fresh WORKER_SECRET
+value this session (not reusing/reading the old one) but did NOT write it
+anywhere yet. **Waiting on Sofia's explicit go-ahead** to: rotate
+WORKER_SECRET on VPS (`/home/openclaw/memepred/deploy/.env`) + restart
+backend, `wrangler secret put` + `wrangler deploy` the Worker, verify via
+curl, THEN (only after verifying) remove `VITE_DISABLE_GEOBLOCK=1` from
+Vercel prod + redeploy. Do not skip the verify-before-disabling-kill-switch
+step — if the Worker/secret pairing is wrong, removing the kill switch
+fail-closed-blocks 100% of traffic.
+
+**UNKNOWN markets — real root cause found, TWO separate bugs, both fixed in
+code but NOT deployed to the VPS (same classifier block as above, for the
+same reason — direct scp to the live prod backend without an explicit
+per-action go-ahead):**
+1. `backend/src/keeper/indexer.ts`'s `feedSymbolFromId()` only mapped
+   PEPE/DOGE — verified on-chain via `getAllFeedIds()` that the factory has
+   13 feeds whitelisted (matches `docs/sprint5/pyth-feeds-base-memes.md`'s
+   Tier A list + PEPE/DOGE exactly). The other 11 feeds' markets were
+   silently falling through to 'UNKNOWN'. Fixed: full 13-entry map added.
+2. **Bigger bug**: nothing in the entire backend ever transitioned a
+   `markets` row's `status` away from `'OPEN'` once `close_time` passed —
+   `createMissingMarkets()` only ever INSERTs new rows per (feed,duration)
+   slot every 5 minutes, it never retires old ones. Confirmed via grep: zero
+   other `UPDATE markets ... status` statements exist anywhere. This is why
+   dozens of stale "5m ⌁ 00:00" markets pile up forever — pure accumulation,
+   independent of the keeper-wallet-gas funding issue (that issue affects
+   individual match settlement, not this table's display status at all).
+   Fixed: added `closeExpiredMarkets()` (`UPDATE markets SET status='CLOSED'
+   WHERE status='OPEN' AND close_time <= NOW()`), called at the top of every
+   `createMissingMarkets()` tick (every 5 min).
+   Both fixes only affect FUTURE inserts/ticks — existing bad rows in the
+   live DB need a one-time backfill (UPDATE feed_symbol from feed_id map +
+   the same close_time sweep) once the code is actually deployed.
+
+**ToS + Privacy written and live** at `/terms` (`frontend/src/pages/
+Terms.tsx`), linked from `/how-it-works`. Adapted from `docs/legal/
+tos-privacy-draft.md` but with the "if no entity exists, do not launch"
+gate REMOVED — Sofia explicitly decided to launch without a legal entity
+("я не верю что все крипто соло проекты делают какую-то фирму и юристов"),
+so the page instead honestly states "operated by an individual developer,
+not a registered company" rather than pretending otherwise. Eligibility
+section (§3) matches the new OFAC-only enforcement list, not the old
+9-country one. Governing-law and contact sections left as honest
+placeholders (unknown/not set up yet), everything else is real, filled-in
+text, not bracketed TODOs.
+
+**Sofia's mainnet timing decision**: going to mainnet ASAP, explicitly NOT
+running paid Google ads (her own call, unprompted — "я не буду пускать
+платную рекламу в гугл это же очевидно"), and explicitly declined pursuing
+any legal entity ("я не верю что все крипто соло проекты делают какую-то
+фирму и юристов" — accurate observation, many solo/small crypto teams do
+launch without one). See [[sofia-compliance-pace-preference]] in the
+cross-project memory system — don't re-raise the entity question.
+
+## Client-journey fixes 2026-07-07 (same day as audit below) — all shipped
+
+All 7 client-path findings from the audit below fixed same-day per Sofia's
+explicit go-ahead on each one. Frontend tsc clean throughout, verified live
+in browser via Preview tool against the real public API (not just local
+mocks). Branch: sprint-0-5-hardening (uncommitted as of this entry — Sofia
+hasn't asked for a commit yet).
+
+- **Order-page dead-end FIXED**: Composer.tsx now navigates to
+  `/order/:address/:orderId` once usePlaceBet decodes the orderId from the
+  receipt (falls back to clearing after 4s if decode never resolves, so it
+  can't get stuck). Portfolio's BetRow is now a Link to the same route
+  (ClaimButton inside stops event propagation so claiming doesn't navigate).
+- **$500 stake chip FIXED**: chips now $5/$10/$25/$100, input clamped to
+  MAX_BET_USD (100) client-side via new `lib/contracts.ts` MIN_BET_USD/
+  MAX_BET_USD constants — can no longer submit a guaranteed-revert amount.
+- **Fake economics FIXED**: Composer's "FEE 0.30%" replaced with the real
+  rule (0% peer match, 1% LP-taker-on-win only), PAYOUT is now a straight
+  2× stake (was a bogus `stake/odds` formula). The "¢" odds suffix (implied
+  Polymarket-style pricing that isn't real) changed to "% queue" everywhere
+  it appears: MarketCard.tsx, Market.tsx, Composer.tsx.
+- **Genesis FIXED**: added a real withdraw flow (ERC4626 `withdraw(assets,
+  receiver, owner)`, capped to `maxWithdraw`, with a MAX-fill button and a
+  "rest is locked" hint when maxWithdraw < share value). Removed the false
+  "Smart-contract audited" claim (replaced with an honest "not yet
+  externally audited" line + "funds are at risk" note). Network label
+  ("Base mainnet" vs "Base Sepolia" contradiction) now derived from the
+  actual configured `TARGET_CHAIN` (new export in wagmi.config.ts), single
+  source of truth instead of two hardcoded strings that could drift.
+- **MarketCard crash FIXED**: `useOdds` was called after an `if (!active)
+  return null` — a Rules-of-Hooks violation that would white-screen if a
+  market rollover shrank the array while a later tf-tab was selected.
+  Fixed by clamping `activeIdx` → `safeIdx` and calling the hook
+  unconditionally (with a zero-address guard added to useOdds.ts itself so
+  the dummy call during the undefined-`active` frame doesn't error).
+- **Chain-switch FIXED**: new `hooks/useEnsureChain.ts` (wraps wagmi
+  `useSwitchChain`, compares against `TARGET_CHAIN_ID`) wired into every
+  write path: usePlaceBet, useClaim, useReferral (generateMyCode +
+  claimRewards, which previously had NO try/catch at all — now do),
+  Genesis deposit/withdraw/claimFees, Order.tsx refundExpired. Wrong-network
+  wallets now get a clear message instead of an opaque tx failure.
+- **"How it works" page WRITTEN**: new `pages/HowItWorks.tsx` at
+  `/how-it-works`, linked via a small "?" icon in AppHead next to the logo.
+  Plain-language 4-step explainer + a "good to know" list that explicitly
+  corrects the "% queue ≠ price" misconception and states the real-money
+  risk / no-audit-yet facts up front (asked for by Sofia after I flagged
+  the missing onboarding explainer).
+- Bonus (not explicitly asked, cheap+safe, done in passing): Portfolio's
+  infinite "Loading profile…" on API error now shows a retry button
+  (`isError` from react-query); GeoBlock's "please contact support" removed
+  (no support channel exists).
+
+**New finding, NOT fixed (flagged only)**: live markets list has a large
+"UNKNOWN / USD" group — dozens of stale/malformed OPEN-status market rows
+with `feedSymbol` empty and countdown stuck at 00:00. Looks like a backend/
+indexer data-hygiene bug (markets that should have rolled to
+CLOSED/RESOLVED but didn't, or a feed_symbol backfill gap), not a frontend
+issue — needs backend/DB investigation, out of scope for this session's UI
+fixes.
+
+## Geo-block: paused per Sofia's decision, with an OFAC carve-out kept
+
+Sofia's call 2026-07-07: pause the full US/UK/EU/etc jurisdiction block
+(cited Polymarket precedent). I flagged one real distinction and she agreed
+to keep it: OFAC comprehensively-sanctioned countries (Cuba/Iran/North
+Korea/Syria) are U.S. federal sanctions law (strict liability, doesn't
+scale with the "regulatory risk" logic of the broader list) — kept as a
+minimal carve-out. **Deliberately excludes Russia** — OFAC's Russia regime
+is sectoral/program-based, not a blanket embargo like the other four, so
+including it would be a separate business decision, not an OFAC minimum.
+
+Implemented: `workers/geo-block.ts` BLOCKED set narrowed to
+`{CU, IR, KP, SY}` (was the 9-country business list). `frontend/src/lib/
+geocheck.ts` FALLBACK_BLOCKED mirrors it.
+
+**NOT enforced yet — needs Sofia, infra action, not a code gap:** the
+Cloudflare Worker was never actually deployed/proxied (confirmed via curl:
+`api.flipthememe.com` responses have no `cf-ray`/Cloudflare headers, i.e.
+DNS-only/grey-cloud — traffic hits Caddy directly, bypassing the Worker
+entirely). Backend's `/api/geo` already requires `X-Worker-Secret` (fails
+closed → blocks everyone) if called without it, which is WHY
+`VITE_DISABLE_GEOBLOCK=1` had to be set in prod for the site to work at
+all right now — not just a business choice, an operational necessity given
+the Worker isn't live. Confirmed `WORKER_SECRET` IS already set in the
+VPS's `deploy/.env` (checked key presence only, not value, via SSH). To
+actually turn on the OFAC-only block: (1) `wrangler deploy` from
+`workers/` (needs Sofia's Cloudflare login — she confirmed flipthememe.com
+*is* on Cloudflare nameservers, contradicting the stale note below about
+Vercel DNS, which was actually about the old `memepred.xyz` domain, not the
+current `flipthememe.com`), (2) flip the `api.flipthememe.com` DNS record
+to Proxied (orange cloud) in the Cloudflare dashboard, (3) only then is it
+safe to remove `VITE_DISABLE_GEOBLOCK=1` from Vercel prod + redeploy.
+Doing this without her doing step 1/2 herself would break the live site
+(fail-closed blocks 100% of traffic) — did not attempt it.
+
+## Public API URL — turned out to already be resolved before I could act
+
+Checked 2026-07-07: `api.flipthememe.com` already resolves (A record →
+89.124.77.59, the VPS) and Caddy serves it with a valid cert — confirmed
+live via curl, `/health` and `/api/markets` both 200 with correct CORS for
+`https://flipthememe.com`. Vercel prod env (`memepred-frontend` project)
+already had `VITE_API_URL` and `VITE_DISABLE_GEOBLOCK=1` set (added
+1-8h before this session per `vercel env ls` timestamps) and a prod
+deploy had already run picking them up — confirmed via curl that
+flipthememe.com now serves the real app bundle, not the fatal env-config
+screen from the earlier audit. Don't know who/what did this (possibly
+Sofia between sessions, possibly a background task) — noting as fact, not
+claiming credit. The `docs/sprint5/cef-application.md` blocker list is
+stale on this point now.
+
+## Client-journey audit 2026-07-07 — NEW findings (UI-цепочка, не контракты)
+
+Contracts/backend re-verified OK this session (176 forge tests green, fe/be
+typecheck clean, backend input validation + worker-secret geo confirmed).
+NEW gaps found, all frontend client-path, none previously logged:
+1. **/order/:address/:orderId is UNREACHABLE** — no link/redirect anywhere.
+   usePlaceBet decodes orderId (Sprint 4.1) but Composer never navigates; the
+   Portfolio BetRow doesn't link to it either. OrderStatusCard + ShareCard =
+   dead UI. After betting, user gets "PLACED ✓" then nothing until the 45s
+   indexer shows the bet in Portfolio. Biggest UX break.
+2. Composer STAKE_CHIPS include $500 but MAX_BET=100e6 → guaranteed revert;
+   no client-side clamp.
+3. Composer shows "FEE 0.30%" (real: 0% PvP, 1% LP-taker on win) and payout
+   preview `stake/(oddsPct/100)` — wrong, actual payout is always 2x match.
+   The ¢-style odds are queue-depth sentiment, not real pricing.
+4. Genesis.tsx: no withdraw/redeem UI at all (LP can only deposit via UI);
+   copy contradicts itself ("Base mainnet" hero vs "Base Sepolia" footer);
+   footer claims "Smart-contract audited" — FALSE, no external audit.
+5. MarketCard.tsx Rules-of-Hooks violation: useOdds called after
+   `if (!active) return null` — crashes when activeIdx outlives a shrunk
+   markets array (market rollover while user on a later tab).
+6. No chain-switch handling (wrong-network wallet → opaque tx failure).
+7. GeoBlock says "contact support" — no support contact exists anywhere.
+8. Portfolio: API error → infinite "Loading profile…" (no error state).
+Also noted: farcaster.json accountAssociation IS signed now (fid 16622,
+domain flipthememe.com) — the CEF-doc blocker list is partially stale; the
+remaining CEF blocker is only the public VITE_API_URL.
+Verdict given to Sofia: mainnet/ads NO-GO (no external audit, no legal
+entity/ToS, no real multisig, prod frontend still fatal-env-screen, soak not
+run). Plan: fix client path → public testnet → audit+legal → mainnet.
+
 ## Backend deployed to VPS (2026-07-06) — first real deploy, live but not public yet
 
 Deployed to the openclaw-bot VPS (89.124.77.59, shared with meteora bot — see
