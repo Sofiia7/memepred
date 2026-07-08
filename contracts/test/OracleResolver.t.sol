@@ -361,6 +361,126 @@ contract OracleResolverTest is Test {
         resolver.withdrawETH(payable(other), 0.1 ether);
     }
 
+    /// @dev The low-level call inside withdrawETH can fail (e.g. recipient
+    ///      has no receive/fallback) — must revert with "eth withdraw failed"
+    ///      instead of silently swallowing a failed transfer.
+    function test_WithdrawETH_Reverts_OnFailedTransfer() public {
+        vm.deal(address(resolver), 1 ether);
+        RejectsEth sink = new RejectsEth();
+        vm.expectRevert(bytes("eth withdraw failed"));
+        resolver.withdrawETH(payable(address(sink)), 0.1 ether);
+    }
+
+    // ─── BATCH ANOMALY PATH (coverage gap: only the single-match resolve
+    // ─── entrypoint had an anomaly-cancels test; the batch path (the one the
+    // ─── production keeper actually calls) shared the same _resolveBatch
+    // ─── anomaly-guard but had never exercised it) ──────────────────────
+    function test_ResolveOrderbookMarketBatch_AnomalyCancels_NoSettle() public {
+        (OrderbookMarket market, uint256 matchId) = _freshMarketWithOneMatch(15 minutes);
+        bytes[] memory data = new bytes[](0);
+
+        vm.warp(block.timestamp + 15 minutes - 60);
+        pyth.setPrice(FEED, 1e8, -8);
+        vm.prank(keeper); resolver.recordPrice(FEED, data);
+        vm.warp(block.timestamp + 61);
+
+        // Spot diverges wildly from the recorded TWAP → batch path must also
+        // cancel settlement rather than lock in a bad exit price.
+        pyth.setPrice(FEED, 2e8, -8);
+
+        vm.prank(keeper);
+        uint256 settled = resolver.resolveOrderbookMarketBatch(address(market), data, 10);
+
+        assertEq(settled, 0, "anomaly must block settlement in the batch path too");
+        OrderbookMarket.Match memory m = market.getMatch(matchId);
+        assertFalse(m.settled);
+    }
+
+    // ─── TWAP WINDOW CLAMPS (coverage gap: the CAP and MIN_TWAP_WINDOW
+    // ─── clamps existed as named constants but neither had ever actually
+    // ─── been triggered by a test — the short-duration test's scaled window
+    // ─── (60s) sits between the floor (30s) and cap (300s), so it exercises
+    // ─── neither clamp) ──────────────────────────────────────────────────
+
+    /// @dev 24h market: duration/5 = 17280s, far above TWAP_WINDOW_CAP (5min).
+    ///      A price point ~8 minutes before settle sits outside the capped
+    ///      5-minute window but would still be inside the raw (uncapped)
+    ///      ~4.8h window — proving the cap is what excludes it, not
+    ///      unrelated history pruning (which only prunes after 10 minutes).
+    function test_TWAP_WindowCapsForLongDurationMarket() public {
+        (OrderbookMarket market, uint256 matchId) = _freshMarketWithOneMatch(24 hours);
+        bytes[] memory data = new bytes[](0);
+
+        // Anomalous tick 8 minutes before settle (settle = duration + 1s) —
+        // outside a capped 5-min window, inside an uncapped ~4.8h window,
+        // and inside the unrelated 10-min history-prune cutoff (so it's
+        // excluded by the CAP, not by unrelated garbage collection).
+        vm.warp(block.timestamp + 24 hours - 8 minutes);
+        pyth.setPrice(FEED, 5e8, -8);
+        vm.prank(keeper); resolver.recordPrice(FEED, data);
+
+        // Fresh tick 2 minutes before settle.
+        vm.warp(block.timestamp + 6 minutes);
+        pyth.setPrice(FEED, 2e8, -8);
+        vm.prank(keeper); resolver.recordPrice(FEED, data);
+
+        // Advance the remaining 2 minutes to settle = duration + 1s exactly.
+        vm.warp(block.timestamp + 2 minutes);
+        pyth.setPrice(FEED, 2e8, -8); // fresh spot matching the expected TWAP
+
+        vm.prank(keeper);
+        resolver.resolveOrderbookMatch(address(market), matchId, data);
+
+        OrderbookMarket.Match memory m = market.getMatch(matchId);
+        assertTrue(m.settled, "capped window must settle cleanly, not treat the 8-min-old tick as an anomaly");
+        assertEq(m.exitPrice, 2e18, "capped 5-min window must exclude the 8-min-old tick entirely");
+    }
+
+    /// @dev 60s market: duration/5 = 12s, below MIN_TWAP_WINDOW (30s). Settle
+    ///      happens at duration + 1s = 61s. A tick 26s before settle (t=35)
+    ///      sits outside a raw 12s window (cutoff=49) but inside the floored
+    ///      30s window (cutoff=31) — asserting the blended average (not just
+    ///      the freshest tick) proves the floor actually widened the window.
+    function test_TWAP_WindowFloorsForVeryShortDuration() public {
+        (OrderbookMarket market, uint256 matchId) = _freshMarketWithOneMatch(60);
+        bytes[] memory data = new bytes[](0);
+
+        vm.warp(block.timestamp + 35); // t=35: 26s before the eventual t=61 settle
+        pyth.setPrice(FEED, 5e8, -8);
+        vm.prank(keeper); resolver.recordPrice(FEED, data);
+
+        vm.warp(block.timestamp + 20); // t=55: 6s before settle
+        pyth.setPrice(FEED, 2e8, -8);
+        vm.prank(keeper); resolver.recordPrice(FEED, data);
+
+        vm.warp(block.timestamp + 6); // t=61 = duration + 1s
+        pyth.setPrice(FEED, 3.5e8, -8); // fresh spot matching the expected blended TWAP
+
+        vm.prank(keeper);
+        resolver.resolveOrderbookMatch(address(market), matchId, data);
+
+        OrderbookMarket.Match memory m = market.getMatch(matchId);
+        assertTrue(m.settled);
+        assertEq(m.exitPrice, 3.5e18, "floored 30s window must include both ticks, not just the freshest one");
+    }
+
+    /// @dev Resolving a match whose feed has literally never had a price
+    ///      recorded must revert with "no price data" rather than settling
+    ///      on a bogus zero/uninitialized TWAP.
+    function test_Resolve_Reverts_NoPriceDataEverRecorded() public {
+        (OrderbookMarket market, uint256 matchId) = _freshMarketWithOneMatch(15 minutes);
+        bytes[] memory data = new bytes[](0);
+        vm.warp(block.timestamp + 15 minutes + 1);
+
+        vm.prank(keeper);
+        vm.expectRevert(bytes("no price data"));
+        resolver.resolveOrderbookMatch(address(market), matchId, data);
+    }
+
     // Required for ETH-receiving tests.
     receive() external payable {}
 }
+
+/// @dev Minimal contract with no receive/fallback — plain ETH transfers to it
+///      always fail, used to exercise withdrawETH's failure branch.
+contract RejectsEth {}
