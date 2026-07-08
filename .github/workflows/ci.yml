@@ -41,7 +41,29 @@ jobs:
         run: forge test -vv
 
   # ─────────────────────────────────────────────────────────────
-  # 2. BACKEND — tsc typecheck + DB migration smoke test
+  # 1b. SMART CONTRACTS — Slither static analysis (informational —
+  #     not in ci-passed's `needs`, so a new finding warns without
+  #     blocking merges; review findings manually before mainnet).
+  # ─────────────────────────────────────────────────────────────
+  contracts-slither:
+    name: contracts (slither, informational)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: recursive }
+
+      - uses: foundry-rs/foundry-toolchain@v1
+        with: { version: stable }
+
+      - name: Install Slither
+        run: pip3 install slither-analyzer
+
+      - name: slither
+        working-directory: contracts
+        run: slither . --foundry-ignore-compile=false || true
+
+  # ─────────────────────────────────────────────────────────────
+  # 2. BACKEND — tsc typecheck + unit tests + DB migration smoke test
   # ─────────────────────────────────────────────────────────────
   backend:
     name: backend (tsc + db-smoke)
@@ -83,6 +105,10 @@ jobs:
         working-directory: backend
         run: pnpm exec tsc --noEmit
 
+      - name: unit tests
+        working-directory: backend
+        run: pnpm exec vitest run
+
       - name: db migration smoke
         run: node scripts/ci-db-smoke.mjs
 
@@ -112,6 +138,10 @@ jobs:
         # composite tsconfig.node.json (TS6310). vite build below is the real
         # build gate; this just typechecks src against tsconfig.json.
         run: pnpm exec tsc --noEmit
+
+      - name: unit tests
+        working-directory: frontend
+        run: pnpm exec vitest run
 
       - name: vite build
         working-directory: frontend
@@ -160,6 +190,29 @@ jobs:
       - name: graph build
         working-directory: subgraph
         run: pnpm exec graph build
+
+  # ─────────────────────────────────────────────────────────────
+  # 5. DEPENDENCY AUDIT — informational only (not in ci-passed's
+  #    `needs`). A new transitive-dep advisory shouldn't silently block
+  #    an unrelated hotfix merge; review findings manually instead.
+  # ─────────────────────────────────────────────────────────────
+  dependency-audit:
+    name: dependency audit (informational)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+
+      - name: backend audit
+        working-directory: backend
+        run: npm audit --audit-level=high || true
+
+      - name: frontend audit
+        working-directory: frontend
+        run: npm audit --audit-level=high || true
 
   # ─────────────────────────────────────────────────────────────
   # Aggregator job — required-status target for branch protection

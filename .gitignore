@@ -21,6 +21,7 @@ secrets.json
 contracts/out/**/*.json
 contracts/cache/**/*.json
 contracts/broadcast/**/*.json
+contracts/lcov.info
 
 # Python
 __pycache__/
