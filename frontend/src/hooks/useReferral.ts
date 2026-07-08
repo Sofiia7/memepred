@@ -1,6 +1,7 @@
 import { useReadContract, useWriteContract, useAccount } from 'wagmi'
 import { useState } from 'react'
 import { CONTRACTS } from '../lib/contracts'
+import { useEnsureChain } from './useEnsureChain'
 
 const REFERRAL_REGISTRY_ABI = [
   {
@@ -60,7 +61,9 @@ const FEE_DIST_ABI = [
 export function useReferral() {
   const { address } = useAccount()
   const { writeContractAsync } = useWriteContract()
+  const ensureChain = useEnsureChain()
   const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string>()
 
   const { data: myReferrer } = useReadContract({
     address:      CONTRACTS.REFERRAL_REGISTRY,
@@ -96,25 +99,35 @@ export function useReferral() {
 
   async function generateMyCode() {
     if (!address) return
+    setError(undefined)
     setBusy(true)
     try {
+      const chainCheck = await ensureChain()
+      if (!chainCheck.ok) { setError(chainCheck.error); return }
       await writeContractAsync({
         address:      CONTRACTS.REFERRAL_REGISTRY,
         abi:          REFERRAL_REGISTRY_ABI,
         functionName: 'generateCode',
         args:         [address]
       })
+    } catch (err: any) {
+      setError(err?.shortMessage || err?.message || 'Failed to generate code')
     } finally { setBusy(false) }
   }
 
   async function claimRewards() {
+    setError(undefined)
     setBusy(true)
     try {
+      const chainCheck = await ensureChain()
+      if (!chainCheck.ok) { setError(chainCheck.error); return }
       await writeContractAsync({
         address:      CONTRACTS.FEE_DISTRIBUTOR,
         abi:          FEE_DIST_ABI,
         functionName: 'claimReferralRewards'
       })
+    } catch (err: any) {
+      setError(err?.shortMessage || err?.message || 'Failed to claim rewards')
     } finally { setBusy(false) }
   }
 
@@ -125,6 +138,7 @@ export function useReferral() {
     claimableRewards,
     generateMyCode,
     claimRewards,
-    busy
+    busy,
+    error
   }
 }

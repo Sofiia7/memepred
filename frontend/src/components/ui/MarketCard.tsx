@@ -24,20 +24,28 @@ interface Props {
   onPick: (b: PickedBet) => void
 }
 
+const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
+
 function MarketOdds({ market, side }: { market: Market; side: 'up' | 'down' }) {
   const { probUp } = useOdds(market.address as Address)
   const pct = side === 'up' ? probUp : 1 - probUp
-  return <span className="pct">{Math.round(pct * 100)}¢</span>
+  return <span className="pct">{Math.round(pct * 100)}%</span>
 }
 
 export function MarketCardUI({ symbol, livePrice = 0, chg24h = 0, markets, picked, onPick }: Props) {
   const meta = symbolMeta(symbol)
   const sorted = useMemo(() => [...markets].sort((a, b) => a.duration - b.duration), [markets])
   const [activeIdx, setActiveIdx] = useState(0)
-  const active = sorted[activeIdx]
+  // Clamp instead of trusting activeIdx: if markets rolled over while the
+  // user had a later tab selected, sorted can shrink and activeIdx can point
+  // past the end. Hooks below must run unconditionally either way (Rules of
+  // Hooks) — this keeps `active` defined-or-undefined without an early return
+  // before the useOdds call.
+  const safeIdx = Math.min(activeIdx, Math.max(0, sorted.length - 1))
+  const active = sorted[safeIdx]
   const now = useNow(1000)
+  const { probUp } = useOdds((active?.address ?? ZERO_ADDRESS) as Address)
   if (!active) return null
-  const { probUp } = useOdds(active.address as Address)
   const isSelHere = picked?.marketAddress.toLowerCase() === active.address.toLowerCase()
 
   return (
@@ -62,7 +70,7 @@ export function MarketCardUI({ symbol, livePrice = 0, chg24h = 0, markets, picke
         {sorted.map((m, i) => (
           <button
             key={m.address}
-            className={'tf-tab ' + (i === activeIdx ? 'on' : '')}
+            className={'tf-tab ' + (i === safeIdx ? 'on' : '')}
             onClick={() => setActiveIdx(i)}
           >
             <span className="tf-lbl">{formatDuration(m.duration)}</span>

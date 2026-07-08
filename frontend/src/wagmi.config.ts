@@ -5,6 +5,11 @@ import { farcasterMiniApp } from './lib/farcasterConnector'
 
 const isMainnet = import.meta.env.VITE_NETWORK === 'mainnet'
 
+// Single source of truth for "the chain this app runs on" — used by
+// useEnsureChain to detect/prompt a wallet-side network switch before writes.
+export const TARGET_CHAIN    = isMainnet ? base : baseSepolia
+export const TARGET_CHAIN_ID = TARGET_CHAIN.id
+
 export const config = createConfig({
   chains: [isMainnet ? base : baseSepolia],
   connectors: [

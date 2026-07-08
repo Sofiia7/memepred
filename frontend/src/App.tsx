@@ -10,6 +10,8 @@ import { Leaderboard } from './pages/Leaderboard'
 import { Portfolio } from './pages/Portfolio'
 import { GenesisPage } from './pages/Genesis'
 import { ReferPage } from './pages/Refer'
+import { HowItWorksPage } from './pages/HowItWorks'
+import { TermsPage } from './pages/Terms'
 import { GeoBlock } from './components/GeoBlock'
 import { AppShell } from './components/ui/AppShell'
 
@@ -40,6 +42,8 @@ export function App() {
           <Route path="/portfolio" element={<Portfolio />} />
           <Route path="/genesis" element={<GenesisPage />} />
           <Route path="/refer" element={<ReferPage />} />
+          <Route path="/how-it-works" element={<HowItWorksPage />} />
+          <Route path="/terms" element={<TermsPage />} />
         </Routes>
       </AppShell>
     </BrowserRouter>

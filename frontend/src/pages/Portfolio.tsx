@@ -46,7 +46,12 @@ function ClaimButton({ marketAddress, orderId }: { marketAddress: Address; order
       className="cta"
       style={{ padding: '6px 10px', fontSize: 10, height: 'auto', width: 'auto' }}
       disabled={pending}
-      onClick={() => claim(orderId)}
+      onClick={(e) => {
+        // Row itself is a Link to /order/...; claiming from here shouldn't navigate.
+        e.preventDefault()
+        e.stopPropagation()
+        claim(orderId)
+      }}
     >
       {pending ? <span className="spinner" /> : null}
       CLAIM
@@ -65,8 +70,8 @@ function BetRow({ bet }: { bet: Bet }) {
     bet.won ? 'WON' : 'LOST'
   const canClaim = bet.won === true && !bet.claimed && bet.order_id
 
-  return (
-    <div className="lb-row" style={{ gridTemplateColumns: '32px 1fr auto auto' }}>
+  const rowContent = (
+    <>
       <div className={'coin-icon ' + meta.iconClass} style={{ width: 26, height: 26, fontSize: 10 }}>{meta.glyph}</div>
       <div style={{ minWidth: 0 }}>
         <div className="lb-name">
@@ -85,6 +90,26 @@ function BetRow({ bet }: { bet: Bet }) {
       <div className={'lb-pnl ' + (bet.won === false ? 'dn' : '')}>
         {payout !== null ? `$${payout.toFixed(2)}` : '—'}
       </div>
+    </>
+  )
+
+  // Every bet with an on-chain order_id has a status page — link to it so
+  // "pending" bets are actually trackable instead of a dead-end list row.
+  if (bet.order_id) {
+    return (
+      <Link
+        to={`/order/${bet.market_address}/${bet.order_id}`}
+        className="lb-row"
+        style={{ gridTemplateColumns: '32px 1fr auto auto', textDecoration: 'none', color: 'inherit' }}
+      >
+        {rowContent}
+      </Link>
+    )
+  }
+
+  return (
+    <div className="lb-row" style={{ gridTemplateColumns: '32px 1fr auto auto' }}>
+      {rowContent}
     </div>
   )
 }
@@ -135,7 +160,7 @@ export function Portfolio() {
   const { address, isConnected } = useAccount()
   const { connectWallet } = useConnectWallet()
 
-  const { data: profile, isLoading } = useQuery<Profile>({
+  const { data: profile, isLoading, isError, refetch } = useQuery<Profile>({
     queryKey: ['profile', address],
     queryFn: async () => {
       const res = await fetch(`${API}/api/profile/${address}`)
@@ -144,6 +169,7 @@ export function Portfolio() {
     },
     enabled: !!address,
     refetchInterval: 30_000,
+    retry: 2,
   })
 
   if (!isConnected) {
@@ -154,6 +180,19 @@ export function Portfolio() {
         <button className="cta" onClick={connectWallet}>
           <span className="basesq" />
           CONNECT WALLET
+        </button>
+      </>
+    )
+  }
+
+  if (isError) {
+    return (
+      <>
+        <ScreenTitle title="Portfolio" icon={<WalletIcon />} />
+        <div className="empty-state">Couldn't load your profile. The API may be temporarily unavailable.</div>
+        <button className="cta" onClick={() => refetch()}>
+          <span className="basesq" />
+          RETRY
         </button>
       </>
     )

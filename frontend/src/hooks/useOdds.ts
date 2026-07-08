@@ -7,11 +7,14 @@ import { ORDERBOOK_MARKET_ABI } from '../lib/contracts'
  * probability is depthUp / (depthUp + depthDown); otherwise it leans toward
  * the longer queue (more demand on that side).
  */
+const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
+
 export function useOdds(marketAddress: Address) {
   const { data, isLoading, refetch } = useReadContract({
     address:      marketAddress,
     abi:          ORDERBOOK_MARKET_ABI,
-    functionName: 'getPendingDepth'
+    functionName: 'getPendingDepth',
+    query:        { enabled: marketAddress?.toLowerCase() !== ZERO_ADDRESS }
   })
 
   if (!data) return { upDepth: 0n, downDepth: 0n, probUp: 0.5, isLoading, refetch }

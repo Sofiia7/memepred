@@ -12,6 +12,13 @@ export const CONTRACTS = {
   GENESIS_NFT:       import.meta.env.VITE_GENESIS_NFT              as Address,
 } as const
 
+// Mirrors OrderbookMarket.sol's MIN_BET/MAX_BET (1 USDC / 100 USDC). Not
+// read on-chain because it's a compile-time constant on the contract, not
+// per-market state — keeping it here lets the UI clamp/validate client-side
+// instead of letting users submit a tx that's guaranteed to revert.
+export const MIN_BET_USD = 1
+export const MAX_BET_USD = 100
+
 // ── ABIs ───────────────────────────────────────────────────
 
 // Legacy PvPMarket ABI (kept for backward compatibility)

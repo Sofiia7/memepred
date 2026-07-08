@@ -17,6 +17,7 @@ import {
 import { parseUnits, maxUint256, decodeEventLog, type Address, type Hash } from 'viem'
 import { CONTRACTS, ORDERBOOK_MARKET_ABI, ERC20_ABI } from '../lib/contracts'
 import { getPendingReferrer } from '../lib/referral'
+import { useEnsureChain } from './useEnsureChain'
 
 export type Direction = 0 | 1  // 0=UP, 1=DOWN
 
@@ -42,6 +43,7 @@ export function usePlaceBet({
 
   const { address } = useAccount()
   const publicClient = usePublicClient()
+  const ensureChain = useEnsureChain()
   const [step, setStep] = useState<BetStep>('idle')
   const [error, setError] = useState<string>()
   const [orderId, setOrderId] = useState<bigint>()
@@ -100,6 +102,13 @@ export function usePlaceBet({
     setOrderId(undefined)
 
     try {
+      const chainCheck = await ensureChain()
+      if (!chainCheck.ok) {
+        setStep('error')
+        setError(chainCheck.error)
+        return
+      }
+
       if (!allowance || allowance < amountWei) {
         setStep('approving')
         await approve({
@@ -156,7 +165,7 @@ export function usePlaceBet({
       setStep('error')
       setError(err?.shortMessage || err?.message || 'Transaction failed')
     }
-  }, [address, amountWei, allowance, direction, marketAddress, referrer, expectedPrice, slippageBps, marketFeedId, approve, refetchAllowance, placeBet])
+  }, [address, amountWei, allowance, direction, marketAddress, referrer, expectedPrice, slippageBps, marketFeedId, approve, refetchAllowance, placeBet, ensureChain])
 
   return {
     execute,

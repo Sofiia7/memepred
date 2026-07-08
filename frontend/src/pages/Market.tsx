@@ -88,7 +88,7 @@ export function Market() {
           })}
         >
           <span className="side"><Chev dir="up" /> UP</span>
-          <span className="pct">{Math.round(probUp * 100)}¢</span>
+          <span className="pct">{Math.round(probUp * 100)}%</span>
         </button>
         <button
           className={'b b-dn ' + (picked?.side === 'down' ? 'sel' : '')}
@@ -98,7 +98,7 @@ export function Market() {
           })}
         >
           <span className="side"><Chev dir="down" /> DOWN</span>
-          <span className="pct">{Math.round((1 - probUp) * 100)}¢</span>
+          <span className="pct">{Math.round((1 - probUp) * 100)}%</span>
         </button>
       </div>
 

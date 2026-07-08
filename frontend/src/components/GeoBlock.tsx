@@ -7,7 +7,6 @@ export function GeoBlock() {
       </h2>
       <p>
         flipthememe is not available in your region due to regulatory restrictions.
-        If you believe this is an error, please contact support.
       </p>
     </div>
   )

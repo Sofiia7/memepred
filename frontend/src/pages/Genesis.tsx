@@ -5,20 +5,28 @@ import { CONTRACTS, LIQUIDITY_POOL_ABI, ERC20_ABI } from '../lib/contracts'
 import { ScreenTitle } from '../components/ui/AppShell'
 import { StarIcon } from '../components/ui/icons'
 import { useConnectWallet } from '../hooks/useConnectWallet'
+import { useEnsureChain } from '../hooks/useEnsureChain'
+import { TARGET_CHAIN } from '../wagmi.config'
+
+const NETWORK_LABEL = TARGET_CHAIN.name // "Base" or "Base Sepolia" — derived from the actual configured chain, not hardcoded
 
 export function GenesisPage() {
   const { address, isConnected } = useAccount()
   const { connectWallet } = useConnectWallet()
+  const ensureChain = useEnsureChain()
   const [depositAmount, setDepositAmount] = useState('50')
+  const [withdrawAmount, setWithdrawAmount] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const [isWithdrawing, setIsWithdrawing] = useState(false)
+  const [actionError, setActionError] = useState<string>()
 
-  const { data: stats } = useReadContract({
+  const { data: stats, refetch: refetchStats } = useReadContract({
     address: CONTRACTS.LIQUIDITY_POOL,
     abi: LIQUIDITY_POOL_ABI,
     functionName: 'getPoolStats',
   })
 
-  const { data: shareBalance } = useReadContract({
+  const { data: shareBalance, refetch: refetchShareBalance } = useReadContract({
     address: CONTRACTS.LIQUIDITY_POOL,
     abi: LIQUIDITY_POOL_ABI,
     functionName: 'balanceOf',
@@ -26,7 +34,7 @@ export function GenesisPage() {
     query: { enabled: !!address },
   })
 
-  const { data: myAssets } = useReadContract({
+  const { data: myAssets, refetch: refetchMyAssets } = useReadContract({
     address: CONTRACTS.LIQUIDITY_POOL,
     abi: LIQUIDITY_POOL_ABI,
     functionName: 'previewRedeem',
@@ -34,7 +42,15 @@ export function GenesisPage() {
     query: { enabled: !!shareBalance && shareBalance > 0n },
   })
 
-  const { data: pendingFees } = useReadContract({
+  const { data: maxWithdrawable, refetch: refetchMaxWithdrawable } = useReadContract({
+    address: CONTRACTS.LIQUIDITY_POOL,
+    abi: LIQUIDITY_POOL_ABI,
+    functionName: 'maxWithdraw',
+    args: [address!],
+    query: { enabled: !!address },
+  })
+
+  const { data: pendingFees, refetch: refetchPendingFees } = useReadContract({
     address: CONTRACTS.LIQUIDITY_POOL,
     abi: LIQUIDITY_POOL_ABI,
     functionName: 'earnedFees',
@@ -50,8 +66,17 @@ export function GenesisPage() {
     query: { enabled: !!address },
   })
 
+  function refetchAll() {
+    refetchStats()
+    refetchShareBalance()
+    refetchMyAssets()
+    refetchMaxWithdrawable()
+    refetchPendingFees()
+  }
+
   const { writeContractAsync: approve } = useWriteContract()
   const { writeContractAsync: deposit } = useWriteContract()
+  const { writeContractAsync: withdraw } = useWriteContract()
   const { writeContractAsync: claimFees } = useWriteContract()
 
   const totalPool = stats ? Number(stats[0]) / 1e6 : 0
@@ -64,14 +89,18 @@ export function GenesisPage() {
   const myPending = pendingFees ? Number(pendingFees) / 1e6 : 0
   const isGenesis = !!isGenesisAddr
   const hasPosition = (shareBalance ?? 0n) > 0n
+  const maxWithdrawUsd = maxWithdrawable ? Number(maxWithdrawable) / 1e6 : 0
 
   async function handleDeposit() {
     if (!address) {
       connectWallet()
       return
     }
+    setActionError(undefined)
     setIsLoading(true)
     try {
+      const chainCheck = await ensureChain()
+      if (!chainCheck.ok) { setActionError(chainCheck.error); return }
       const amount = parseUnits(depositAmount, 6)
       await approve({
         address: CONTRACTS.USDC,
@@ -85,22 +114,50 @@ export function GenesisPage() {
         functionName: 'deposit',
         args: [amount, address],
       })
-    } catch (err) {
-      console.error('Deposit failed:', err)
+      refetchAll()
+    } catch (err: any) {
+      setActionError(err?.shortMessage || err?.message || 'Deposit failed')
     } finally {
       setIsLoading(false)
     }
   }
 
-  async function handleClaimFees() {
+  async function handleWithdraw() {
+    if (!address || !withdrawAmount) return
+    setActionError(undefined)
+    setIsWithdrawing(true)
     try {
+      const chainCheck = await ensureChain()
+      if (!chainCheck.ok) { setActionError(chainCheck.error); return }
+      const assets = parseUnits(withdrawAmount, 6)
+      await withdraw({
+        address: CONTRACTS.LIQUIDITY_POOL,
+        abi: LIQUIDITY_POOL_ABI,
+        functionName: 'withdraw',
+        args: [assets, address, address],
+      })
+      setWithdrawAmount('')
+      refetchAll()
+    } catch (err: any) {
+      setActionError(err?.shortMessage || err?.message || 'Withdraw failed')
+    } finally {
+      setIsWithdrawing(false)
+    }
+  }
+
+  async function handleClaimFees() {
+    setActionError(undefined)
+    try {
+      const chainCheck = await ensureChain()
+      if (!chainCheck.ok) { setActionError(chainCheck.error); return }
       await claimFees({
         address: CONTRACTS.LIQUIDITY_POOL,
         abi: LIQUIDITY_POOL_ABI,
         functionName: 'claimFees',
       })
-    } catch (err) {
-      console.error('Claim fees failed:', err)
+      refetchAll()
+    } catch (err: any) {
+      setActionError(err?.shortMessage || err?.message || 'Claim fees failed')
     }
   }
 
@@ -111,7 +168,7 @@ export function GenesisPage() {
       <div className="genesis-hero">
         <div className="gh-eyebrow">
           <span className="basesq" />
-          Limited program · Base mainnet
+          Limited program · {NETWORK_LABEL}
         </div>
         <h3 className="gh-title">
           First 20 LPs earn <em>1.5×</em> fee share <em>forever</em>.
@@ -165,6 +222,42 @@ export function GenesisPage() {
               CLAIM ${myPending.toFixed(2)}
             </button>
           )}
+
+          <div className="b-title">Withdraw</div>
+          <div className="stake-row">
+            <div className="stake-input">
+              <span className="ccy">$</span>
+              <input
+                type="number"
+                min={0}
+                max={maxWithdrawUsd}
+                placeholder="0.00"
+                value={withdrawAmount}
+                onChange={(e) => setWithdrawAmount(e.target.value)}
+              />
+            </div>
+            <button
+              className="chip"
+              style={{ flex: '0 0 auto', padding: '0 12px', height: 40 }}
+              onClick={() => setWithdrawAmount(maxWithdrawUsd.toFixed(2))}
+              disabled={maxWithdrawUsd <= 0}
+            >
+              MAX
+            </button>
+          </div>
+          <div className="stake-hint">
+            Available: ${maxWithdrawUsd.toFixed(2)}{maxWithdrawUsd < mySharesValue ? ' (rest is locked, currently backing open matches)' : ''}
+          </div>
+          <button
+            className="cta"
+            style={{ marginBottom: 8 }}
+            disabled={isWithdrawing || !withdrawAmount || Number(withdrawAmount) <= 0 || Number(withdrawAmount) > maxWithdrawUsd}
+            onClick={handleWithdraw}
+          >
+            {isWithdrawing ? <span className="spinner" /> : <span className="basesq" />}
+            {isWithdrawing ? 'PROCESSING…' : `WITHDRAW $${withdrawAmount || '0'}`}
+          </button>
+          {actionError && <div className="osc-error">{actionError}</div>}
         </>
       )}
 
@@ -201,13 +294,17 @@ export function GenesisPage() {
         {isLoading ? <span className="spinner" /> : <span className="basesq" />}
         {!isConnected ? 'CONNECT WALLET' : isLoading ? 'PROCESSING…' : genesisLeft > 0 && !hasPosition ? `BECOME GENESIS LP · $${depositAmount}` : `DEPOSIT $${depositAmount}`}
       </button>
+      {!hasPosition && actionError && <div className="osc-error">{actionError}</div>}
       <div className="g-foot">
-        Base Sepolia · {genesisLeft > 0 && !hasPosition ? `You'll receive Genesis NFT #${21 - genesisLeft}` : 'Smart-contract audited'}
+        {NETWORK_LABEL} · {genesisLeft > 0 && !hasPosition ? `You'll receive Genesis NFT #${21 - genesisLeft}` : 'LP funds are at risk — not principal-protected'}
       </div>
       {/* Sprint 4.7: clarify that the boost rides on the NFT, not the address. */}
       <div className="g-foot" style={{ marginTop: 6, fontSize: 10, opacity: 0.6 }}>
         * Genesis NFT is transferable. The 1.5× fee boost follows whoever owns the NFT.
         Selling the NFT sells the boost.
+      </div>
+      <div className="g-foot" style={{ marginTop: 6, fontSize: 10, opacity: 0.6 }}>
+        Contracts are open-source but have not undergone an external security audit yet.
       </div>
 
       <div style={{ height: 24 }} />

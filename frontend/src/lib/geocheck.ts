@@ -12,7 +12,9 @@
  *     duplication that can drift.
  */
 
-const FALLBACK_BLOCKED = ['US', 'GB', 'FR', 'DE', 'NL', 'CA', 'AU', 'JP', 'SG']
+// Mirrors workers/geo-block.ts's BLOCKED set — kept in sync manually since
+// this is only the fallback used if /api/geo/config is unreachable.
+const FALLBACK_BLOCKED = ['CU', 'IR', 'KP', 'SY']
 
 let cachedBlocked: string[] | null = null
 

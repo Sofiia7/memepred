@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { Link } from 'react-router-dom'
 import { AppHead } from './AppHead'
 import { TabNav } from './TabNav'
 
@@ -6,7 +7,14 @@ export function AppShell({ children }: { children: ReactNode }) {
   return (
     <div className="app">
       <AppHead />
-      <div className="app-body">{children}</div>
+      <div className="app-body">
+        {children}
+        <div className="app-foot">
+          <Link to="/how-it-works">How it works</Link>
+          <span>·</span>
+          <Link to="/terms">Terms</Link>
+        </div>
+      </div>
       <TabNav />
     </div>
   )

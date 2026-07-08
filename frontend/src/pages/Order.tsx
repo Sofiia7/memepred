@@ -10,6 +10,7 @@ import { useWriteContract } from 'wagmi'
 import type { Address } from 'viem'
 import { ORDERBOOK_MARKET_ABI } from '../lib/contracts'
 import { useClaim } from '../hooks/useClaim'
+import { useEnsureChain } from '../hooks/useEnsureChain'
 import { OrderStatusCard } from '../components/OrderStatusCard'
 import { ScreenTitle } from '../components/ui/AppShell'
 
@@ -21,8 +22,20 @@ export function OrderPage() {
   const orderId = (() => {
     try { return BigInt(params.orderId ?? '0') } catch { return 0n }
   })()
+  const isValidOrder = Boolean(marketAddress) && orderId !== 0n
 
-  if (!marketAddress || orderId === 0n) {
+  // Hooks must run unconditionally on every render — React Router doesn't
+  // remount OrderPage across param changes on the same route, so an early
+  // return before these (as this page used to have) changes the hook count
+  // between renders and crashes with "Rendered fewer hooks than expected"
+  // the moment a user navigates between two /order/:address/:orderId URLs.
+  const { claim, pending: claimPending, error: claimError } = useClaim(marketAddress)
+  const { writeContractAsync: refundExpired } = useWriteContract()
+  const ensureChain = useEnsureChain()
+  const [refundPending, setRefundPending] = useState(false)
+  const [refundError, setRefundError] = useState<string>()
+
+  if (!isValidOrder) {
     return (
       <>
         <ScreenTitle title="Order not found" />
@@ -31,15 +44,12 @@ export function OrderPage() {
     )
   }
 
-  const { claim, pending: claimPending, error: claimError } = useClaim(marketAddress)
-  const { writeContractAsync: refundExpired } = useWriteContract()
-  const [refundPending, setRefundPending] = useState(false)
-  const [refundError, setRefundError] = useState<string>()
-
   async function handleRefund() {
     setRefundError(undefined)
     setRefundPending(true)
     try {
+      const chainCheck = await ensureChain()
+      if (!chainCheck.ok) { setRefundError(chainCheck.error); return }
       await refundExpired({
         address: marketAddress,
         abi: ORDERBOOK_MARKET_ABI,
