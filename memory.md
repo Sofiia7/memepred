@@ -1,5 +1,73 @@
 # Memory Log for memepred
 
+## Full ТЗ-vs-code audit + Phase 0 remediation, 2026-07-08
+
+Sofia asked for a full audit (ТЗ vs code, security, completeness, feature-to-UI
+mapping) and a mainnet/advertising go/no-go. Delivered as an artifact (4 parallel
+review passes: contracts, backend/infra, frontend, legal/marketing). **Verdict:
+NO-GO on both mainnet and public advertising** — no external contract audit has
+happened, no mainnet deployment exists at all (still Base Sepolia only), and two
+new bugs were found live. Full findings/plan are in the delivered artifact, not
+duplicated here; this entry covers what got fixed same-day.
+
+Sofia then said to execute all phases in order, deferring anything needing her
+own live testing/action to a written list for the next day. Did:
+
+- **Fixed the new live crash**: `frontend/src/pages/Order.tsx` had the same
+  Rules-of-Hooks bug already fixed once in MarketCard — an early return before
+  `useClaim`/`useWriteContract`/`useEnsureChain`/`useState`. Since React Router
+  doesn't remount across param changes on the same route, navigating between
+  two `/order/:address/:orderId` URLs (or hitting an invalid one) changed the
+  hook count between renders and crashed the page. Moved all hooks above the
+  early return, same pattern as the MarketCard fix.
+- **Fixed a keeper regression**: `oracleWatchdog.ts`'s `maybePauseFeed` called
+  `privateKeyToAccount()` directly instead of the shared `getKeeperWalletClient()`
+  — bypassing the nonce-manager `keeperWallet.ts` was built specifically to add
+  (2026-07-06, see below), reintroducing the exact "replacement transaction
+  underpriced" collision risk across concurrent keeper loops.
+- **Hardened the backend container**: `deploy/backend.Dockerfile` had no `USER`
+  directive — both `backend` and `keeper` ran as root. Now run as node:20-alpine's
+  built-in non-root `node` user.
+- **Fixed nav discoverability**: How-it-Works and Terms were only reachable via
+  a tiny "?" icon in the header. Added a persistent footer link row in
+  `AppShell.tsx` (below page content, above the fixed tab bar) so every screen
+  has them.
+- **Verified, not a bug**: the earlier audit flagged "does the Genesis 80%/1.5x
+  fee boost actually follow the NFT when it's resold?" as worth checking.
+  Traced it: `LiquidityPool.isGenesis()` reads `genesisNFT.balanceOf()` live, and
+  `GenesisNFT._update()` calls `onGenesisTransfer()` on every transfer (mint
+  included) to resync fee weights. Confirmed correct as designed — false alarm.
+- **Verified forge tests live** (the prior audit pass couldn't — `forge` wasn't
+  on PATH in that session; it's at `~/.foundry/bin/`, just not on PATH by
+  default). 176/176 passed, matching the self-reported number exactly. Coverage
+  also matched exactly: 83.44% line / 75.81% branch repo-wide.
+- **Closed OracleResolver's branch-coverage gap** (was the worst of any
+  contract: 57.14% branch despite 97.70% line — the TWAP window CAP/floor
+  clamps and the batch-settlement anomaly-cancel path had constants and code
+  but had literally never been triggered by a test). Added 5 tests; now 100%
+  line / 92.86% branch. Repo-wide: 181 tests, 77.62% branch. Left OrderbookMarket
+  (28 uncovered branches), FeeDistributor/LiquidityPool/MarketFactory/
+  ReferralRegistry (smaller gaps) as follow-up — didn't try to rush a financial
+  contract's test-writing under time pressure just to hit a number.
+- **Added CI hardening**: backend + frontend now have vitest wired into CI as a
+  required step (first real tests: `backend/src/lib/validate.ts`'s zod schemas,
+  `frontend/src/lib/referral.ts`'s `?ref=` capture). Added Slither (contracts)
+  and `npm audit` (backend/frontend) as informational-only jobs (not in
+  `ci-passed`'s `needs`, so a new transitive-dep advisory can't silently block
+  an unrelated hotfix merge). Applied `npm audit fix` (non-breaking only) —
+  fixed the backend's ws/viem and esbuild advisories. Deliberately did NOT run
+  `--force`: backend's fastify v4->v5 bump and frontend's 35 WalletConnect/
+  @reown advisories all need it, and forcing either right after just fixing
+  wallet-connect code (a7fa630) would be reckless without dedicated review/testing.
+- Committed everything in 6 logical commits (frontend client-journey fixes,
+  backend/keeper fixes, deploy/infra, contract test coverage, CI hardening,
+  this memory log) rather than one giant commit.
+
+**Deferred to Sofia (needs her live action, not code)**: fund Sepolia wallets,
+run/monitor the 48h soak test, engage an external auditor, decide governing
+law + set up a public contact channel for Terms, the real mainnet deploy, and
+marketing — see the tomorrow-list delivered alongside this.
+
 ## Session continued 2026-07-07, part 3 — both fixes DEPLOYED LIVE, Sofia said "давай"
 
 Sofia explicitly authorized both pending deploys ("давай" twice). Executed:
