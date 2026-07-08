@@ -20,15 +20,14 @@
  */
 import {
   createPublicClient,
-  createWalletClient,
   http,
   formatEther,
   type Address,
 } from 'viem'
 import { base, baseSepolia } from 'viem/chains'
-import { privateKeyToAccount } from 'viem/accounts'
 import { CONTRACTS, PYTH_HERMES } from '../config.js'
 import { redis } from '../db/redis.js'
+import { getKeeperWalletClient } from './keeperWallet.js'
 
 const REDIS_KEY = 'watchdog:state'
 const REDIS_TTL_SEC = 300 // state expires if keeper dies — surfaces as stale
@@ -188,16 +187,13 @@ async function maybePauseFeed(feedId: string, streak: number) {
   const last = lastPauseAt.get(feedId) ?? 0
   if (Date.now() - last < PAUSE_COOLDOWN_MS) return
 
-  const key = process.env.KEEPER_PRIVATE_KEY as `0x${string}` | undefined
-  if (!key) {
+  const wallet = getKeeperWalletClient()
+  if (!wallet) {
     console.warn(`[watchdog] feed ${feedId} stale x${streak} but KEEPER_PRIVATE_KEY not set — cannot pause`)
     return
   }
 
   try {
-    const account = privateKeyToAccount(key)
-    const wallet = createWalletClient({ account, chain, transport: http(process.env.BASE_RPC_URL) })
-
     const hash = await wallet.writeContract({
       address:      CONTRACTS.MARKET_FACTORY as Address,
       abi:          MARKET_FACTORY_ABI,

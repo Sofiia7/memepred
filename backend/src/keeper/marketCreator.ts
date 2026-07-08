@@ -54,7 +54,22 @@ async function openMarkets(): Promise<OpenMarketRow[]> {
   return r.rows
 }
 
+/**
+ * Sprint 5.5 audit fix: nothing anywhere ever moved a `markets` row off
+ * 'OPEN' once its close_time passed — createMissingMarkets() only ever
+ * INSERTs new rows, it never retires old ones. Every (feed × duration)
+ * slot accumulates a fresh 'OPEN' row roughly every close_time/2, forever,
+ * which is exactly the pile of stale "5m ⌁ 00:00" markets users see on the
+ * Markets page. This doesn't affect on-chain settlement (that's driven by
+ * per-match settleAt via resolveKeeper, independent of this table) — it's
+ * purely "stop offering this instance for new bets" bookkeeping for the UI.
+ */
+async function closeExpiredMarkets() {
+  await pg.query(`UPDATE markets SET status = 'CLOSED' WHERE status = 'OPEN' AND close_time <= NOW()`)
+}
+
 export async function createMissingMarkets() {
+  await closeExpiredMarkets()
   if (!CONTRACTS.MARKET_FACTORY || CONTRACTS.MARKET_FACTORY === '0x') return
   const wallet = getKeeperWalletClient()
   if (!wallet) return
