@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/proxy/Clones.sol";
 import "./OrderbookMarket.sol";
 import "./LiquidityPool.sol";
 import "./FeeDistributor.sol";
@@ -22,6 +23,13 @@ contract MarketFactory is Ownable {
     address public immutable referralRegistry;
     address public immutable multisig;
     address public immutable liquidityPool;
+
+    /// @notice The OrderbookMarket every market is an EIP-1167 clone of.
+    ///         Deployed by this contract's own constructor rather than passed
+    ///         in, so that OrderbookMarket.factory (which it takes from
+    ///         msg.sender) resolves to this factory — that immutable is what
+    ///         gates both pauseByFactory() and initialize() on every clone.
+    address public immutable marketImplementation;
 
     // feedId → list of active markets
     mapping(bytes32 => address[]) public activeMarkets;
@@ -83,6 +91,21 @@ contract MarketFactory is Ownable {
         multisig         = _multisig;
         liquidityPool    = _liquidityPool;
 
+        // Deploy the clone target once, here. Passing zeroed per-instance
+        // config leaves it permanently initialized (OrderbookMarket._init
+        // runs in the constructor), so nobody can call initialize() on the
+        // implementation itself.
+        marketImplementation = address(new OrderbookMarket(
+            _usdc,
+            _resolver,
+            _liquidityPool,
+            _feeDistributor,
+            _referralRegistry,
+            _multisig,
+            bytes32(0),
+            0
+        ));
+
         allowedDurations.push(5 minutes);
         allowedDurations.push(15 minutes);
         allowedDurations.push(1 hours);
@@ -108,18 +131,18 @@ contract MarketFactory is Ownable {
         );
         lastCreatedAt[slot] = block.timestamp;
 
-        OrderbookMarket m = new OrderbookMarket(
-            usdc,
-            resolver,
-            liquidityPool,
-            feeDistributor,
-            referralRegistry,
-            multisig,
-            feedId,
-            duration
-        );
+        // Sprint 5.6: was `new OrderbookMarket(...)` — a full ~3.85M-gas
+        // contract deployment per market. At the keeper's rollover cadence
+        // (a fresh market per feed × duration every duration/2) that was the
+        // single largest running cost of the protocol, burning gas at a rate
+        // set by the market matrix rather than by user activity. An EIP-1167
+        // clone costs ~45k instead, since the 16.8kB of runtime code is
+        // deployed once (marketImplementation) and shared by delegatecall.
+        // Per-instance config moves into initialize() — see the PER-INSTANCE
+        // CONFIG note in OrderbookMarket.
+        market = Clones.clone(marketImplementation);
+        OrderbookMarket(market).initialize(feedId, duration);
 
-        market = address(m);
         activeMarkets[feedId].push(market);
 
         // Authorize this market on shared infra (one tx, atomic).

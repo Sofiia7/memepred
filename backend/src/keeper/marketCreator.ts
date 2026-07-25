@@ -108,7 +108,14 @@ export async function createMissingMarkets() {
           abi:          MARKET_FACTORY_ABI,
           functionName: 'createMarket',
           args:         [feedId, BigInt(dur)],
-          gas:          5_000_000n,
+          // Sprint 5.6: was 5,000,000, sized for the old path where every
+          // market was a full OrderbookMarket deployment. Markets are now
+          // EIP-1167 clones and this call measures ~330k (see
+          // contracts/test/MarketClone.t.sol test_Gas_CreateMarketStaysCheap).
+          // Unused gas isn't charged, so this isn't a saving — it's a cap, so
+          // a future change that accidentally reintroduces a real deployment
+          // fails loudly here instead of quietly costing 10x per market.
+          gas:          800_000n,
         })
         await publicClient.waitForTransactionReceipt({ hash })
         console.log(`[marketCreator] created market feed=${feedId} dur=${dur}s tx=${hash}`)

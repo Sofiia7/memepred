@@ -116,6 +116,10 @@ contract OrderbookMarket is ReentrancyGuard, Pausable {
     uint256 public constant MAX_TRADER_LP_EXPOSURE = 300e6; // 3x MAX_BET
 
     // ── TIMELOCK / FEE STATE ───────────────────────────────
+    // Clone-safety: this may only ever be initialized to 0. A non-zero
+    // default here would be applied by the constructor and therefore skipped
+    // by every cloned market (see the STATE note above) — set a non-zero
+    // starting fee in _init() instead, never here.
     uint256 public feeBps = 0;
     uint256 public pendingFeeBps;
     uint256 public feeChangeAvailableAt;
@@ -123,6 +127,10 @@ contract OrderbookMarket is ReentrancyGuard, Pausable {
     uint256 public constant FEE_MAX      = 100;        // max 1%
 
     // ── IMMUTABLES ─────────────────────────────────────────
+    // These are identical for every market instance, so they stay immutable:
+    // immutables live in the *implementation's* runtime code, and an EIP-1167
+    // clone delegatecalls into exactly that code, so clones read them
+    // correctly for free — no storage slot, no per-market SSTORE.
     IERC20  public immutable usdc;
     address public immutable resolver;
     address public immutable liquidityPool;
@@ -130,12 +138,30 @@ contract OrderbookMarket is ReentrancyGuard, Pausable {
     address public immutable referralRegistry;
     address public immutable multisig;
     address public immutable factory;
-    bytes32 public immutable pythFeedId;
-    uint256 public immutable duration;
+
+    // ── PER-INSTANCE CONFIG ────────────────────────────────
+    // Sprint 5.6: these two differ per market, so they CANNOT be immutable
+    // once markets are clones — a clone shares the implementation's code and
+    // therefore its immutables. They move to storage, written once by
+    // _init() (from either the constructor or initialize()).
+    bytes32 public pythFeedId;
+    uint256 public duration;
+
+    /// @dev Set by _init(). Guards against a clone being re-initialized, and
+    ///      is set in the constructor so a directly-deployed instance — which
+    ///      includes the implementation the factory clones from — can never
+    ///      be initialized by anyone afterwards.
+    bool private _initialized;
 
     // ── STATE ──────────────────────────────────────────────
-    uint256 public nextOrderId = 1;
-    uint256 public nextMatchId = 1;
+    // NOTE: deliberately no inline `= 1` initializers here. Inline field
+    // initializers are compiled into the constructor, and a clone's storage
+    // starts empty because its constructor never runs — these would silently
+    // be 0 for every cloned market. Order/match id 0 is used as the "none"
+    // sentinel (see Order.matchId), so that would be a correctness bug, not
+    // just cosmetics. _init() sets both instead.
+    uint256 public nextOrderId;
+    uint256 public nextMatchId;
 
     mapping(uint256 => Order) public orders;
     mapping(uint256 => Match) public matches;
@@ -172,7 +198,16 @@ contract OrderbookMarket is ReentrancyGuard, Pausable {
     event FeeChangeProposed (uint256 newFeeBps, uint256 availableAt);
     event FeeChanged        (uint256 newFeeBps);
 
-    // ── CONSTRUCTOR ────────────────────────────────────────
+    // ── CONSTRUCTOR / INITIALIZER ──────────────────────────
+    /**
+     * @notice Direct deployment. Still fully supported (tests and scripts use
+     *         it) — the resulting market is configured and locked in one step.
+     * @dev    MarketFactory also uses this exactly once, to deploy the
+     *         implementation it clones from, passing zeroed per-instance
+     *         config. Because _init() runs here, that implementation is left
+     *         permanently initialized and so cannot be hijacked by an
+     *         arbitrary caller calling initialize() on it directly.
+     */
     constructor(
         address _usdc,
         address _resolver,
@@ -190,8 +225,32 @@ contract OrderbookMarket is ReentrancyGuard, Pausable {
         referralRegistry = _referralRegistry;
         multisig         = _multisig;
         factory          = msg.sender;
-        pythFeedId       = _pythFeedId;
-        duration         = _duration;
+        _init(_pythFeedId, _duration);
+    }
+
+    /**
+     * @notice Configure a freshly-cloned market. Callable once, by the factory
+     *         that deployed the implementation.
+     * @dev    `factory` is an immutable read from the implementation's code,
+     *         so every clone agrees on who is allowed to call this. The clone
+     *         is created and initialized in the same transaction
+     *         (MarketFactory.createMarket), so there is no window in which an
+     *         uninitialized clone is reachable by users.
+     */
+    function initialize(bytes32 _pythFeedId, uint256 _duration) external {
+        require(msg.sender == factory, "only factory");
+        _init(_pythFeedId, _duration);
+    }
+
+    function _init(bytes32 _pythFeedId, uint256 _duration) internal {
+        require(!_initialized, "already initialized");
+        _initialized = true;
+        pythFeedId   = _pythFeedId;
+        duration     = _duration;
+        // Ids start at 1 — 0 is the "no match" sentinel in Order.matchId and
+        // the "not queued" sentinel in _queueIndex.
+        nextOrderId  = 1;
+        nextMatchId  = 1;
     }
 
     // ── PLACE BET ──────────────────────────────────────────
