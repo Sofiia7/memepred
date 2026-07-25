@@ -141,15 +141,39 @@ async function indexMarketEvents(toBlock: bigint) {
   for (let start = from; start <= toBlock; start += CHUNK) {
     const end = start + CHUNK - 1n > toBlock ? toBlock : start + CHUNK - 1n
 
-    const [placed, matched, lpMatched, filled, settled, refunded, claimed] = await Promise.all([
-      client.getLogs({ address: markets, event: E_ORDER_PLACED,   fromBlock: start, toBlock: end }),
-      client.getLogs({ address: markets, event: E_ORDER_MATCHED,  fromBlock: start, toBlock: end }),
-      client.getLogs({ address: markets, event: E_LP_MATCHED,     fromBlock: start, toBlock: end }),
-      client.getLogs({ address: markets, event: E_ORDER_FILLED,   fromBlock: start, toBlock: end }),
-      client.getLogs({ address: markets, event: E_MATCH_SETTLED,  fromBlock: start, toBlock: end }),
-      client.getLogs({ address: markets, event: E_ORDER_REFUNDED, fromBlock: start, toBlock: end }),
-      client.getLogs({ address: markets, event: E_CLAIMED,        fromBlock: start, toBlock: end }),
-    ])
+    // Sprint 5.6: was seven separate getLogs calls in a Promise.all — same
+    // address set, same block range, differing only in topic0. Collapsed into
+    // one request with an array of events, which the node answers as a single
+    // topic0-OR filter.
+    //
+    // This is the dominant RPC cost of the whole system: the indexer ticks
+    // every 45s, so seven calls was ~17k eth_getLogs/day ≈ 38.9M Alchemy CU a
+    // month — just over the 30M free tier, for data that fits in one query.
+    // Batched it's ~5.5k/day and the free tier covers it several times over.
+    // It also removed the `over rate limit` errors the public node was
+    // returning, since seven parallel calls hit the per-second cap directly.
+    const all = await client.getLogs({
+      address: markets,
+      events: [
+        E_ORDER_PLACED, E_ORDER_MATCHED, E_LP_MATCHED, E_ORDER_FILLED,
+        E_MATCH_SETTLED, E_ORDER_REFUNDED, E_CLAIMED,
+      ],
+      fromBlock: start,
+      toBlock:   end,
+    })
+
+    // Partition by event name. Order within each bucket is preserved from the
+    // node's response, which is block- then log-index-ordered — the same
+    // ordering the per-event calls produced, so downstream handling is
+    // unchanged.
+    const byName = (n: string) => all.filter((l) => (l as any).eventName === n)
+    const placed    = byName('OrderPlaced')
+    const matched   = byName('OrderMatched')
+    const lpMatched = byName('LPMatched')
+    const filled    = byName('OrderFilled')
+    const settled   = byName('MatchSettled')
+    const refunded  = byName('OrderRefunded')
+    const claimed   = byName('Claimed')
 
     // OrderPlaced → INSERT orders
     for (const log of placed) {
