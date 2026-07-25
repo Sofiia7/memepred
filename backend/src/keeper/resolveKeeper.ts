@@ -62,8 +62,41 @@ const MAX_PER_TX  = Number(process.env.RESOLVE_MAX_PER_TX ?? '25')
 /** Per-market loop cap, prevents runaway. */
 const MAX_LOOPS   = Number(process.env.RESOLVE_MAX_LOOPS  ?? '8')
 
+/**
+ * Markets that have at least one match actually ready to settle.
+ *
+ * Sprint 5.6 — was `WHERE status = 'OPEN'`, which could never settle anything.
+ *
+ * A market's close_time is open_time + duration: the point after which it
+ * stops accepting new bets. A match's settle_at is matched_at + duration.
+ * Since every match is created after its market opened, settle_at is ALWAYS
+ * later than close_time — by exactly however long the market had been open
+ * when the match formed. Meanwhile marketCreator.closeExpiredMarkets() flips
+ * the row to 'CLOSED' at close_time. So by the time any match became ready,
+ * its market had already left the set this query returned, and the keeper
+ * settled nothing, ever. Funds sat until SETTLE_GRACE (24h) expired and then
+ * could only be emergency-refunded.
+ *
+ * Confirmed on-chain 2026-07-25: market opened 18:00:42, closed 18:05:42,
+ * its only match matched at 18:02:48 and was due at 18:07:48 — two minutes
+ * after the market stopped being 'OPEN'.
+ *
+ * The correct predicate has nothing to do with whether a market still takes
+ * bets: settle the markets that own an unsettled, due match. The upper bound
+ * skips matches already past SETTLE_GRACE, where the contract reverts with
+ * "settlement window expired" — those are refundExpired's job, and retrying
+ * them would burn gas forever.
+ */
+const SETTLE_GRACE_HOURS = Number(process.env.SETTLE_GRACE_HOURS ?? '24')
+
 async function pendingMarkets(): Promise<Address[]> {
-  const r = await pg.query(`SELECT market_address FROM markets WHERE status = 'OPEN'`)
+  const r = await pg.query(`
+    SELECT DISTINCT mt.market_address
+    FROM matches mt
+    WHERE mt.settled = FALSE
+      AND mt.settle_at <= NOW()
+      AND mt.settle_at >  NOW() - make_interval(hours => $1)
+  `, [SETTLE_GRACE_HOURS])
   return r.rows.map((x) => x.market_address as Address)
 }
 
