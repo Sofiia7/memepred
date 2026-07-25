@@ -1,5 +1,68 @@
 # Memory Log for memepred
 
+## Cost teardown + launch posture decision, 2026-07-25
+
+Sofia asked two things honestly: what will running markets on mainnet actually
+cost, and how critical is the legal/company work *right now* — explicitly "я
+знаю как правильно, но меня интересует как можно", refusing to spend on an
+entity and a lawyer before knowing whether anyone wants the product.
+
+**Cost finding.** `MarketFactory.createMarket` was doing `new OrderbookMarket(...)`
+— a full 16.8kB contract deployment per market, ~3.85M gas. The keeper rolls a
+fresh market per (feed × duration) every `duration/2`, which at 2 feeds × 5
+durations is ~988 markets/day, so the burn was set by the market matrix and not
+by user activity: **$1,617/mo at zero users**, and 8–80× that if Base gas leaves
+its floor (which is exactly when a memecoin market would be busy). The 5m and 15m
+slots alone were 87% of it. Full model, measured numbers and methodology live in
+the `flipthememe-onchain-cost-model` memory rather than here.
+
+**Fixed this session** (all verified, 194 forge tests green, backend vitest 22
+green, frontend tsc + production build clean):
+- **Markets are now EIP-1167 clones.** `pythFeedId`/`duration` moved
+  immutable→storage; the six globally-identical addresses stay immutable since
+  clones execute the implementation's code. New `initialize()` gated on the
+  `factory` immutable; `_init()` shared with the constructor so direct
+  deployment still works unchanged (all 7 existing `new OrderbookMarket` call
+  sites in tests/scripts untouched) and leaves the implementation permanently
+  initialized so nobody can claim it. **The trap avoided:** `nextOrderId = 1` /
+  `nextMatchId = 1` were inline field initializers, i.e. constructor code — a
+  clone would have started both at 0, and 0 is the "no match" sentinel in
+  `Order.matchId`, so matched orders would have read as unmatched forever. Every
+  existing test deploys directly and would have stayed green. 13 new tests in
+  `contracts/test/MarketClone.t.sol` cover exactly this class. Measured:
+  **327,562 gas vs 3,592,122**. `MarketFactory` runtime also shrank 21,817→4,120 B.
+- **On-chain Pyth pushes are now demand-gated.** Was 5,760 tx/day flat; new
+  `backend/src/lib/activity.ts` stamps user presence from the API (excluding
+  health/monitoring endpoints, or an uptime checker would keep it hot forever)
+  and the recorder backs off to a 5-min heartbeat when idle. Safe because the
+  frontend's primary path is `placeBetWithPyth`, which carries its own fresh
+  update, and loading the app re-arms the fast cadence within one tick. Fails
+  *hot* on any error — overpaying gas beats a stale oracle blocking settlement.
+- Net: **$1,617/mo → ~$150/mo** at zero users, 10.8× cheaper.
+- Keeper's pinned `gas` for createMarket lowered 5,000,000 → 800,000 as a cap
+  that fails loudly if a real deployment is ever reintroduced.
+
+**Launch posture decided** (details in the `flipthememe-launch-posture` memory):
+ship unaudited but capped at `MAX_BET` 100 USDC with the risk stated aloud, block
+the US, defer incorporation until named triggers. Implemented: `workers/geo-block.ts`
+now blocks US + territories, GB/FR/DE/NL/CA/AU/JP/SG and Tor, split in-code into
+an OFAC layer and a regulatory-risk layer; Terms §3 rewritten to match, §4 hardened
+on the unaudited/cap point, new §12 bug bounty with safe harbour; new
+`RiskDisclosure.tsx` gives a blocking first-visit notice plus a permanent
+"UNAUDITED · MAX BET 100 USDC" strip. Verified live in the browser.
+
+**Correction worth remembering:** I initially described the ToS as contradicting
+the code ("says it blocks the US, doesn't"). That was true of
+`docs/legal/tos-privacy-draft.md`, which is explicitly marked DO-NOT-PUBLISH —
+the *live* Terms page was consistent with the old narrow block and honest about
+having no entity and no audit. Check which artifact is actually shipped before
+calling something a live contradiction.
+
+**Left for Sofia:** set `VITE_SECURITY_CONTACT` (bug bounty currently renders a
+deliberate visible "NOT YET PUBLISHED" placeholder), and pick the audit route.
+Nothing here is deployed — contracts still need a fresh deploy for the clone
+change, and the Worker needs `wrangler deploy` for the geo-block to take effect.
+
 ## Full ТЗ-vs-code audit + Phase 0 remediation, 2026-07-08
 
 Sofia asked for a full audit (ТЗ vs code, security, completeness, feature-to-UI
