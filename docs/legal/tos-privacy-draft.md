@@ -23,9 +23,23 @@
 
 FlipTheMeme ("FlipTheMeme", "we", "us") is operated by [LEGAL ENTITY NAME —
 e.g. "FlipTheMeme Labs Ltd.", jurisdiction of incorporation], registered at
-[ADDRESS]. If no entity exists yet, do not launch to real users until one
-does — operating a fee-taking financial product as an unincorporated
-individual is a personal-liability risk, not just a compliance nicety.
+[ADDRESS].
+
+> **2026-07-25 — status of this section.** No entity exists, and the
+> decision was made deliberately to launch small before incorporating.
+> The live Terms (`frontend/src/pages/Terms.tsx` §1) therefore say so
+> plainly — "built and operated by an individual developer, not a
+> registered company" — rather than leaving this placeholder to be filled
+> in with something untrue. An earlier version of this paragraph said "do
+> not launch to real users until an entity exists"; that was advice, not a
+> legal requirement, and it has been overtaken by an explicit product
+> decision. The personal-liability exposure it warned about is real and
+> unchanged — an entity should be formed on any of: outside money coming
+> in, TVL passing ~$50k, paying anyone for work, or signing anything in
+> the project's name. Note also that a company separates *civil*
+> liability only; it does not insulate an operator from regulatory or
+> criminal exposure, which is why the jurisdiction blocking in §3 does far
+> more work here than incorporation would.
 
 By connecting a wallet to flipthememe.com (the "Site") or interacting with
 the FlipTheMeme smart contracts (the "Protocol"), you agree to these Terms.
@@ -51,10 +65,14 @@ You must be:
   higher).
 - Not a resident of, or accessing the Site from, a **Restricted
   Territory**. As of this version, Restricted Territories include the
-  United States, United Kingdom, France, Germany, Netherlands, Canada,
+  United States **and its territories (Puerto Rico, Guam, U.S. Virgin
+  Islands, American Samoa, Northern Mariana Islands, U.S. Minor Outlying
+  Islands)**, United Kingdom, France, Germany, Netherlands, Canada,
   Australia, Japan, and Singapore (enforced at the network edge — see
   `workers/geo-block.ts` — and subject to change; the current
-  authoritative list is served at `/api/geo/config`).
+  authoritative list is served at `/api/geo/config`). Traffic arriving
+  from Tor exit nodes is blocked on the same basis, since it cannot be
+  attributed to a permitted jurisdiction.
 - Not a person or entity subject to sanctions administered by the US
   Office of Foreign Assets Control (OFAC), the UN, the EU, or the UK, nor
   organized in, or a resident of, a comprehensively sanctioned country.
@@ -74,9 +92,18 @@ By using the Protocol you acknowledge and accept, without limitation:
 
 - **Total loss of funds.** Prediction markets are zero-sum for losers;
   you can lose 100% of any amount you stake.
-- **Smart contract risk.** Even audited code can contain bugs. FlipTheMeme
-  makes no guarantee the Protocol is free of defects, and you accept the
-  risk of loss from any such defect.
+- **Smart contract risk — the Protocol is UNAUDITED.** No external
+  security firm has reviewed the contracts holding user funds. This is
+  not a formality being deferred; it is a material, disclosed risk, and a
+  defect could result in the permanent loss of deposited USDC with no
+  reversal and no insurance. The single compensating control is a
+  contract-enforced cap of **100 USDC per bet** (`OrderbookMarket.MAX_BET`)
+  — enforced on-chain, not in the interface, so neither the UI nor the
+  operator can raise it without deploying new contracts. A paid bug-bounty
+  with safe-harbour terms operates alongside it (§12). Neither is a
+  substitute for an audit and neither is presented as one. This bullet
+  must be rewritten, naming the auditor, before any claim to the contrary
+  is made anywhere in the product or its marketing.
 - **Oracle risk.** Settlement depends on Pyth Network price feeds. Feed
   staleness, manipulation, or unavailability can cause incorrect
   settlement or delayed refunds (see the Protocol's own emergency-refund

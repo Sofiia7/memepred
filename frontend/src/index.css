@@ -362,3 +362,41 @@ input[type=number]{-moz-appearance:textfield}
 .spinner{display:inline-block;width:14px;height:14px;border:2px solid var(--line-2);border-top-color:#fff;border-radius:50%;animation:spin .8s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 .empty-state{font-family:var(--mono);font-size:11px;color:var(--text-faint);text-align:center;padding:40px 0;letter-spacing:.06em;text-transform:uppercase}
+
+/* Risk disclosure — unaudited-contract notice (see components/RiskDisclosure.tsx).
+   Deliberately not styleable away: the strip is always-on and the gate blocks
+   first use. If MAX_BET changes in the contract, the copy in that component
+   must change with it. */
+.risk-strip{
+  display:flex;align-items:center;justify-content:center;gap:7px;
+  font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--warn);background:rgba(255,181,71,.08);
+  border-bottom:1px solid rgba(255,181,71,.20);
+  padding:5px 12px;position:relative;z-index:2;flex:0 0 auto;
+}
+.risk-strip b{font-weight:800}
+.risk-strip .sep{opacity:.45}
+.risk-strip a{color:var(--warn);opacity:.75;text-decoration:underline;text-underline-offset:2px}
+.risk-strip a:hover{opacity:1}
+
+.risk-gate{
+  position:fixed;inset:0;z-index:100;overflow-y:auto;
+  display:flex;align-items:center;justify-content:center;padding:24px 18px;
+  background:radial-gradient(900px 500px at 50% -20%,rgba(0,0,255,.10),transparent 60%),#0a0a0e;
+}
+.risk-gate-card{width:100%;max-width:var(--app-w);animation:fadeIn .3s ease}
+.risk-gate-mark{font-size:30px;color:var(--warn);margin-bottom:10px;line-height:1}
+.risk-gate-card h2{font-size:21px;font-weight:800;letter-spacing:-.02em;margin-bottom:8px}
+.risk-lead{font-size:13px;color:var(--text-dim);line-height:1.6;margin-bottom:18px}
+.risk-points{list-style:none;display:flex;flex-direction:column;gap:11px;margin-bottom:18px}
+.risk-points li{
+  font-size:12.5px;line-height:1.62;color:var(--text-dim);
+  background:var(--surface);border:1px solid var(--line);border-left:2px solid var(--warn);
+  border-radius:9px;padding:12px 13px;
+  backdrop-filter:var(--glass-blur);-webkit-backdrop-filter:var(--glass-blur);
+}
+.risk-points li b{color:var(--text);font-weight:700}
+.risk-fine{font-family:var(--mono);font-size:10px;line-height:1.65;color:var(--text-faint);margin-bottom:16px}
+.risk-fine a{color:var(--text-dim);text-decoration:underline;text-underline-offset:2px}
+.risk-accept{background:var(--warn);color:#1a1206}
+.risk-accept:hover{background:#ffc266}

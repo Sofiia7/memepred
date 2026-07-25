@@ -2,11 +2,13 @@ import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { AppHead } from './AppHead'
 import { TabNav } from './TabNav'
+import { RiskStrip } from '../RiskDisclosure'
 
 export function AppShell({ children }: { children: ReactNode }) {
   return (
     <div className="app">
       <AppHead />
+      <RiskStrip />
       <div className="app-body">
         {children}
         <div className="app-foot">

@@ -2,6 +2,21 @@ import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { ScreenTitle } from '../components/ui/AppShell'
 
+/**
+ * ⚠️ ACTION REQUIRED BEFORE LAUNCH — set a real security contact.
+ *
+ * §12 offers a paid bug bounty, which is the main compensating control for
+ * shipping unaudited contracts (§4). A bounty with nowhere to report to is
+ * worse than no bounty: it reads as a promise that can't be kept. Set this
+ * to a channel that is actually monitored — a dedicated address such as
+ * security@flipthememe.com, or a Telegram/X handle — via
+ * VITE_SECURITY_CONTACT, and the placeholder disappears.
+ */
+const SECURITY_CONTACT: string =
+  import.meta.env.VITE_SECURITY_CONTACT ||
+  '[NOT YET PUBLISHED — no security contact has been set up. Until one is, ' +
+  'do not rely on being able to reach anyone about a vulnerability.]'
+
 function Section({ n, title, children }: { n: string; title: string; children: ReactNode }) {
   return (
     <div className="terms-section">
@@ -24,7 +39,7 @@ export function TermsPage() {
       </div>
 
       <h3 className="terms-h">Terms of Service</h3>
-      <div className="terms-meta">Last updated: 2026-07-07</div>
+      <div className="terms-meta">Last updated: 2026-07-25</div>
 
       <Section n="1" title="Who runs this">
         FlipTheMeme is built and operated by an individual developer, not a
@@ -46,23 +61,52 @@ export function TermsPage() {
       </Section>
 
       <Section n="3" title="Who can use this">
-        You must be at least 18 (or the age of majority where you live), not
-        accessing this from a country under comprehensive U.S. sanctions
-        (currently Cuba, Iran, North Korea, Syria — enforced at the network
-        edge, current list always at <code>/api/geo/config</code>), and
-        legally permitted to use cryptocurrency products where you are.{' '}
-        <b>You are solely responsible for determining whether using this is
-        legal for you.</b> Broader jurisdiction restrictions may be added or
-        removed over time — check the live list, not this document, for what's
-        currently enforced.
+        You must be at least 18 (or the age of majority where you live) and
+        legally permitted to use cryptocurrency products where you are, and
+        you must not be accessing this from a <b>Restricted Territory</b>.
+        Two separate lists make up that term:
+        <ul className="terms-list">
+          <li><b>Comprehensively sanctioned countries</b> — Cuba, Iran, North
+            Korea, Syria. This one isn't a choice; it's U.S. sanctions law and
+            it applies regardless of where an operator sits.</li>
+          <li><b>Restricted jurisdictions</b> — the United States (including
+            Puerto Rico, Guam, the U.S. Virgin Islands, American Samoa, the
+            Northern Mariana Islands), the United Kingdom, France, Germany,
+            the Netherlands, Canada, Australia, Japan, and Singapore. These
+            are places whose regulators treat short-horizon price contracts
+            like this one as a licensed derivatives or gambling product. This
+            product holds no such licence anywhere, so it does not serve
+            them. Tor exit nodes are blocked for the same reason.</li>
+        </ul>
+        Both are enforced at the network edge; the <b>live, authoritative
+        list is always at</b> <code>/api/geo/config</code> — check that, not
+        this document, for what's currently in force, since it can change
+        without this page being reworded.{' '}
+        <b>Do not attempt to circumvent this with a VPN or proxy.</b> Doing
+        so is a breach of these terms, and it puts the legal problem on you:
+        you are solely responsible for determining whether using this is
+        legal for you.
       </Section>
 
       <Section n="4" title="Risks you're accepting">
         <ul className="terms-list">
           <li><b>You can lose everything you stake.</b> This is a zero-sum
             product for the losing side.</li>
-          <li><b>Smart contract risk.</b> The contracts have not undergone an
-            external security audit. Bugs are possible. You accept that risk.</li>
+          <li><b>Smart contract risk — read this one twice.</b> The contracts
+            have <b>not</b> undergone an external security audit. Nobody
+            independent has checked them. Bugs are possible, and a bug in a
+            contract holding USDC can mean the funds are simply gone, with no
+            way to reverse it and no insurance behind them.{' '}
+            <b>The single mitigation is a hard cap: no bet can exceed 100
+            USDC</b> (<code>MAX_BET</code>, enforced in the contract, not the
+            interface — the UI can't raise it and neither can the operator
+            without deploying new contracts). That cap exists specifically so
+            that the most an unaudited system can cost any one bet is a size
+            you were willing to lose. It is a deliberate constraint on how
+            much you can risk here, not a temporary limit to be worked around
+            — and placing many bets to get around it re-exposes you to the
+            full risk. If and when an audit happens, this section will say so
+            and name the auditor.</li>
           <li><b>Oracle risk.</b> Settlement depends on Pyth price feeds.
             Staleness or unavailability can delay settlement or trigger a
             refund instead of a payout.</li>
@@ -124,8 +168,25 @@ export function TermsPage() {
         operator — to be specified once formally reviewed.
       </Section>
 
-      <Section n="12" title="Contact">
-        No public contact channel is set up yet.
+      <Section n="12" title="Security disclosure & bug bounty">
+        Because these contracts are unaudited (§4), responsible disclosure is
+        the main line of defence and it is paid for. If you find a bug that
+        can cause loss of user funds, incorrect settlement, or a bypass of
+        the <code>MAX_BET</code> cap, report it privately{' '}
+        <b>before</b> using it or telling anyone else.
+        <ul className="terms-list">
+          <li><b>Where:</b> {SECURITY_CONTACT}</li>
+          <li><b>Reward:</b> paid in USDC, scaled to what the bug could have
+            cost users, and paid whether or not the report ends up being the
+            first one received for that issue.</li>
+          <li><b>Safe harbour:</b> testing against the deployed contracts is
+            explicitly permitted, and the operator will not pursue any claim
+            against a reporter who acts in good faith — meaning: stays within
+            the <code>MAX_BET</code> cap while testing, does not touch other
+            users' funds, does not degrade the service for others, and gives
+            a reasonable window to fix before publishing.</li>
+        </ul>
+        This is not a substitute for an audit and is not presented as one.
       </Section>
 
       <h3 className="terms-h" style={{ marginTop: 24 }}>Privacy</h3>

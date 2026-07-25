@@ -14,7 +14,19 @@
 
 // Mirrors workers/geo-block.ts's BLOCKED set — kept in sync manually since
 // this is only the fallback used if /api/geo/config is unreachable.
-const FALLBACK_BLOCKED = ['CU', 'IR', 'KP', 'SY']
+//
+// Note this list is nearly unreachable in practice: the Worker evaluates
+// BLOCKED *before* it serves /api/geo, so a user in a blocked country gets
+// 451 there and checkGeo() returns early without ever consulting this. It
+// still gets kept in sync so the two files never disagree on the record.
+const FALLBACK_BLOCKED = [
+  // OFAC comprehensively-sanctioned
+  'CU', 'IR', 'KP', 'SY',
+  // Restricted jurisdictions (see workers/geo-block.ts for the reasoning)
+  'US', 'PR', 'GU', 'VI', 'AS', 'MP', 'UM',
+  'GB', 'FR', 'DE', 'NL', 'CA', 'AU', 'JP', 'SG',
+  'T1',
+]
 
 let cachedBlocked: string[] | null = null
 

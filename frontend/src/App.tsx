@@ -13,6 +13,7 @@ import { ReferPage } from './pages/Refer'
 import { HowItWorksPage } from './pages/HowItWorks'
 import { TermsPage } from './pages/Terms'
 import { GeoBlock } from './components/GeoBlock'
+import { RiskGate } from './components/RiskDisclosure'
 import { AppShell } from './components/ui/AppShell'
 
 export function App() {
@@ -33,6 +34,10 @@ export function App() {
 
   return (
     <BrowserRouter>
+      {/* RiskGate sits inside the router (it links to /terms) but outside
+          AppShell, so the unaudited-contracts notice is the entire screen on
+          first visit rather than a banner competing with live markets. */}
+      <RiskGate>
       <AppShell>
         <Routes>
           <Route path="/" element={<Markets />} />
@@ -46,6 +51,7 @@ export function App() {
           <Route path="/terms" element={<TermsPage />} />
         </Routes>
       </AppShell>
+      </RiskGate>
     </BrowserRouter>
   )
 }
