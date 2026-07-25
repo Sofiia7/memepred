@@ -137,6 +137,36 @@ export async function settlePendingMarkets() {
         if (ready.length === 0) break
 
         const updateData = await fetchHermesUpdate(feedId as `0x${string}`)
+
+        // Simulate first. Gas is pinned at 1.8M below, so a revert burns the
+        // entire 1.8M — and this loop runs every 60s and retries MAX_LOOPS
+        // times, because `ready` is still non-empty after a failed settle.
+        // That turns one recurring revert into ~14.4M wasted gas per minute,
+        // indefinitely. Measured on Sepolia at ~0.0044 ETH/hour before this
+        // check existed.
+        //
+        // Unlike the Pyth push in onchainPriceRecorder, there is no known
+        // benign revert here, so a failed simulation genuinely means "don't
+        // send". The common real cause is a young deployment whose
+        // OracleResolver.priceHistory has too few points for _getTWAP to cover
+        // the window — legitimate, transient, and exactly what should not cost
+        // 1.8M gas a minute to rediscover.
+        try {
+          await publicClient.simulateContract({
+            account:      wallet.account,
+            address:      CONTRACTS.ORACLE_RESOLVER as Address,
+            abi:          ORACLE_RESOLVER_BATCH_ABI,
+            functionName: 'resolveOrderbookMarketBatch',
+            args:         [market, updateData, BigInt(MAX_PER_TX)],
+          })
+        } catch (simErr: any) {
+          console.warn(
+            `[resolver] ${market}: settle would revert, skipping ` +
+            `(${simErr?.shortMessage ?? simErr?.message ?? 'unknown'})`,
+          )
+          break
+        }
+
         const hash = await wallet.writeContract({
           address:      CONTRACTS.ORACLE_RESOLVER as Address,
           abi:          ORACLE_RESOLVER_BATCH_ABI,
@@ -144,7 +174,16 @@ export async function settlePendingMarkets() {
           args:         [market, updateData, BigInt(MAX_PER_TX)],
           gas:          1_800_000n,
         })
-        await publicClient.waitForTransactionReceipt({ hash })
+        const receipt = await publicClient.waitForTransactionReceipt({ hash })
+
+        // waitForTransactionReceipt resolves for reverted transactions too —
+        // it waits for inclusion, not for success. Without this check the loop
+        // logged "settled N" for a transaction that settled nothing, then
+        // retried it MAX_LOOPS times.
+        if (receipt.status !== 'success') {
+          console.error(`[resolver] ${market}: settle tx reverted on-chain, tx=${hash}`)
+          break
+        }
         console.log(`[resolver] ${market} settled ${ready.length} (loop ${i + 1}) tx=${hash}`)
       }
     } catch (err) {
