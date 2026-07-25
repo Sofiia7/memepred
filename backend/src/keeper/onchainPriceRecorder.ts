@@ -30,6 +30,69 @@ const ACTIVITY_WINDOW_MS = Number(process.env.PRICE_ACTIVITY_WINDOW_MS ?? String
 let lastPushAt = 0
 
 /**
+ * Two things must hold before a push is worth sending, because `recordPrice`
+ * pins gas at 500k (estimation is unreliable here — see the call site) and a
+ * revert therefore burns the whole 500k, not a fraction. Both checks are plain
+ * reads and cost nothing on-chain.
+ *
+ *  1. OracleResolver holds ETH. It pays Pyth's update fee from its own
+ *     balance; at zero, every push reverts.
+ *  2. The Pyth contract it points at actually responds. `OracleResolver.pyth`
+ *     is IMMUTABLE, so a wrong address cannot be corrected without redeploying
+ *     the whole stack — and a wrong address fails silently in the worst way,
+ *     as a revert per push, forever.
+ *
+ * (2) exists because of a real incident: `.env` carried Pyth's Base MAINNET
+ * address with the note "same address on Sepolia". It is not. On Base Sepolia
+ * that address holds a 708-byte stub reverting "unsupported" on every call, so
+ * every Sepolia deployment had a dead price path — no bare placeBet, no
+ * settlement — while the keeper paid 500k gas per attempt to discover it. A
+ * one-call liveness probe turns that into a log line.
+ */
+async function preflightOk(): Promise<boolean> {
+  try {
+    const bal = await publicClient.getBalance({
+      address: CONTRACTS.ORACLE_RESOLVER as Address,
+    })
+    if (bal === 0n) {
+      console.error(
+        '[onchainPriceRecorder] OracleResolver has 0 ETH — skipping push; ' +
+        'every attempt would revert and burn its full pinned gas limit. ' +
+        'oracleWatchdog is already paging on this.',
+      )
+      return false
+    }
+  } catch (err) {
+    // Can't read → attempt anyway. A missed price is worse than one wasted revert.
+    console.error('[onchainPriceRecorder] resolver balance check failed:', err)
+    return true
+  }
+
+  try {
+    const pythAddr = await publicClient.readContract({
+      address:      CONTRACTS.ORACLE_RESOLVER as Address,
+      abi:          [{ name: 'pyth', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] }] as const,
+      functionName: 'pyth',
+    })
+    await publicClient.readContract({
+      address:      pythAddr as Address,
+      abi:          [{ name: 'getValidTimePeriod', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint256' }] }] as const,
+      functionName: 'getValidTimePeriod',
+    })
+  } catch {
+    console.error(
+      '[onchainPriceRecorder] CONFIG ERROR: OracleResolver.pyth() does not ' +
+      'answer getValidTimePeriod() — wrong Pyth address for this chain. The ' +
+      'address is immutable, so this needs a redeploy, not an env change. ' +
+      'Skipping pushes until then rather than burning 500k gas per attempt.',
+    )
+    return false
+  }
+
+  return true
+}
+
+/**
  * True when the fast cadence is worth paying for: either a user hit the API
  * recently, or there is real money on the books. The second check is what
  * makes this safe if Redis is unavailable — an open PENDING order means
@@ -72,29 +135,7 @@ export async function recordPricesOnChain() {
     console.warn('ORACLE_RESOLVER address missing'); return
   }
 
-  // OracleResolver pays Pyth's update fee out of its own ETH. With a zero
-  // balance every recordPrice reverts — and because gas is pinned at 500k
-  // below (estimation can't be trusted here, see the comment at the call
-  // site), a revert burns the whole 500k rather than a fraction of it. Left
-  // alone that is 500k gas every 30s per feed, indefinitely, buying nothing.
-  // Cheaper to check the balance once per tick than to pay for the failure.
-  try {
-    const resolverBal = await publicClient.getBalance({
-      address: CONTRACTS.ORACLE_RESOLVER as Address,
-    })
-    if (resolverBal === 0n) {
-      console.error(
-        '[onchainPriceRecorder] OracleResolver has 0 ETH — skipping push ' +
-        '(every attempt would revert and burn its full pinned gas limit). ' +
-        'Top it up; oracleWatchdog is already paging on this.',
-      )
-      return
-    }
-  } catch (err) {
-    // Can't read the balance → fall through and attempt the push. A missed
-    // price is worse than one wasted revert.
-    console.error('[onchainPriceRecorder] resolver balance check failed:', err)
-  }
+  if (!(await preflightOk())) return
 
   if (!(await shouldUseFastCadence())) {
     // lastPushAt is 0 until the first push of this process, so don't report
