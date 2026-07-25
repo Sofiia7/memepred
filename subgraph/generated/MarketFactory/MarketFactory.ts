@@ -58,6 +58,24 @@ export class MarketCreated__Params {
   }
 }
 
+export class MarketCreatorSet extends ethereum.Event {
+  get params(): MarketCreatorSet__Params {
+    return new MarketCreatorSet__Params(this);
+  }
+}
+
+export class MarketCreatorSet__Params {
+  _event: MarketCreatorSet;
+
+  constructor(event: MarketCreatorSet) {
+    this._event = event;
+  }
+
+  get creator(): Address {
+    return this._event.parameters[0].value.toAddress();
+  }
+}
+
 export class OwnershipTransferred extends ethereum.Event {
   get params(): OwnershipTransferred__Params {
     return new OwnershipTransferred__Params(this);
@@ -83,6 +101,29 @@ export class OwnershipTransferred__Params {
 export class MarketFactory extends ethereum.SmartContract {
   static bind(address: Address): MarketFactory {
     return new MarketFactory("MarketFactory", address);
+  }
+
+  MIN_CREATE_INTERVAL(): BigInt {
+    let result = super.call(
+      "MIN_CREATE_INTERVAL",
+      "MIN_CREATE_INTERVAL():(uint256)",
+      [],
+    );
+
+    return result[0].toBigInt();
+  }
+
+  try_MIN_CREATE_INTERVAL(): ethereum.CallResult<BigInt> {
+    let result = super.tryCall(
+      "MIN_CREATE_INTERVAL",
+      "MIN_CREATE_INTERVAL():(uint256)",
+      [],
+    );
+    if (result.reverted) {
+      return new ethereum.CallResult();
+    }
+    let value = result.value;
+    return ethereum.CallResult.fromValue(value[0].toBigInt());
   }
 
   activeMarkets(param0: Bytes, param1: BigInt): Address {
@@ -294,6 +335,29 @@ export class MarketFactory extends ethereum.SmartContract {
     return ethereum.CallResult.fromValue(value[0].toBytesArray());
   }
 
+  lastCreatedAt(param0: Bytes): BigInt {
+    let result = super.call(
+      "lastCreatedAt",
+      "lastCreatedAt(bytes32):(uint256)",
+      [ethereum.Value.fromFixedBytes(param0)],
+    );
+
+    return result[0].toBigInt();
+  }
+
+  try_lastCreatedAt(param0: Bytes): ethereum.CallResult<BigInt> {
+    let result = super.tryCall(
+      "lastCreatedAt",
+      "lastCreatedAt(bytes32):(uint256)",
+      [ethereum.Value.fromFixedBytes(param0)],
+    );
+    if (result.reverted) {
+      return new ethereum.CallResult();
+    }
+    let value = result.value;
+    return ethereum.CallResult.fromValue(value[0].toBigInt());
+  }
+
   liquidityPool(): Address {
     let result = super.call("liquidityPool", "liquidityPool():(address)", []);
 
@@ -304,6 +368,48 @@ export class MarketFactory extends ethereum.SmartContract {
     let result = super.tryCall(
       "liquidityPool",
       "liquidityPool():(address)",
+      [],
+    );
+    if (result.reverted) {
+      return new ethereum.CallResult();
+    }
+    let value = result.value;
+    return ethereum.CallResult.fromValue(value[0].toAddress());
+  }
+
+  marketCreator(): Address {
+    let result = super.call("marketCreator", "marketCreator():(address)", []);
+
+    return result[0].toAddress();
+  }
+
+  try_marketCreator(): ethereum.CallResult<Address> {
+    let result = super.tryCall(
+      "marketCreator",
+      "marketCreator():(address)",
+      [],
+    );
+    if (result.reverted) {
+      return new ethereum.CallResult();
+    }
+    let value = result.value;
+    return ethereum.CallResult.fromValue(value[0].toAddress());
+  }
+
+  marketImplementation(): Address {
+    let result = super.call(
+      "marketImplementation",
+      "marketImplementation():(address)",
+      [],
+    );
+
+    return result[0].toAddress();
+  }
+
+  try_marketImplementation(): ethereum.CallResult<Address> {
+    let result = super.tryCall(
+      "marketImplementation",
+      "marketImplementation():(address)",
       [],
     );
     if (result.reverted) {
@@ -627,6 +733,36 @@ export class SetEmergencyPauserCall__Outputs {
   _call: SetEmergencyPauserCall;
 
   constructor(call: SetEmergencyPauserCall) {
+    this._call = call;
+  }
+}
+
+export class SetMarketCreatorCall extends ethereum.Call {
+  get inputs(): SetMarketCreatorCall__Inputs {
+    return new SetMarketCreatorCall__Inputs(this);
+  }
+
+  get outputs(): SetMarketCreatorCall__Outputs {
+    return new SetMarketCreatorCall__Outputs(this);
+  }
+}
+
+export class SetMarketCreatorCall__Inputs {
+  _call: SetMarketCreatorCall;
+
+  constructor(call: SetMarketCreatorCall) {
+    this._call = call;
+  }
+
+  get creator(): Address {
+    return this._call.inputValues[0].value.toAddress();
+  }
+}
+
+export class SetMarketCreatorCall__Outputs {
+  _call: SetMarketCreatorCall;
+
+  constructor(call: SetMarketCreatorCall) {
     this._call = call;
   }
 }

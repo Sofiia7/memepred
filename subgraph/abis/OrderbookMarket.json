@@ -48,6 +48,19 @@
     },
     {
       "type": "function",
+      "name": "ENTRY_MAX_PRICE_AGE",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
       "name": "FEE_MAX",
       "inputs": [],
       "outputs": [
@@ -62,6 +75,19 @@
     {
       "type": "function",
       "name": "FEE_TIMELOCK",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "LP_TAKER_FEE_BPS",
       "inputs": [],
       "outputs": [
         {
@@ -101,6 +127,19 @@
     {
       "type": "function",
       "name": "MAX_MATCH_SCAN",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "MAX_TRADER_LP_EXPOSURE",
       "inputs": [],
       "outputs": [
         {
@@ -453,6 +492,24 @@
     },
     {
       "type": "function",
+      "name": "initialize",
+      "inputs": [
+        {
+          "name": "_pythFeedId",
+          "type": "bytes32",
+          "internalType": "bytes32"
+        },
+        {
+          "name": "_duration",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
+      "outputs": [],
+      "stateMutability": "nonpayable"
+    },
+    {
+      "type": "function",
       "name": "liquidityPool",
       "inputs": [],
       "outputs": [
@@ -711,6 +768,19 @@
     },
     {
       "type": "function",
+      "name": "pendingSettlementsHead",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
       "name": "pendingUpQueue",
       "inputs": [
         {
@@ -893,6 +963,25 @@
       ],
       "outputs": [],
       "stateMutability": "nonpayable"
+    },
+    {
+      "type": "function",
+      "name": "traderLpExposure",
+      "inputs": [
+        {
+          "name": "",
+          "type": "address",
+          "internalType": "address"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
+      "stateMutability": "view"
     },
     {
       "type": "function",

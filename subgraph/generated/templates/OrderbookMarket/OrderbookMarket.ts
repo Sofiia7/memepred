@@ -588,6 +588,29 @@ export class OrderbookMarket extends ethereum.SmartContract {
     return new OrderbookMarket("OrderbookMarket", address);
   }
 
+  ENTRY_MAX_PRICE_AGE(): BigInt {
+    let result = super.call(
+      "ENTRY_MAX_PRICE_AGE",
+      "ENTRY_MAX_PRICE_AGE():(uint256)",
+      [],
+    );
+
+    return result[0].toBigInt();
+  }
+
+  try_ENTRY_MAX_PRICE_AGE(): ethereum.CallResult<BigInt> {
+    let result = super.tryCall(
+      "ENTRY_MAX_PRICE_AGE",
+      "ENTRY_MAX_PRICE_AGE():(uint256)",
+      [],
+    );
+    if (result.reverted) {
+      return new ethereum.CallResult();
+    }
+    let value = result.value;
+    return ethereum.CallResult.fromValue(value[0].toBigInt());
+  }
+
   FEE_MAX(): BigInt {
     let result = super.call("FEE_MAX", "FEE_MAX():(uint256)", []);
 
@@ -611,6 +634,29 @@ export class OrderbookMarket extends ethereum.SmartContract {
 
   try_FEE_TIMELOCK(): ethereum.CallResult<BigInt> {
     let result = super.tryCall("FEE_TIMELOCK", "FEE_TIMELOCK():(uint256)", []);
+    if (result.reverted) {
+      return new ethereum.CallResult();
+    }
+    let value = result.value;
+    return ethereum.CallResult.fromValue(value[0].toBigInt());
+  }
+
+  LP_TAKER_FEE_BPS(): BigInt {
+    let result = super.call(
+      "LP_TAKER_FEE_BPS",
+      "LP_TAKER_FEE_BPS():(uint256)",
+      [],
+    );
+
+    return result[0].toBigInt();
+  }
+
+  try_LP_TAKER_FEE_BPS(): ethereum.CallResult<BigInt> {
+    let result = super.tryCall(
+      "LP_TAKER_FEE_BPS",
+      "LP_TAKER_FEE_BPS():(uint256)",
+      [],
+    );
     if (result.reverted) {
       return new ethereum.CallResult();
     }
@@ -662,6 +708,29 @@ export class OrderbookMarket extends ethereum.SmartContract {
     let result = super.tryCall(
       "MAX_MATCH_SCAN",
       "MAX_MATCH_SCAN():(uint256)",
+      [],
+    );
+    if (result.reverted) {
+      return new ethereum.CallResult();
+    }
+    let value = result.value;
+    return ethereum.CallResult.fromValue(value[0].toBigInt());
+  }
+
+  MAX_TRADER_LP_EXPOSURE(): BigInt {
+    let result = super.call(
+      "MAX_TRADER_LP_EXPOSURE",
+      "MAX_TRADER_LP_EXPOSURE():(uint256)",
+      [],
+    );
+
+    return result[0].toBigInt();
+  }
+
+  try_MAX_TRADER_LP_EXPOSURE(): ethereum.CallResult<BigInt> {
+    let result = super.tryCall(
+      "MAX_TRADER_LP_EXPOSURE",
+      "MAX_TRADER_LP_EXPOSURE():(uint256)",
       [],
     );
     if (result.reverted) {
@@ -1201,6 +1270,29 @@ export class OrderbookMarket extends ethereum.SmartContract {
     return ethereum.CallResult.fromValue(value[0].toBigInt());
   }
 
+  pendingSettlementsHead(): BigInt {
+    let result = super.call(
+      "pendingSettlementsHead",
+      "pendingSettlementsHead():(uint256)",
+      [],
+    );
+
+    return result[0].toBigInt();
+  }
+
+  try_pendingSettlementsHead(): ethereum.CallResult<BigInt> {
+    let result = super.tryCall(
+      "pendingSettlementsHead",
+      "pendingSettlementsHead():(uint256)",
+      [],
+    );
+    if (result.reverted) {
+      return new ethereum.CallResult();
+    }
+    let value = result.value;
+    return ethereum.CallResult.fromValue(value[0].toBigInt());
+  }
+
   pendingUpQueue(param0: BigInt): BigInt {
     let result = super.call(
       "pendingUpQueue",
@@ -1322,6 +1414,29 @@ export class OrderbookMarket extends ethereum.SmartContract {
     }
     let value = result.value;
     return ethereum.CallResult.fromValue(value[0].toAddress());
+  }
+
+  traderLpExposure(param0: Address): BigInt {
+    let result = super.call(
+      "traderLpExposure",
+      "traderLpExposure(address):(uint256)",
+      [ethereum.Value.fromAddress(param0)],
+    );
+
+    return result[0].toBigInt();
+  }
+
+  try_traderLpExposure(param0: Address): ethereum.CallResult<BigInt> {
+    let result = super.tryCall(
+      "traderLpExposure",
+      "traderLpExposure(address):(uint256)",
+      [ethereum.Value.fromAddress(param0)],
+    );
+    if (result.reverted) {
+      return new ethereum.CallResult();
+    }
+    let value = result.value;
+    return ethereum.CallResult.fromValue(value[0].toBigInt());
   }
 
   traderOrders(param0: Address, param1: BigInt): BigInt {
@@ -1512,6 +1627,40 @@ export class EmergencyRefundMatchCall__Outputs {
   _call: EmergencyRefundMatchCall;
 
   constructor(call: EmergencyRefundMatchCall) {
+    this._call = call;
+  }
+}
+
+export class InitializeCall extends ethereum.Call {
+  get inputs(): InitializeCall__Inputs {
+    return new InitializeCall__Inputs(this);
+  }
+
+  get outputs(): InitializeCall__Outputs {
+    return new InitializeCall__Outputs(this);
+  }
+}
+
+export class InitializeCall__Inputs {
+  _call: InitializeCall;
+
+  constructor(call: InitializeCall) {
+    this._call = call;
+  }
+
+  get _pythFeedId(): Bytes {
+    return this._call.inputValues[0].value.toBytes();
+  }
+
+  get _duration(): BigInt {
+    return this._call.inputValues[1].value.toBigInt();
+  }
+}
+
+export class InitializeCall__Outputs {
+  _call: InitializeCall;
+
+  constructor(call: InitializeCall) {
     this._call = call;
   }
 }

@@ -77,6 +77,29 @@ const RESTRICTED_JURISDICTIONS = [
 
 const BLOCKED = new Set([...OFAC_SANCTIONED, ...RESTRICTED_JURISDICTIONS])
 
+// ── GEO-EXEMPT PATHS ───────────────────────────────────────────────────
+// 2026-07-25: turning on the US block immediately took the uptime monitor
+// down — UptimeRobot checks from Ohio and got a correct, working 451, which
+// its dashboard reports as an outage. The block was doing its job; the
+// monitor was the casualty.
+//
+// What the jurisdiction block exists to prevent is *offering the product* to
+// people in these places: seeing markets, placing bets, moving funds. A
+// liveness probe is none of that. `/health` returns `{status, ts}` — no
+// market data, no user data, no action, nothing that could be construed as
+// solicitation. Blocking it buys zero legal protection and costs all of our
+// monitoring, so it is exempt.
+//
+// Deliberately NOT short-circuited at the edge: the request still goes
+// through to the origin, so a dead backend still reads as down. An edge-level
+// 200 would make the monitor permanently green and worse than useless.
+//
+// Keep this list minimal and strictly non-product. If a path returns market
+// data, user data, or accepts any action, it does not belong here.
+const GEO_EXEMPT_PATHS = new Set([
+  '/health',
+])
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const country = ((request as any).cf?.country as string | undefined) || 'XX'
@@ -91,7 +114,7 @@ export default {
       return new Response(null, { status: 204, headers: corsHeaders })
     }
 
-    if (BLOCKED.has(country)) {
+    if (BLOCKED.has(country) && !GEO_EXEMPT_PATHS.has(inUrl.pathname)) {
       return new Response(
         JSON.stringify({
           error:   'region_blocked',

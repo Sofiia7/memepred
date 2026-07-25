@@ -73,9 +73,17 @@ export async function recordPricesOnChain() {
   }
 
   if (!(await shouldUseFastCadence())) {
-    const sinceLast = Date.now() - lastPushAt
-    if (sinceLast < IDLE_INTERVAL_MS) return
-    console.log(`[onchainPriceRecorder] idle — heartbeat push after ${Math.round(sinceLast / 1000)}s`)
+    // lastPushAt is 0 until the first push of this process, so don't report
+    // "idle for 1784992399s" on the startup tick — that's epoch arithmetic,
+    // not an outage. Pushing immediately on startup is intended: a fresh
+    // process should establish a price before deciding it can coast.
+    if (lastPushAt === 0) {
+      console.log('[onchainPriceRecorder] idle — initial push on startup')
+    } else {
+      const sinceLast = Date.now() - lastPushAt
+      if (sinceLast < IDLE_INTERVAL_MS) return
+      console.log(`[onchainPriceRecorder] idle — heartbeat push after ${Math.round(sinceLast / 1000)}s`)
+    }
   }
   lastPushAt = Date.now()
 
