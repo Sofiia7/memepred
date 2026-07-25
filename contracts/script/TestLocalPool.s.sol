@@ -8,6 +8,7 @@ import "../src/LiquidityPool.sol";
 import "../src/GenesisNFT.sol";
 import "../test/mocks/MockUSDC.sol";
 import "../test/mocks/MockPyth.sol";
+import "../test/mocks/PythUpd.sol";
 
 contract MockResolver {
     address public pyth;
@@ -59,12 +60,13 @@ contract TestLocalPool is Script {
 
         usdc.approve(address(market), type(uint256).max);
         console.log("Placing bet against LP...");
-        uint256 orderId = market.placeBet(
+        uint256 orderId = market.placeBetWithPyth(
             OrderbookMarket.Direction.UP,
             100e6,
             address(0),
             1000 * 1e18,
-            100
+            100,
+            pythUpd()
         );
 
         OrderbookMarket.Order memory o = market.getOrder(orderId);

@@ -123,42 +123,49 @@ export function usePlaceBet({
       setStep('betting')
 
       // 4.2: fetch fresh Pyth VAA for THIS market's feedId, not a global one.
-      let priceUpdateData: `0x${string}`[] = []
-      let pythFeeWei = 0n
-      if (marketFeedId) {
-        try {
-          const hermes = import.meta.env.VITE_PYTH_HERMES || 'https://hermes.pyth.network'
-          const r = await fetch(
-            `${hermes}/v2/updates/price/latest?ids[]=${marketFeedId}&encoding=hex&parsed=false`,
-          )
-          if (r.ok) {
-            const j = (await r.json()) as { binary: { data: string[] } }
-            priceUpdateData = j.binary.data.map((h) =>
-              (h.startsWith('0x') ? h : `0x${h}`) as `0x${string}`,
-            )
-            pythFeeWei = 100_000_000_000_000n // 0.0001 ETH buffer, contract refunds excess
-          }
-        } catch {
-          // Hermes down → fall back to bare placeBet path; contract uses keeper's recent push.
-        }
+      //
+      // Sprint 5.6: this is no longer best-effort. The contract's bare
+      // placeBet() overload has been removed and an empty update array is
+      // rejected, because pricing a bet off the keeper's last push meant the
+      // strike could be seconds stale — long enough for anyone watching Hermes
+      // live to enter against a price they already knew had moved. There is
+      // therefore no fallback to fall back to: no fresh update, no bet.
+      //
+      // Failing here is the correct outcome. The alternative was placing the
+      // user's bet at a strike we know may be wrong, which is worse than
+      // asking them to retry.
+      if (!marketFeedId) {
+        throw new Error('Market price feed unavailable — cannot price this bet.')
       }
 
-      if (priceUpdateData.length > 0) {
-        await placeBet({
-          address: marketAddress,
-          abi: ORDERBOOK_MARKET_ABI,
-          functionName: 'placeBetWithPyth',
-          args: [direction, amountWei, referrer, expectedPrice, BigInt(slippageBps), priceUpdateData],
-          value: pythFeeWei,
-        })
-      } else {
-        await placeBet({
-          address: marketAddress,
-          abi: ORDERBOOK_MARKET_ABI,
-          functionName: 'placeBet',
-          args: [direction, amountWei, referrer, expectedPrice, BigInt(slippageBps)],
-        })
+      let priceUpdateData: `0x${string}`[] = []
+      const hermes = import.meta.env.VITE_PYTH_HERMES || 'https://hermes.pyth.network'
+      try {
+        const r = await fetch(
+          `${hermes}/v2/updates/price/latest?ids[]=${marketFeedId}&encoding=hex&parsed=false`,
+        )
+        if (!r.ok) throw new Error(`Hermes responded ${r.status}`)
+        const j = (await r.json()) as { binary: { data: string[] } }
+        priceUpdateData = j.binary.data.map((h) =>
+          (h.startsWith('0x') ? h : `0x${h}`) as `0x${string}`,
+        )
+      } catch (e: any) {
+        throw new Error(
+          `Couldn't fetch a live price (${e?.message ?? 'network error'}). ` +
+          `Bets are priced from a fresh oracle update, so please try again in a moment.`,
+        )
       }
+      if (priceUpdateData.length === 0) {
+        throw new Error('Price feed returned no update — please try again in a moment.')
+      }
+
+      await placeBet({
+        address: marketAddress,
+        abi: ORDERBOOK_MARKET_ABI,
+        functionName: 'placeBetWithPyth',
+        args: [direction, amountWei, referrer, expectedPrice, BigInt(slippageBps), priceUpdateData],
+        value: 100_000_000_000_000n, // 0.0001 ETH buffer; contract refunds the excess
+      })
 
       setStep('confirmed')
     } catch (err: any) {

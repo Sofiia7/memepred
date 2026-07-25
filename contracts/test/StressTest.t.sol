@@ -10,6 +10,7 @@ import "../src/MarketFactory.sol";
 import "../src/FeeDistributor.sol";
 import "../src/ReferralRegistry.sol";
 import "./mocks/MockUSDC.sol";
+import "./mocks/PythUpd.sol";
 import "./mocks/MockPyth.sol";
 
 contract MockResolver {
@@ -140,13 +141,13 @@ contract StressTest is Test {
             uint256 betAmount = 1e6 + ((round % 50) * 1e6); // 1-50 USDC
 
             vm.prank(up);
-            try market.placeBet(
-                OrderbookMarket.Direction.UP, betAmount, address(0), ENTRY_PRICE, 100
+            try market.placeBetWithPyth(
+                OrderbookMarket.Direction.UP, betAmount, address(0), ENTRY_PRICE, 100, pythUpd()
             ) {} catch { continue; }
 
             vm.prank(down);
-            try market.placeBet(
-                OrderbookMarket.Direction.DOWN, betAmount, address(0), ENTRY_PRICE, 100
+            try market.placeBetWithPyth(
+                OrderbookMarket.Direction.DOWN, betAmount, address(0), ENTRY_PRICE, 100, pythUpd()
             ) {
                 pvpMatches++;
             } catch { continue; }
@@ -176,8 +177,8 @@ contract StressTest is Test {
             pyth.setPrice(FEED, 914200, -8);
             address t = traders[(i * 11) % traders.length];
             vm.prank(t);
-            try market.placeBet(
-                OrderbookMarket.Direction.UP, 5e6, address(0), ENTRY_PRICE, 100
+            try market.placeBetWithPyth(
+                OrderbookMarket.Direction.UP, 5e6, address(0), ENTRY_PRICE, 100, pythUpd()
             ) {
                 lpMatches++;
                 vm.warp(block.timestamp + DURATION + 1);
@@ -199,12 +200,12 @@ contract StressTest is Test {
             if (up == down) continue;
 
             vm.prank(up);
-            try market.placeBet(
-                OrderbookMarket.Direction.UP, 3e6, address(0), ENTRY_PRICE, 100
+            try market.placeBetWithPyth(
+                OrderbookMarket.Direction.UP, 3e6, address(0), ENTRY_PRICE, 100, pythUpd()
             ) {} catch { continue; }
             vm.prank(down);
-            try market.placeBet(
-                OrderbookMarket.Direction.DOWN, 3e6, address(0), ENTRY_PRICE, 100
+            try market.placeBetWithPyth(
+                OrderbookMarket.Direction.DOWN, 3e6, address(0), ENTRY_PRICE, 100, pythUpd()
             ) {} catch { continue; }
 
             // Abandon: skip settle, jump past grace.

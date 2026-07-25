@@ -89,16 +89,25 @@ contract OrderbookMarket is ReentrancyGuard, Pausable {
     uint256 public constant MATCH_TIMEOUT = 5 minutes; // PENDING → refundExpired
     uint256 public constant SETTLE_GRACE  = 24 hours;  // MATCHED → emergencyRefundMatch
 
-    // Sprint 5.5 audit fix: was 60s (exploitable by real-time Hermes
-    // watchers sniping the LP pool at a stale entry price). Tightened to
-    // 45s — 1.5x margin over the keeper's existing 30s on-chain price-push
-    // cadence (backend/src/keeper/index.ts onchainPriceRecorder) so normal
-    // placeBet() calls keep working without requiring a keeper cadence
-    // change (which would triple the keeper's Pyth-update gas spend — the
-    // keeper wallet is already chronically low on funds). placeBetWithPyth
-    // (the frontend's preferred path when Hermes is reachable) always pays
-    // for a fresh update inline and is unaffected by this value either way.
-    uint256 public constant ENTRY_MAX_PRICE_AGE = 45;
+    // Sprint 5.6: 45 -> 20. The 45s figure existed to keep the bare
+    // placeBet() overload usable between the keeper's 30s pushes. That
+    // overload is gone (see placeBetWithPyth), so the bound no longer has to
+    // accommodate a keeper cadence at all — every bet now carries its own
+    // update and the stored price is whatever the caller just submitted.
+    //
+    // It is still load-bearing, and this is the subtle part: Pyth's
+    // updatePriceFeeds SILENTLY NO-OPS when handed an update older than what
+    // is already stored — it does not revert. So requiring non-empty update
+    // data does not by itself guarantee freshness: a sniper can submit a
+    // deliberately old but valid VAA, have it ignored, and still read a stale
+    // strike. This bound is what makes that unprofitable.
+    //
+    // 20s is chosen against the honest path, not the attacker's: fetch from
+    // Hermes (~1s), sign, land within a block or two on Base (~2-4s). That
+    // leaves wide margin, while a normal update makes the effective age ~0.
+    // Tightening further starts rejecting slow signers for no extra security,
+    // since the honest case never approaches the bound.
+    uint256 public constant ENTRY_MAX_PRICE_AGE = 20;
 
     // ── LP ECONOMICS (Sprint 5.5 audit fix) ────────────────
     // PvP matches never cost the pool anything; only LP-matched wagers put
@@ -254,18 +263,43 @@ contract OrderbookMarket is ReentrancyGuard, Pausable {
     }
 
     // ── PLACE BET ──────────────────────────────────────────
-    /// @notice Place a bet relying on the keeper to keep Pyth fresh.
-    function placeBet(
-        Direction dir,
-        uint256   amount,
-        address   referrer,
-        uint256   expectedPrice,
-        uint256   slippageBps
-    ) external nonReentrant whenNotPaused returns (uint256 orderId) {
-        return _placeBet(dir, amount, referrer, expectedPrice, slippageBps);
-    }
-
-    /// @notice Place a bet AND push a fresh Pyth update inline.
+    /**
+     * @notice Place a bet, carrying the Pyth update that prices it.
+     *
+     * @dev Sprint 5.6 — the bare `placeBet(dir, amount, referrer,
+     *      expectedPrice, slippageBps)` overload is GONE, deliberately. It let
+     *      the caller settle on whatever price the keeper had last pushed,
+     *      which is a strike up to ENTRY_MAX_PRICE_AGE old. Anyone watching
+     *      Hermes in real time could see a move land, then enter against a
+     *      strike they already knew was wrong, in the direction the price had
+     *      already gone. The counterparty pays for that: another user on a
+     *      peer match, the pool on an LP match — and the pool can never
+     *      decline, which makes it the structural victim.
+     *
+     *      `expectedPrice`/`slippageBps` are no defence, because the caller
+     *      supplies both: a sniper passes the stale price as `expectedPrice`
+     *      with zero slippage and the check passes trivially. That pair
+     *      protects an honest user from the price moving between rendering
+     *      and execution; it says nothing about staleness.
+     *
+     *      Pyth is a PULL oracle: the consumer is meant to bring a fresh
+     *      signed update and pay for it atomically. Reading a keeper-pushed
+     *      value was using a pull oracle in push mode and reintroducing
+     *      exactly the staleness the pull design exists to remove.
+     *
+     *      Three things are required together; any one alone is insufficient:
+     *        1. this being the only entry point, so no stale path remains;
+     *        2. non-empty `priceUpdateData` — an empty array used to skip the
+     *           update entirely and behave identically to the bare overload,
+     *           so removing that overload without this would change nothing;
+     *        3. a tight ENTRY_MAX_PRICE_AGE — `updatePriceFeeds` silently
+     *           no-ops on an update older than what is stored (it does not
+     *           revert), so a sniper can satisfy (2) with a deliberately old
+     *           VAA and still read a stale strike. The age bound is what
+     *           actually closes that.
+     *
+     *      Residual window is one block plus Hermes latency, not 45 seconds.
+     */
     function placeBetWithPyth(
         Direction dir,
         uint256   amount,
@@ -274,18 +308,17 @@ contract OrderbookMarket is ReentrancyGuard, Pausable {
         uint256   slippageBps,
         bytes[] calldata priceUpdateData
     ) external payable nonReentrant whenNotPaused returns (uint256 orderId) {
-        if (priceUpdateData.length > 0) {
-            address pythAddress = IOracleResolver(resolver).pyth();
-            uint256 updateFee   = IPyth(pythAddress).getUpdateFee(priceUpdateData);
-            require(msg.value >= updateFee, "pyth fee");
-            IPyth(pythAddress).updatePriceFeeds{value: updateFee}(priceUpdateData);
-            uint256 refund = msg.value - updateFee;
-            if (refund > 0) {
-                (bool ok, ) = msg.sender.call{value: refund}("");
-                require(ok, "refund failed");
-            }
-        } else {
-            require(msg.value == 0, "no eth expected");
+        require(priceUpdateData.length > 0, "price update required");
+
+        address pythAddress = IOracleResolver(resolver).pyth();
+        uint256 updateFee   = IPyth(pythAddress).getUpdateFee(priceUpdateData);
+        require(msg.value >= updateFee, "pyth fee");
+        IPyth(pythAddress).updatePriceFeeds{value: updateFee}(priceUpdateData);
+
+        uint256 refund = msg.value - updateFee;
+        if (refund > 0) {
+            (bool ok, ) = msg.sender.call{value: refund}("");
+            require(ok, "refund failed");
         }
         return _placeBet(dir, amount, referrer, expectedPrice, slippageBps);
     }

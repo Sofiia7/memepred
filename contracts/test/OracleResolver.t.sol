@@ -10,6 +10,7 @@ import "../src/GenesisNFT.sol";
 import "../src/interfaces/IPyth.sol";
 import "./mocks/MockPyth.sol";
 import "./mocks/MockUSDC.sol";
+import "./mocks/PythUpd.sol";
 
 /// @notice Restores coverage of OracleResolver — the previous test file was
 ///         deleted during the cold-start refactor and never replaced.
@@ -193,8 +194,8 @@ contract OracleResolverTest is Test {
 
         // Entry price locked at $1.00.
         pyth.setPrice(FEED, 1e8, -8);
-        vm.prank(alice); market.placeBet(OrderbookMarket.Direction.UP,   25e6, address(0), 1e18, 100);
-        vm.prank(bob);   market.placeBet(OrderbookMarket.Direction.DOWN, 25e6, address(0), 1e18, 100);
+        vm.prank(alice); market.placeBetWithPyth(OrderbookMarket.Direction.UP,   25e6, address(0), 1e18, 100, pythUpd());
+        vm.prank(bob);   market.placeBetWithPyth(OrderbookMarket.Direction.DOWN, 25e6, address(0), 1e18, 100, pythUpd());
 
         bytes[] memory data = new bytes[](0);
 
@@ -261,8 +262,8 @@ contract OracleResolverTest is Test {
         vm.prank(bob);   usdc.approve(address(market), type(uint256).max);
 
         pyth.setPrice(FEED, 1e8, -8); // entry locked at $1.00
-        vm.prank(alice); market.placeBet(OrderbookMarket.Direction.UP,   25e6, address(0), 1e18, 100);
-        vm.prank(bob);   market.placeBet(OrderbookMarket.Direction.DOWN, 25e6, address(0), 1e18, 100);
+        vm.prank(alice); market.placeBetWithPyth(OrderbookMarket.Direction.UP,   25e6, address(0), 1e18, 100, pythUpd());
+        vm.prank(bob);   market.placeBetWithPyth(OrderbookMarket.Direction.DOWN, 25e6, address(0), 1e18, 100, pythUpd());
 
         matchId = 1;
     }
@@ -308,8 +309,8 @@ contract OracleResolverTest is Test {
         usdc.mint(dave,  100e6);
         vm.prank(carol); usdc.approve(address(market), type(uint256).max);
         vm.prank(dave);  usdc.approve(address(market), type(uint256).max);
-        vm.prank(carol); market.placeBet(OrderbookMarket.Direction.UP,   25e6, address(0), 1e18, 100);
-        vm.prank(dave);  market.placeBet(OrderbookMarket.Direction.DOWN, 25e6, address(0), 1e18, 100);
+        vm.prank(carol); market.placeBetWithPyth(OrderbookMarket.Direction.UP,   25e6, address(0), 1e18, 100, pythUpd());
+        vm.prank(dave);  market.placeBetWithPyth(OrderbookMarket.Direction.DOWN, 25e6, address(0), 1e18, 100, pythUpd());
 
         bytes[] memory data = new bytes[](0);
         vm.warp(block.timestamp + 15 minutes - 60);

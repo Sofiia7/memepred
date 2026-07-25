@@ -7,6 +7,7 @@ import "../src/LiquidityPool.sol";
 import "../src/GenesisNFT.sol";
 import "../src/OrderbookMarket.sol";
 import "./mocks/MockUSDC.sol";
+import "./mocks/PythUpd.sol";
 import "./mocks/MockPyth.sol";
 
 contract MockResolver {
@@ -117,7 +118,7 @@ contract LiquidityPoolTest is Test {
         usdc.mint(bob, 25e6);
         vm.prank(bob); usdc.approve(address(market), type(uint256).max);
         vm.prank(bob);
-        market.placeBet(OrderbookMarket.Direction.UP, 25e6, address(0), 1000 * 1e18, 100);
+        market.placeBetWithPyth(OrderbookMarket.Direction.UP, 25e6, address(0), 1000 * 1e18, 100, pythUpd());
 
         // Now totalExposure > 0; maxWithdraw is reduced
         address lp1 = makeAddr("lp1");
@@ -178,7 +179,7 @@ contract LiquidityPoolTest is Test {
         usdc.mint(bob, 25e6);
         vm.prank(bob); usdc.approve(address(market), type(uint256).max);
         vm.prank(bob);
-        market.placeBet(OrderbookMarket.Direction.UP, 25e6, address(0), 1000 * 1e18, 100);
+        market.placeBetWithPyth(OrderbookMarket.Direction.UP, 25e6, address(0), 1000 * 1e18, 100, pythUpd());
 
         // DOWN wins → LP wins
         vm.warp(block.timestamp + 15 minutes + 1);
@@ -197,7 +198,7 @@ contract LiquidityPoolTest is Test {
         usdc.mint(bob, 25e6);
         vm.prank(bob); usdc.approve(address(market), type(uint256).max);
         vm.prank(bob);
-        market.placeBet(OrderbookMarket.Direction.UP, 25e6, address(0), 1000 * 1e18, 100);
+        market.placeBetWithPyth(OrderbookMarket.Direction.UP, 25e6, address(0), 1000 * 1e18, 100, pythUpd());
 
         // UP wins → LP loses
         vm.warp(block.timestamp + 15 minutes + 1);
@@ -217,7 +218,7 @@ contract LiquidityPoolTest is Test {
         usdc.mint(bob, 25e6);
         vm.prank(bob); usdc.approve(address(market), type(uint256).max);
         vm.prank(bob);
-        market.placeBet(OrderbookMarket.Direction.UP, 25e6, address(0), 1000 * 1e18, 100);
+        market.placeBetWithPyth(OrderbookMarket.Direction.UP, 25e6, address(0), 1000 * 1e18, 100, pythUpd());
 
         vm.warp(block.timestamp + 15 minutes + 1);
         vm.prank(resolver);
@@ -246,7 +247,7 @@ contract LiquidityPoolTest is Test {
         usdc.mint(bob, 25e6);
         vm.prank(bob); usdc.approve(address(market), type(uint256).max);
         vm.prank(bob);
-        market.placeBet(OrderbookMarket.Direction.UP, 25e6, address(0), 1000 * 1e18, 100);
+        market.placeBetWithPyth(OrderbookMarket.Direction.UP, 25e6, address(0), 1000 * 1e18, 100, pythUpd());
 
         vm.warp(block.timestamp + 15 minutes + 1);
         vm.prank(resolver);
@@ -271,7 +272,7 @@ contract LiquidityPoolTest is Test {
         usdc.mint(bob, 100e6);
         vm.prank(bob); usdc.approve(address(market), type(uint256).max);
         vm.prank(bob);
-        market.placeBet(OrderbookMarket.Direction.UP, 100e6, address(0), 1000 * 1e18, 100);
+        market.placeBetWithPyth(OrderbookMarket.Direction.UP, 100e6, address(0), 1000 * 1e18, 100, pythUpd());
 
         // Per-market cap = 500e6 → bet of 100e6 fully matched
         assertEq(pool.marketExposure(address(market)), 100e6);
@@ -301,7 +302,7 @@ contract LiquidityPoolTest is Test {
         usdc.mint(bob, 100e6);
         vm.prank(bob); usdc.approve(address(market), type(uint256).max);
         vm.prank(bob);
-        market.placeBet(OrderbookMarket.Direction.UP, 100e6, address(0), 1000 * 1e18, 100);
+        market.placeBetWithPyth(OrderbookMarket.Direction.UP, 100e6, address(0), 1000 * 1e18, 100, pythUpd());
 
         // With a single market, PER_MARKET_MAX_EXPOSURE_BPS (5%) binds before
         // the global 10% cap does — exposure caps at 50e6, not the full 100e6
@@ -332,7 +333,7 @@ contract LiquidityPoolTest is Test {
         usdc.mint(bob, 25e6);
         vm.prank(bob); usdc.approve(address(market), type(uint256).max);
         vm.prank(bob);
-        market.placeBet(OrderbookMarket.Direction.UP, 25e6, address(0), 1000 * 1e18, 100);
+        market.placeBetWithPyth(OrderbookMarket.Direction.UP, 25e6, address(0), 1000 * 1e18, 100, pythUpd());
 
         vm.warp(block.timestamp + 15 minutes + 1);
         vm.prank(resolver);
@@ -416,7 +417,7 @@ contract LiquidityPoolTest is Test {
         usdc.mint(bob, 25e6);
         vm.prank(bob); usdc.approve(address(market), type(uint256).max);
         vm.prank(bob);
-        uint256 bobOrderId = market.placeBet(OrderbookMarket.Direction.UP, 25e6, address(0), 1000 * 1e18, 100);
+        uint256 bobOrderId = market.placeBetWithPyth(OrderbookMarket.Direction.UP, 25e6, address(0), 1000 * 1e18, 100, pythUpd());
 
         uint256 poolBalBefore = usdc.balanceOf(address(pool));
 
@@ -452,7 +453,7 @@ contract LiquidityPoolTest is Test {
         // 3 x MAX_BET (100e6) = 300e6 exactly fills MAX_TRADER_LP_EXPOSURE.
         for (uint256 i = 0; i < 3; i++) {
             vm.prank(sniper);
-            uint256 oid = market.placeBet(OrderbookMarket.Direction.UP, 100e6, address(0), 1000 * 1e18, 100);
+            uint256 oid = market.placeBetWithPyth(OrderbookMarket.Direction.UP, 100e6, address(0), 1000 * 1e18, 100, pythUpd());
             OrderbookMarket.Order memory o = market.getOrder(oid);
             assertEq(uint(o.status), uint(OrderbookMarket.OrderStatus.MATCHED), "should be LP-matched");
         }
@@ -461,7 +462,7 @@ contract LiquidityPoolTest is Test {
         // A 4th bet from the SAME trader must NOT get LP-matched — no PvP
         // counterparty exists either, so it has to sit PENDING.
         vm.prank(sniper);
-        uint256 blockedId = market.placeBet(OrderbookMarket.Direction.UP, 100e6, address(0), 1000 * 1e18, 100);
+        uint256 blockedId = market.placeBetWithPyth(OrderbookMarket.Direction.UP, 100e6, address(0), 1000 * 1e18, 100, pythUpd());
         OrderbookMarket.Order memory blocked = market.getOrder(blockedId);
         assertEq(uint(blocked.status), uint(OrderbookMarket.OrderStatus.PENDING), "capped trader must not get further LP fills");
         assertEq(blocked.filledAmount, 0);
@@ -471,7 +472,7 @@ contract LiquidityPoolTest is Test {
         usdc.mint(carol, 100e6);
         vm.prank(carol); usdc.approve(address(market), type(uint256).max);
         vm.prank(carol);
-        uint256 carolId = market.placeBet(OrderbookMarket.Direction.UP, 100e6, address(0), 1000 * 1e18, 100);
+        uint256 carolId = market.placeBetWithPyth(OrderbookMarket.Direction.UP, 100e6, address(0), 1000 * 1e18, 100, pythUpd());
         OrderbookMarket.Order memory carolOrder = market.getOrder(carolId);
         assertEq(uint(carolOrder.status), uint(OrderbookMarket.OrderStatus.MATCHED), "other traders unaffected by sniper's cap");
     }

@@ -7,6 +7,7 @@ import "../src/OrderbookMarket.sol";
 import "../src/LiquidityPool.sol";
 import "../src/GenesisNFT.sol";
 import "./mocks/MockUSDC.sol";
+import "./mocks/PythUpd.sol";
 import "./mocks/MockPyth.sol";
 
 contract MockResolver {
@@ -77,9 +78,9 @@ contract CriticalFixesTest is Test {
     // ── C2: emergencyRefundMatch (PvP) ────────────────────
     function test_C2_EmergencyRefundMatch_PvP_After24h() public {
         vm.prank(alice);
-        market.placeBet(OrderbookMarket.Direction.UP,   25e6, address(0), ENTRY_PRICE, 100);
+        market.placeBetWithPyth(OrderbookMarket.Direction.UP,   25e6, address(0), ENTRY_PRICE, 100, pythUpd());
         vm.prank(bob);
-        market.placeBet(OrderbookMarket.Direction.DOWN, 25e6, address(0), ENTRY_PRICE, 100);
+        market.placeBetWithPyth(OrderbookMarket.Direction.DOWN, 25e6, address(0), ENTRY_PRICE, 100, pythUpd());
 
         // Oracle is "down": don't settle. Fast forward past SETTLE_GRACE.
         vm.warp(block.timestamp + DURATION + market.SETTLE_GRACE() + 1);
@@ -112,9 +113,9 @@ contract CriticalFixesTest is Test {
     //    instead of routing to the fair, symmetric emergencyRefundMatch path.
     function test_SettleMatch_Reverts_AfterGraceWindowExpired() public {
         vm.prank(alice);
-        market.placeBet(OrderbookMarket.Direction.UP,   25e6, address(0), ENTRY_PRICE, 100);
+        market.placeBetWithPyth(OrderbookMarket.Direction.UP,   25e6, address(0), ENTRY_PRICE, 100, pythUpd());
         vm.prank(bob);
-        market.placeBet(OrderbookMarket.Direction.DOWN, 25e6, address(0), ENTRY_PRICE, 100);
+        market.placeBetWithPyth(OrderbookMarket.Direction.DOWN, 25e6, address(0), ENTRY_PRICE, 100, pythUpd());
 
         // Keeper was down for a long time — well past the point where
         // settlement is still meaningful.
@@ -132,9 +133,9 @@ contract CriticalFixesTest is Test {
 
     function test_C2_EmergencyRefundMatch_RevertsBeforeGrace() public {
         vm.prank(alice);
-        market.placeBet(OrderbookMarket.Direction.UP,   25e6, address(0), ENTRY_PRICE, 100);
+        market.placeBetWithPyth(OrderbookMarket.Direction.UP,   25e6, address(0), ENTRY_PRICE, 100, pythUpd());
         vm.prank(bob);
-        market.placeBet(OrderbookMarket.Direction.DOWN, 25e6, address(0), ENTRY_PRICE, 100);
+        market.placeBetWithPyth(OrderbookMarket.Direction.DOWN, 25e6, address(0), ENTRY_PRICE, 100, pythUpd());
 
         // Just past duration but before grace ends.
         vm.warp(block.timestamp + DURATION + 1 hours);
@@ -147,8 +148,8 @@ contract CriticalFixesTest is Test {
         vm.prank(lp1); pool.deposit(500e6, lp1);
 
         vm.prank(alice);
-        uint256 orderId = market.placeBet(
-            OrderbookMarket.Direction.UP, 25e6, address(0), ENTRY_PRICE, 100);
+        uint256 orderId = market.placeBetWithPyth(
+            OrderbookMarket.Direction.UP, 25e6, address(0), ENTRY_PRICE, 100, pythUpd());
 
         // After tryMatch: pool exposure recorded.
         uint256 expBefore = pool.totalExposure();
@@ -192,18 +193,52 @@ contract CriticalFixesTest is Test {
         assertEq(uint(o.status), uint(OrderbookMarket.OrderStatus.PENDING));
     }
 
-    function test_C3_PlaceBetWithPyth_EmptyDataRequiresZeroEth() public {
+    /// Sprint 5.6: empty `priceUpdateData` used to be an accepted path that
+    /// skipped the Pyth update and priced the bet off whatever the keeper had
+    /// last pushed — i.e. exactly the stale-strike hole that removing the bare
+    /// placeBet() overload was meant to close. Leaving it would have made that
+    /// removal cosmetic: a sniper would simply pass an empty array. It is now
+    /// rejected outright, with or without ETH attached.
+    function test_C3_PlaceBetWithPyth_RejectsEmptyUpdateData() public {
         vm.deal(alice, 1 ether);
         bytes[] memory empty = new bytes[](0);
 
         vm.prank(alice);
-        vm.expectRevert("no eth expected");
+        vm.expectRevert("price update required");
         market.placeBetWithPyth{value: 1 wei}(
             OrderbookMarket.Direction.UP,
             25e6, address(0),
             ENTRY_PRICE, 100,
             empty
         );
+
+        // Same rejection with no ETH attached — it's the missing price update
+        // that's fatal, not the value.
+        vm.prank(alice);
+        vm.expectRevert("price update required");
+        market.placeBetWithPyth(
+            OrderbookMarket.Direction.UP,
+            25e6, address(0),
+            ENTRY_PRICE, 100,
+            empty
+        );
+    }
+
+    /// There is no longer a way to place a bet without carrying a price
+    /// update: the 5-argument overload is gone from the ABI entirely, so a
+    /// caller cannot select a stale-price path even deliberately.
+    function test_C3_BarePlaceBetOverloadIsGone() public view {
+        bytes4 bareSelector = bytes4(keccak256("placeBet(uint8,uint256,address,uint256,uint256)"));
+        (bool found, ) = _hasSelector(address(market), bareSelector);
+        assertFalse(found, "bare placeBet must not be callable");
+    }
+
+    /// @dev A missing function selector makes the call revert with empty
+    ///      returndata (no fallback on OrderbookMarket), which is how we
+    ///      distinguish "not in the ABI" from "reverted with a reason".
+    function _hasSelector(address target, bytes4 sel) internal view returns (bool, bytes memory) {
+        (bool ok, bytes memory ret) = target.staticcall(abi.encodeWithSelector(sel, 0, uint256(1), address(0), uint256(1), uint256(1)));
+        return (ok || ret.length > 0, ret);
     }
 
     // ── C4: Genesis NFT transfer moves fee weight to new owner ─
@@ -238,7 +273,7 @@ contract CriticalFixesTest is Test {
         // Drive a fee-accrual event: simulate an LP-won match via direct call.
         // Easiest: make alice take an LP match, then mark LP as winner.
         vm.prank(alice);
-        market.placeBet(OrderbookMarket.Direction.UP, 25e6, address(0), ENTRY_PRICE, 100);
+        market.placeBetWithPyth(OrderbookMarket.Direction.UP, 25e6, address(0), ENTRY_PRICE, 100, pythUpd());
 
         vm.warp(block.timestamp + DURATION + 1);
 
@@ -258,9 +293,9 @@ contract CriticalFixesTest is Test {
     // ── C5: refundExpired removes orderId from queue ───────
     function test_C5_RefundExpired_RemovesFromQueue() public {
         // 3 pending UP orders, all expire.
-        vm.prank(alice); market.placeBet(OrderbookMarket.Direction.UP, 5e6, address(0), ENTRY_PRICE, 100);
-        vm.prank(bob);   market.placeBet(OrderbookMarket.Direction.UP, 5e6, address(0), ENTRY_PRICE, 100);
-        vm.prank(carol); market.placeBet(OrderbookMarket.Direction.UP, 5e6, address(0), ENTRY_PRICE, 100);
+        vm.prank(alice); market.placeBetWithPyth(OrderbookMarket.Direction.UP, 5e6, address(0), ENTRY_PRICE, 100, pythUpd());
+        vm.prank(bob);   market.placeBetWithPyth(OrderbookMarket.Direction.UP, 5e6, address(0), ENTRY_PRICE, 100, pythUpd());
+        vm.prank(carol); market.placeBetWithPyth(OrderbookMarket.Direction.UP, 5e6, address(0), ENTRY_PRICE, 100, pythUpd());
 
         (uint256 up,) = market.getPendingDepth();
         assertEq(up, 3);
@@ -288,7 +323,7 @@ contract CriticalFixesTest is Test {
             usdc.mint(t, 10e6);
             vm.prank(t); usdc.approve(address(market), type(uint256).max);
             vm.prank(t);
-            market.placeBet(OrderbookMarket.Direction.DOWN, 5e6, address(0), ENTRY_PRICE, 100);
+            market.placeBetWithPyth(OrderbookMarket.Direction.DOWN, 5e6, address(0), ENTRY_PRICE, 100, pythUpd());
         }
 
         // Let them all go stale.
@@ -298,7 +333,7 @@ contract CriticalFixesTest is Test {
         // Now a fresh UP order — scan must stay bounded (< 500k gas).
         uint256 g = gasleft();
         vm.prank(alice);
-        market.placeBet(OrderbookMarket.Direction.UP, 5e6, address(0), ENTRY_PRICE, 100);
+        market.placeBetWithPyth(OrderbookMarket.Direction.UP, 5e6, address(0), ENTRY_PRICE, 100, pythUpd());
         uint256 used = g - gasleft();
         assertLt(used, 5_000_000, "tryMatch must not be unbounded");
 
@@ -310,7 +345,7 @@ contract CriticalFixesTest is Test {
     // ── C5: After refundExpired, new opposite bet matches the next pending ──
     function test_C5_RefundExpired_FreesMatchingSlot() public {
         vm.prank(alice);
-        market.placeBet(OrderbookMarket.Direction.UP, 5e6, address(0), ENTRY_PRICE, 100);
+        market.placeBetWithPyth(OrderbookMarket.Direction.UP, 5e6, address(0), ENTRY_PRICE, 100, pythUpd());
 
         vm.warp(block.timestamp + market.MATCH_TIMEOUT() + 1);
         pyth.setPrice(bytes32("PEPE/USD"), 914200, -8);
@@ -318,7 +353,7 @@ contract CriticalFixesTest is Test {
 
         // New UP order should sit in queue, not match the refunded stale id.
         vm.prank(bob);
-        market.placeBet(OrderbookMarket.Direction.UP, 5e6, address(0), ENTRY_PRICE, 100);
+        market.placeBetWithPyth(OrderbookMarket.Direction.UP, 5e6, address(0), ENTRY_PRICE, 100, pythUpd());
 
         OrderbookMarket.Order memory o = market.getOrder(2);
         assertEq(uint(o.status), uint(OrderbookMarket.OrderStatus.PENDING));

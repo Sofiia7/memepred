@@ -112,19 +112,13 @@ export const PVPMARKET_ABI = [
 
 // OrderbookMarket ABI (new 3-layer matching)
 export const ORDERBOOK_MARKET_ABI = [
-  {
-    name: 'placeBet',
-    type: 'function',
-    stateMutability: 'nonpayable',
-    inputs: [
-      { name: 'dir',           type: 'uint8'   },
-      { name: 'amount',        type: 'uint256' },
-      { name: 'referrer',      type: 'address' },
-      { name: 'expectedPrice', type: 'uint256' },
-      { name: 'slippageBps',   type: 'uint256' }
-    ],
-    outputs: [{ name: 'orderId', type: 'uint256' }]
-  },
+  // Sprint 5.6: the bare `placeBet` entry is gone from this ABI because it is
+  // gone from the contract. It priced a bet off the keeper's last on-chain
+  // push, so the strike could be seconds old — enough for anyone watching
+  // Hermes live to enter against a price they already knew had moved.
+  // placeBetWithPyth is now the only way to bet, and it rejects an empty
+  // update array. Do not re-add a fallback here: there is nothing to fall back
+  // to on-chain, and a call would simply revert.
   {
     name: 'placeBetWithPyth',
     type: 'function',

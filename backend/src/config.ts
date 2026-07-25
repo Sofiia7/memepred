@@ -25,9 +25,9 @@ export const CONTRACTS = {
  * 2026-07-25: MarketFactory has had 13 feeds whitelisted since the Sprint 5
  * rollout, but this map only ever had PEPE and DOGE — so 11 feeds were getting
  * markets created on a 5-minute cadence while never receiving an on-chain
- * price. Those markets burned gas continuously and could not accept a bare
- * placeBet (it reverts on a stale price past ENTRY_MAX_PRICE_AGE). Scope is
- * now the four memecoins the product was actually designed around.
+ * price at all. Those markets burned gas on every rollover and had no TWAP
+ * history for settlement to read an exit price from, so they could not have
+ * been settled even if someone had bet on them. Scope is now PEPE and DOGE.
  *
  * Adding a feed here is not sufficient on its own — it must also be
  * whitelisted on the factory (`addFeed`, multisig-only). Removing one here IS

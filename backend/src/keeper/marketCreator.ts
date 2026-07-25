@@ -92,8 +92,8 @@ export async function createMissingMarkets() {
   // factory's whitelist is multisig-controlled and currently carries 13 feeds
   // from the Sprint 5 rollout, but the keeper only pushes Pyth prices for the
   // ones in FEED_IDS. A market on an unpriced feed is worse than no market:
-  // it costs gas every rollover forever, and a bare placeBet against it
-  // reverts once the on-chain price ages past ENTRY_MAX_PRICE_AGE.
+  // it costs gas every rollover forever, and settlement has no TWAP history to
+  // read an exit price from.
   //
   // Logged rather than silently dropped — a keeper quietly ignoring most of
   // the factory's configuration is exactly the kind of thing that should be

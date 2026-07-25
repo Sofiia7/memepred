@@ -9,21 +9,25 @@ import { pg } from '../db/pg.js'
 const publicClient = createPublicClient({ chain, transport: http(process.env.BASE_RPC_URL) })
 
 // ── IDLE BACKOFF (Sprint 5.6) ───────────────────────────────
-// This loop is called every 30s by the keeper so that a bare `placeBet` always
-// finds an on-chain price younger than OrderbookMarket.ENTRY_MAX_PRICE_AGE
-// (45s). At two feeds that is 5,760 transactions a day, paid identically
-// whether anyone is using the product or not — with no users it was the
-// single largest ongoing cost after market creation.
+// What this loop is actually for, now that the bare `placeBet` overload is
+// gone and every bet carries its own Pyth update: it is the TWAP feed.
+// OracleResolver.recordPrice appends to priceHistory[feedId], and settlement
+// reads the exit price as a TWAP over a window scaled to the market's own
+// duration (MIN_TWAP_WINDOW 30s, TWAP_WINDOW_CAP 5m). Sparse recording means a
+// thin window and a worse exit price — so this is settlement infrastructure,
+// not entry-price infrastructure.
 //
-// So: keep the 30s cadence whenever a human is around, and drop to a slow
-// heartbeat when nobody is. Safety of the cold-start case is covered in
-// lib/activity.ts — in short, loading the app re-arms the fast cadence within
-// one tick, and the frontend's primary bet path (`placeBetWithPyth`) carries
-// its own fresh Pyth update and never depends on this loop at all.
+// At two feeds a flat 30s cadence is 5,760 transactions a day, paid whether
+// anyone is using the product or not. So: fast cadence whenever it could
+// matter, slow heartbeat otherwise.
 //
-// The heartbeat is not optional: oracleWatchdog treats a feed that stops
-// updating as a fault, and a market that sits unpriced for hours is not a
-// state worth being in even when idle.
+// "Could matter" deliberately includes any PENDING or MATCHED order, not just
+// live user traffic — an unsettled match is exactly the case that will need a
+// dense TWAP when its settleAt arrives, possibly long after the last human
+// left. shouldUseFastCadence() below encodes that.
+//
+// The heartbeat is not optional either: oracleWatchdog treats a feed that
+// stops updating as a fault.
 const IDLE_INTERVAL_MS = Number(process.env.PRICE_IDLE_INTERVAL_MS ?? String(5 * 60_000))
 const ACTIVITY_WINDOW_MS = Number(process.env.PRICE_ACTIVITY_WINDOW_MS ?? String(15 * 60_000))
 
@@ -93,11 +97,13 @@ async function preflightOk(): Promise<boolean> {
 }
 
 /**
- * True when the fast cadence is worth paying for: either a user hit the API
- * recently, or there is real money on the books. The second check is what
- * makes this safe if Redis is unavailable — an open PENDING order means
- * someone may be about to be matched, and settlement paths must not be
- * starved of prices because a cache was down.
+ * True when the fast cadence is worth paying for.
+ *
+ * Two independent triggers. A recent API hit means someone is here and may be
+ * about to bet. An order still PENDING or MATCHED means there is unsettled
+ * money on the books whose exit TWAP is still being accumulated — that one
+ * matters even with nobody watching, and it is also what keeps this correct
+ * when Redis is unavailable and the presence signal is simply absent.
  */
 async function shouldUseFastCadence(): Promise<boolean> {
   const last = await lastUserActivityMs()

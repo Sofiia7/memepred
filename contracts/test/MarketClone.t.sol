@@ -10,6 +10,7 @@ import "../src/ReferralRegistry.sol";
 import "../src/GenesisNFT.sol";
 import "../src/OrderbookMarket.sol";
 import "./mocks/MockUSDC.sol";
+import "./mocks/PythUpd.sol";
 import "./mocks/MockPyth.sol";
 
 contract MockResolver {
@@ -104,11 +105,11 @@ contract MarketCloneTest is Test {
         _approve(bob,   address(m));
 
         vm.prank(alice);
-        uint256 aliceId = m.placeBet(OrderbookMarket.Direction.UP, 50e6, address(0), ENTRY_PRICE, 100);
+        uint256 aliceId = m.placeBetWithPyth(OrderbookMarket.Direction.UP, 50e6, address(0), ENTRY_PRICE, 100, pythUpd());
         assertEq(m.getOrder(aliceId).matchId, 0, "unmatched order must read as matchId 0");
 
         vm.prank(bob);
-        uint256 bobId = m.placeBet(OrderbookMarket.Direction.DOWN, 50e6, address(0), ENTRY_PRICE, 100);
+        uint256 bobId = m.placeBetWithPyth(OrderbookMarket.Direction.DOWN, 50e6, address(0), ENTRY_PRICE, 100, pythUpd());
         assertTrue(m.getOrder(bobId).matchId != 0, "matched order must not collide with the 0 sentinel");
         assertEq(m.getOrder(aliceId).matchId, m.getOrder(bobId).matchId);
     }
@@ -143,7 +144,7 @@ contract MarketCloneTest is Test {
 
         _approve(alice, address(a));
         vm.prank(alice);
-        a.placeBet(OrderbookMarket.Direction.UP, 50e6, address(0), ENTRY_PRICE, 100);
+        a.placeBetWithPyth(OrderbookMarket.Direction.UP, 50e6, address(0), ENTRY_PRICE, 100, pythUpd());
 
         assertEq(a.nextOrderId(), 2, "market A should have consumed an id");
         assertEq(b.nextOrderId(), 1, "market B must be untouched by A's activity");
@@ -205,7 +206,7 @@ contract MarketCloneTest is Test {
 
         vm.prank(alice);
         vm.expectRevert();
-        m.placeBet(OrderbookMarket.Direction.UP, 50e6, address(0), ENTRY_PRICE, 100);
+        m.placeBetWithPyth(OrderbookMarket.Direction.UP, 50e6, address(0), ENTRY_PRICE, 100, pythUpd());
     }
 
     // ── END-TO-END THROUGH A CLONE ────────────────────────
@@ -215,9 +216,9 @@ contract MarketCloneTest is Test {
         _approve(bob,   address(m));
 
         vm.prank(alice);
-        uint256 aliceId = m.placeBet(OrderbookMarket.Direction.UP, 50e6, address(0), ENTRY_PRICE, 100);
+        uint256 aliceId = m.placeBetWithPyth(OrderbookMarket.Direction.UP, 50e6, address(0), ENTRY_PRICE, 100, pythUpd());
         vm.prank(bob);
-        m.placeBet(OrderbookMarket.Direction.DOWN, 50e6, address(0), ENTRY_PRICE, 100);
+        m.placeBetWithPyth(OrderbookMarket.Direction.DOWN, 50e6, address(0), ENTRY_PRICE, 100, pythUpd());
 
         uint256 matchId = m.getOrder(aliceId).matchId;
         assertEq(matchId, 1, "first match on a clone must be id 1");

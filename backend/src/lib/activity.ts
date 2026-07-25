@@ -1,25 +1,22 @@
 /**
  * activity — shared "is anyone actually here?" signal.
  *
- * Sprint 5.6. The keeper pushes Pyth prices on-chain every 30s so that
- * OrderbookMarket.ENTRY_MAX_PRICE_AGE (45s) is satisfied whenever someone
- * calls the bare `placeBet`. That cadence is 5,760 transactions a day per
- * two feeds, and it ran identically whether the product had a thousand users
- * or none — the largest running cost that scaled with nothing.
+ * Sprint 5.6. The keeper pushes Pyth prices on-chain every 30s to accumulate
+ * the TWAP history that settlement reads for exit prices. At two feeds that
+ * is 5,760 transactions a day, and it ran identically whether the product had
+ * a thousand users or none — the largest running cost that scaled with
+ * nothing.
  *
  * This lets the keeper tell the difference. The API stamps a Redis key on
  * real user traffic; the keeper reads it and keeps the fast cadence only
  * while somebody is around, falling back to a slow heartbeat otherwise.
  *
- * Why a cold arrival is still safe:
- *   - Loading the app hits the API, which stamps activity here, so the
- *     keeper is back on the 30s cadence within one tick — well before a
- *     visitor has picked a market and signed anything.
- *   - Independently, the frontend's preferred path is `placeBetWithPyth`
- *     (see frontend/src/hooks/usePlaceBet.ts), which pays for and submits a
- *     fresh Pyth update inline. It does not depend on keeper freshness at
- *     all; the bare `placeBet` is only the fallback for when Hermes is
- *     unreachable from the browser.
+ * Entry pricing does not depend on this at all any more: `placeBetWithPyth`
+ * is the only way to bet and it carries its own fresh Pyth update, so a
+ * visitor arriving mid-backoff is priced correctly regardless. What the
+ * backoff must not starve is the exit TWAP — which is why
+ * onchainPriceRecorder also stays hot for any PENDING or MATCHED order,
+ * independently of whether a human is present.
  */
 import { redis } from '../db/redis.js'
 

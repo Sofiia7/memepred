@@ -10,6 +10,7 @@ import "../src/MarketFactory.sol";
 import "../src/FeeDistributor.sol";
 import "../src/ReferralRegistry.sol";
 import "./mocks/MockUSDC.sol";
+import "./mocks/PythUpd.sol";
 import "./mocks/MockPyth.sol";
 
 contract MockResolver {
@@ -98,7 +99,7 @@ contract IntegrationTest is Test {
         usdc.mint(alice, 100e6);
         vm.prank(alice); usdc.approve(address(market), type(uint256).max);
         vm.prank(alice);
-        market.placeBet(OrderbookMarket.Direction.UP, 25e6, bob, 1000 * 1e18, 100);
+        market.placeBetWithPyth(OrderbookMarket.Direction.UP, 25e6, bob, 1000 * 1e18, 100, pythUpd());
 
         assertEq(refReg.referrerOf(alice), bob, "referral recorded on first bet");
     }
@@ -111,11 +112,11 @@ contract IntegrationTest is Test {
         usdc.mint(alice, 100e6);
         vm.prank(alice); usdc.approve(address(market), type(uint256).max);
         vm.prank(alice);
-        market.placeBet(OrderbookMarket.Direction.UP, 25e6, bob, 1000 * 1e18, 100);
+        market.placeBetWithPyth(OrderbookMarket.Direction.UP, 25e6, bob, 1000 * 1e18, 100, pythUpd());
 
         // Second bet attempts a different referrer — registry must keep the first.
         vm.prank(alice);
-        market.placeBet(OrderbookMarket.Direction.UP, 25e6, eve, 1000 * 1e18, 100);
+        market.placeBetWithPyth(OrderbookMarket.Direction.UP, 25e6, eve, 1000 * 1e18, 100, pythUpd());
 
         assertEq(refReg.referrerOf(alice), bob, "first referrer wins");
     }
@@ -126,7 +127,7 @@ contract IntegrationTest is Test {
         usdc.mint(alice, 100e6);
         vm.prank(alice); usdc.approve(address(market), type(uint256).max);
         vm.prank(alice);
-        market.placeBet(OrderbookMarket.Direction.UP, 25e6, address(0), 1000 * 1e18, 100);
+        market.placeBetWithPyth(OrderbookMarket.Direction.UP, 25e6, address(0), 1000 * 1e18, 100, pythUpd());
 
         assertEq(refReg.referrerOf(alice), address(0));
     }
@@ -145,7 +146,7 @@ contract IntegrationTest is Test {
         usdc.mint(alice, 100e6);
         vm.prank(alice); usdc.approve(address(market), type(uint256).max);
         vm.prank(alice);
-        market.placeBet(OrderbookMarket.Direction.UP, 25e6, bob, 1000 * 1e18, 100);
+        market.placeBetWithPyth(OrderbookMarket.Direction.UP, 25e6, bob, 1000 * 1e18, 100, pythUpd());
 
         // UP wins → user wins → settle pushes fee.
         vm.warp(block.timestamp + 15 minutes + 1);
@@ -173,9 +174,9 @@ contract IntegrationTest is Test {
 
         // PvP match: Alice UP, Charlie DOWN, no referrer.
         vm.prank(alice);
-        market.placeBet(OrderbookMarket.Direction.UP,   25e6, address(0), 1000 * 1e18, 100);
+        market.placeBetWithPyth(OrderbookMarket.Direction.UP,   25e6, address(0), 1000 * 1e18, 100, pythUpd());
         vm.prank(charlie);
-        market.placeBet(OrderbookMarket.Direction.DOWN, 25e6, address(0), 1000 * 1e18, 100);
+        market.placeBetWithPyth(OrderbookMarket.Direction.DOWN, 25e6, address(0), 1000 * 1e18, 100, pythUpd());
 
         vm.warp(block.timestamp + 15 minutes + 1);
         vm.prank(resolver);
