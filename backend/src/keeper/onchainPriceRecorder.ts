@@ -72,6 +72,30 @@ export async function recordPricesOnChain() {
     console.warn('ORACLE_RESOLVER address missing'); return
   }
 
+  // OracleResolver pays Pyth's update fee out of its own ETH. With a zero
+  // balance every recordPrice reverts — and because gas is pinned at 500k
+  // below (estimation can't be trusted here, see the comment at the call
+  // site), a revert burns the whole 500k rather than a fraction of it. Left
+  // alone that is 500k gas every 30s per feed, indefinitely, buying nothing.
+  // Cheaper to check the balance once per tick than to pay for the failure.
+  try {
+    const resolverBal = await publicClient.getBalance({
+      address: CONTRACTS.ORACLE_RESOLVER as Address,
+    })
+    if (resolverBal === 0n) {
+      console.error(
+        '[onchainPriceRecorder] OracleResolver has 0 ETH — skipping push ' +
+        '(every attempt would revert and burn its full pinned gas limit). ' +
+        'Top it up; oracleWatchdog is already paging on this.',
+      )
+      return
+    }
+  } catch (err) {
+    // Can't read the balance → fall through and attempt the push. A missed
+    // price is worse than one wasted revert.
+    console.error('[onchainPriceRecorder] resolver balance check failed:', err)
+  }
+
   if (!(await shouldUseFastCadence())) {
     // lastPushAt is 0 until the first push of this process, so don't report
     // "idle for 1784992399s" on the startup tick — that's epoch arithmetic,
