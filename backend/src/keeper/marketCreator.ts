@@ -25,7 +25,7 @@ import {
 } from 'viem'
 import { base, baseSepolia } from 'viem/chains'
 import { pg } from '../db/pg.js'
-import { CONTRACTS, MARKET_FACTORY_ABI } from '../config.js'
+import { CONTRACTS, MARKET_FACTORY_ABI, SUPPORTED_FEED_IDS } from '../config.js'
 import { getKeeperWalletClient } from './keeperWallet.js'
 
 const chain = process.env.CHAIN_ID === '8453' ? base : baseSepolia
@@ -87,6 +87,28 @@ export async function createMissingMarkets() {
   }
 
   if (feeds.length === 0) return
+
+  // Only create markets for feeds this deployment can actually price. The
+  // factory's whitelist is multisig-controlled and currently carries 13 feeds
+  // from the Sprint 5 rollout, but the keeper only pushes Pyth prices for the
+  // ones in FEED_IDS. A market on an unpriced feed is worse than no market:
+  // it costs gas every rollover forever, and a bare placeBet against it
+  // reverts once the on-chain price ages past ENTRY_MAX_PRICE_AGE.
+  //
+  // Logged rather than silently dropped — a keeper quietly ignoring most of
+  // the factory's configuration is exactly the kind of thing that should be
+  // visible in the logs, not discovered from a gas bill.
+  const supported = feeds.filter((f) => SUPPORTED_FEED_IDS.has(f.toLowerCase()))
+  const skipped   = feeds.length - supported.length
+  if (skipped > 0) {
+    console.warn(
+      `[marketCreator] skipping ${skipped} factory feed(s) with no price coverage ` +
+      `(creating for ${supported.length}/${feeds.length}). To retire them on-chain, ` +
+      `the multisig must call MarketFactory.removeFeed for each.`,
+    )
+  }
+  if (supported.length === 0) return
+  feeds = supported
 
   const open = await openMarkets()
   const now  = Date.now()
