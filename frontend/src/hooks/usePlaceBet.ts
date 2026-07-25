@@ -21,6 +21,29 @@ import { useEnsureChain } from './useEnsureChain'
 
 export type Direction = 0 | 1  // 0=UP, 1=DOWN
 
+/**
+ * Minimal ABI for quoting Pyth's update fee.
+ *
+ * Sprint 5.6: bets used to attach a flat 0.0001 ETH and rely on the contract
+ * refunding the excess. Refunded or not, the wallet still had to be holding it
+ * at send time — so a user with exactly enough ETH for gas simply could not
+ * bet, and everyone else was asked to park ~$0.19 for no reason. Pyth's actual
+ * fee on Base is 1 wei per update. Now we ask what it costs and send that.
+ */
+const PYTH_FEE_ABI = [{
+  name: 'getUpdateFee', type: 'function', stateMutability: 'view',
+  inputs:  [{ name: 'updateData', type: 'bytes[]' }],
+  outputs: [{ type: 'uint256' }],
+}] as const
+
+const RESOLVER_PYTH_ABI = [{
+  name: 'pyth', type: 'function', stateMutability: 'view',
+  inputs: [], outputs: [{ type: 'address' }],
+}] as const
+
+/** OracleResolver.pyth is immutable, so this is safe to resolve once. */
+let cachedPythAddress: Address | null = null
+
 interface UsePlaceBetArgs {
   marketAddress: Address
   direction:     Direction
@@ -159,12 +182,38 @@ export function usePlaceBet({
         throw new Error('Price feed returned no update — please try again in a moment.')
       }
 
+      // Quote Pyth's fee and send exactly it, rather than parking a buffer in
+      // the user's wallet. On Base this comes back as 1 wei.
+      if (!publicClient) throw new Error('No RPC connection — please retry.')
+      let pythFeeWei: bigint
+      try {
+        if (!cachedPythAddress) {
+          cachedPythAddress = await publicClient.readContract({
+            address: CONTRACTS.ORACLE_RESOLVER,
+            abi: RESOLVER_PYTH_ABI,
+            functionName: 'pyth',
+          }) as Address
+        }
+        pythFeeWei = await publicClient.readContract({
+          address: cachedPythAddress,
+          abi: PYTH_FEE_ABI,
+          functionName: 'getUpdateFee',
+          args: [priceUpdateData],
+        }) as bigint
+      } catch (e: any) {
+        // Deliberately not falling back to a padded value: guessing high is
+        // what this change exists to remove, and guessing low reverts anyway.
+        throw new Error(
+          `Couldn't read the oracle fee (${e?.message ?? 'network error'}). Please try again.`,
+        )
+      }
+
       await placeBet({
         address: marketAddress,
         abi: ORDERBOOK_MARKET_ABI,
         functionName: 'placeBetWithPyth',
         args: [direction, amountWei, referrer, expectedPrice, BigInt(slippageBps), priceUpdateData],
-        value: 100_000_000_000_000n, // 0.0001 ETH buffer; contract refunds the excess
+        value: pythFeeWei,
       })
 
       setStep('confirmed')
@@ -172,7 +221,7 @@ export function usePlaceBet({
       setStep('error')
       setError(err?.shortMessage || err?.message || 'Transaction failed')
     }
-  }, [address, amountWei, allowance, direction, marketAddress, referrer, expectedPrice, slippageBps, marketFeedId, approve, refetchAllowance, placeBet, ensureChain])
+  }, [address, amountWei, allowance, direction, marketAddress, referrer, expectedPrice, slippageBps, marketFeedId, approve, refetchAllowance, placeBet, ensureChain, publicClient])
 
   return {
     execute,

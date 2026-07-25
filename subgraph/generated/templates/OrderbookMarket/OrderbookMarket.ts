@@ -1316,53 +1316,6 @@ export class OrderbookMarket extends ethereum.SmartContract {
     return ethereum.CallResult.fromValue(value[0].toBigInt());
   }
 
-  placeBet(
-    dir: i32,
-    amount: BigInt,
-    referrer: Address,
-    expectedPrice: BigInt,
-    slippageBps: BigInt,
-  ): BigInt {
-    let result = super.call(
-      "placeBet",
-      "placeBet(uint8,uint256,address,uint256,uint256):(uint256)",
-      [
-        ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(dir)),
-        ethereum.Value.fromUnsignedBigInt(amount),
-        ethereum.Value.fromAddress(referrer),
-        ethereum.Value.fromUnsignedBigInt(expectedPrice),
-        ethereum.Value.fromUnsignedBigInt(slippageBps),
-      ],
-    );
-
-    return result[0].toBigInt();
-  }
-
-  try_placeBet(
-    dir: i32,
-    amount: BigInt,
-    referrer: Address,
-    expectedPrice: BigInt,
-    slippageBps: BigInt,
-  ): ethereum.CallResult<BigInt> {
-    let result = super.tryCall(
-      "placeBet",
-      "placeBet(uint8,uint256,address,uint256,uint256):(uint256)",
-      [
-        ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(dir)),
-        ethereum.Value.fromUnsignedBigInt(amount),
-        ethereum.Value.fromAddress(referrer),
-        ethereum.Value.fromUnsignedBigInt(expectedPrice),
-        ethereum.Value.fromUnsignedBigInt(slippageBps),
-      ],
-    );
-    if (result.reverted) {
-      return new ethereum.CallResult();
-    }
-    let value = result.value;
-    return ethereum.CallResult.fromValue(value[0].toBigInt());
-  }
-
   pythFeedId(): Bytes {
     let result = super.call("pythFeedId", "pythFeedId():(bytes32)", []);
 
@@ -1714,56 +1667,6 @@ export class PauseByFactoryCall__Outputs {
 
   constructor(call: PauseByFactoryCall) {
     this._call = call;
-  }
-}
-
-export class PlaceBetCall extends ethereum.Call {
-  get inputs(): PlaceBetCall__Inputs {
-    return new PlaceBetCall__Inputs(this);
-  }
-
-  get outputs(): PlaceBetCall__Outputs {
-    return new PlaceBetCall__Outputs(this);
-  }
-}
-
-export class PlaceBetCall__Inputs {
-  _call: PlaceBetCall;
-
-  constructor(call: PlaceBetCall) {
-    this._call = call;
-  }
-
-  get dir(): i32 {
-    return this._call.inputValues[0].value.toI32();
-  }
-
-  get amount(): BigInt {
-    return this._call.inputValues[1].value.toBigInt();
-  }
-
-  get referrer(): Address {
-    return this._call.inputValues[2].value.toAddress();
-  }
-
-  get expectedPrice(): BigInt {
-    return this._call.inputValues[3].value.toBigInt();
-  }
-
-  get slippageBps(): BigInt {
-    return this._call.inputValues[4].value.toBigInt();
-  }
-}
-
-export class PlaceBetCall__Outputs {
-  _call: PlaceBetCall;
-
-  constructor(call: PlaceBetCall) {
-    this._call = call;
-  }
-
-  get orderId(): BigInt {
-    return this._call.outputValues[0].value.toBigInt();
   }
 }
 

@@ -800,45 +800,6 @@
     },
     {
       "type": "function",
-      "name": "placeBet",
-      "inputs": [
-        {
-          "name": "dir",
-          "type": "uint8",
-          "internalType": "enum OrderbookMarket.Direction"
-        },
-        {
-          "name": "amount",
-          "type": "uint256",
-          "internalType": "uint256"
-        },
-        {
-          "name": "referrer",
-          "type": "address",
-          "internalType": "address"
-        },
-        {
-          "name": "expectedPrice",
-          "type": "uint256",
-          "internalType": "uint256"
-        },
-        {
-          "name": "slippageBps",
-          "type": "uint256",
-          "internalType": "uint256"
-        }
-      ],
-      "outputs": [
-        {
-          "name": "orderId",
-          "type": "uint256",
-          "internalType": "uint256"
-        }
-      ],
-      "stateMutability": "nonpayable"
-    },
-    {
-      "type": "function",
       "name": "placeBetWithPyth",
       "inputs": [
         {
