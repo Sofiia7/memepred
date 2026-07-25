@@ -37,8 +37,11 @@ export const CONTRACTS = {
 export const FEED_IDS: Record<string, string> = {
   PEPE:  '0xd69731a2e74ac1ce884fc3890f7ee324b6deb66147055249568869ed700882e4',
   DOGE:  '0xdcef50dd0a4cd2dcc17e45df1676dcb336a11a61c69df7a0299b0150c672d25c',
-  BRETT: '0x9b5729efe3d68e537cdcb2ca70444dea5f06e1660b562632609757076d0b9448',
-  TOSHI: '0x3450d9fbb8c3cf749578315668e21fabb4cd78dcfda1c1cba698b804bae2db2a',
+  // BRETT and TOSHI are still whitelisted on the factory and can be re-enabled
+  // by uncommenting — no contract change needed, since marketCreator derives
+  // its scope from this map.
+  // BRETT: '0x9b5729efe3d68e537cdcb2ca70444dea5f06e1660b562632609757076d0b9448',
+  // TOSHI: '0x3450d9fbb8c3cf749578315668e21fabb4cd78dcfda1c1cba698b804bae2db2a',
 }
 
 /** Lowercased feed ids from FEED_IDS, for O(1) membership checks. */
