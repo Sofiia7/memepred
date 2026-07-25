@@ -14,6 +14,7 @@ import { keeperHealthRoutes } from './routes/keeperHealth.js'
 import { pg }                from './db/pg.js'
 import { runMigrations }     from './db/migrate.js'
 import { redis }             from './db/redis.js'
+import { markUserActivity }  from './lib/activity.js'
 import { PORT }              from './config.js'
 
 const app = Fastify({ logger: true })
@@ -32,6 +33,27 @@ await app.register(cors, { origin: corsOrigins })
 await app.register(rateLimit, {
   max: 100,
   timeWindow: '1 minute'
+})
+
+// ── USER-PRESENCE SIGNAL ───────────────────────────────────
+// Stamps "a human is here" so the keeper can drop its on-chain Pyth push
+// from every 30s to a slow heartbeat while nobody is around (see
+// lib/activity.ts and keeper/onchainPriceRecorder.ts).
+//
+// Registered before the routes so it covers all of them. Health and
+// monitoring endpoints are excluded deliberately: an uptime checker polling
+// /health would otherwise keep the product permanently "busy" and quietly
+// undo the entire saving.
+const PRESENCE_IGNORED = new Set([
+  '/health',
+  '/api/keeper/health',
+  '/api/geo',
+  '/api/geo/config',
+])
+app.addHook('onRequest', async (req) => {
+  if (req.method === 'OPTIONS') return
+  if (PRESENCE_IGNORED.has(req.url.split('?')[0])) return
+  await markUserActivity()
 })
 
 await app.register(marketsRoutes,     { prefix: '/api/markets' })

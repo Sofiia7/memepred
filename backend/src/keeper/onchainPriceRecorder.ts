@@ -3,8 +3,61 @@ import { base, baseSepolia } from 'viem/chains'
 const chain = process.env.CHAIN_ID === '8453' ? base : baseSepolia
 import { FEED_IDS, PYTH_HERMES, ORACLE_RESOLVER_ABI, CONTRACTS } from '../config.js'
 import { getKeeperWalletClient } from './keeperWallet.js'
+import { lastUserActivityMs } from '../lib/activity.js'
+import { pg } from '../db/pg.js'
 
 const publicClient = createPublicClient({ chain, transport: http(process.env.BASE_RPC_URL) })
+
+// ── IDLE BACKOFF (Sprint 5.6) ───────────────────────────────
+// This loop is called every 30s by the keeper so that a bare `placeBet` always
+// finds an on-chain price younger than OrderbookMarket.ENTRY_MAX_PRICE_AGE
+// (45s). At two feeds that is 5,760 transactions a day, paid identically
+// whether anyone is using the product or not — with no users it was the
+// single largest ongoing cost after market creation.
+//
+// So: keep the 30s cadence whenever a human is around, and drop to a slow
+// heartbeat when nobody is. Safety of the cold-start case is covered in
+// lib/activity.ts — in short, loading the app re-arms the fast cadence within
+// one tick, and the frontend's primary bet path (`placeBetWithPyth`) carries
+// its own fresh Pyth update and never depends on this loop at all.
+//
+// The heartbeat is not optional: oracleWatchdog treats a feed that stops
+// updating as a fault, and a market that sits unpriced for hours is not a
+// state worth being in even when idle.
+const IDLE_INTERVAL_MS = Number(process.env.PRICE_IDLE_INTERVAL_MS ?? String(5 * 60_000))
+const ACTIVITY_WINDOW_MS = Number(process.env.PRICE_ACTIVITY_WINDOW_MS ?? String(15 * 60_000))
+
+let lastPushAt = 0
+
+/**
+ * True when the fast cadence is worth paying for: either a user hit the API
+ * recently, or there is real money on the books. The second check is what
+ * makes this safe if Redis is unavailable — an open PENDING order means
+ * someone may be about to be matched, and settlement paths must not be
+ * starved of prices because a cache was down.
+ */
+async function shouldUseFastCadence(): Promise<boolean> {
+  const last = await lastUserActivityMs()
+  if (last !== null && Date.now() - last < ACTIVITY_WINDOW_MS) return true
+
+  try {
+    const r = await pg.query(
+      `SELECT 1 FROM orders
+        WHERE status IN ('PENDING', 'MATCHED')
+           OR placed_at > NOW() - make_interval(secs => $1)
+        LIMIT 1`,
+      [Math.round(ACTIVITY_WINDOW_MS / 1000)],
+    )
+    if ((r.rowCount ?? 0) > 0) return true
+  } catch (err) {
+    // Can't tell → assume active. Overpaying for gas is a far cheaper
+    // failure than a stale oracle blocking bets or settlement.
+    console.error('[onchainPriceRecorder] activity check failed, staying hot:', err)
+    return true
+  }
+
+  return false
+}
 
 /**
  * Fetch Pyth Hermes price updates and submit them on-chain to OracleResolver.
@@ -18,6 +71,13 @@ export async function recordPricesOnChain() {
   if (!CONTRACTS.ORACLE_RESOLVER || CONTRACTS.ORACLE_RESOLVER === '0x') {
     console.warn('ORACLE_RESOLVER address missing'); return
   }
+
+  if (!(await shouldUseFastCadence())) {
+    const sinceLast = Date.now() - lastPushAt
+    if (sinceLast < IDLE_INTERVAL_MS) return
+    console.log(`[onchainPriceRecorder] idle — heartbeat push after ${Math.round(sinceLast / 1000)}s`)
+  }
+  lastPushAt = Date.now()
 
   for (const [symbol, feedId] of Object.entries(FEED_IDS)) {
     try {
