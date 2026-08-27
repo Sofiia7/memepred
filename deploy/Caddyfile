@@ -26,8 +26,16 @@
         header_up X-Forwarded-For {remote_host}
     }
 
+    # Caddy's json access log records every request header. It redacts Cookie
+    # and Authorization on its own, but X-Worker-Secret is ours, so the
+    # geo-block Worker's shared secret was being written to disk in cleartext
+    # on every single request. Drop it from the log rather than turning the
+    # access log off — the log itself is useful.
     log {
         output stdout
-        format json
+        format filter {
+            wrap json
+            request>headers>X-Worker-Secret delete
+        }
     }
 }

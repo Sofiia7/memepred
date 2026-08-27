@@ -15,6 +15,7 @@ import { pg }                from './db/pg.js'
 import { runMigrations }     from './db/migrate.js'
 import { redis }             from './db/redis.js'
 import { markUserActivity }  from './lib/activity.js'
+import { makeClientKey }     from './lib/clientKey.js'
 import { PORT }              from './config.js'
 
 const app = Fastify({ logger: true })
@@ -30,9 +31,13 @@ const corsOrigins = allowedOrigins.length > 0 ? allowedOrigins : DEFAULT_ORIGINS
 
 await app.register(cors, { origin: corsOrigins })
 
+// keyGenerator, not the default req.ip — see lib/clientKey.ts. Without it the
+// whole API shares a single 100/min budget, because behind Caddy every request
+// presents the same peer address.
 await app.register(rateLimit, {
   max: 100,
-  timeWindow: '1 minute'
+  timeWindow: '1 minute',
+  keyGenerator: makeClientKey(process.env.WORKER_SECRET),
 })
 
 // ── USER-PRESENCE SIGNAL ───────────────────────────────────
