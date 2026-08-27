@@ -1,0 +1,12 @@
+{
+  "name": "flipthememe-contracts",
+  "private": true,
+  "description": "Solidity dependencies that ship only via npm. RedStone's consumer contracts are excluded from their public GitHub monorepo, so forge install cannot reach them; they are declared here and reached through a foundry remapping instead of being copied into src/. Versions are pinned exactly, not caret-ranged: PrimaryProdDataServiceConsumerBase hardcodes the five authorised signer addresses every price in this protocol is trusted against, and package-lock.json is gitignored repo-wide, so the pin is the only thing standing between us and a silent change to that set.",
+  "dependencies": {
+    "@redstone-finance/evm-connector": "0.9.0",
+    "@redstone-finance/protocol": "0.9.0"
+  },
+  "scripts": {
+    "gen-fixture": "node scripts/gen-redstone-fixture.mjs"
+  }
+}

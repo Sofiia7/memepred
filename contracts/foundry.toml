@@ -8,7 +8,11 @@ optimizer_runs = 200
 # via_ir disabled due to Yul stack-too-deep with OZ ERC1155
 
 remappings = [
-    "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/"
+    "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
+    # RedStone ships its consumer contracts only on npm - they are excluded from
+    # their public GitHub monorepo, so forge install cannot reach them. Declared
+    # in package.json and remapped here rather than copied into src/.
+    "@redstone-finance/evm-connector/=node_modules/@redstone-finance/evm-connector/"
 ]
 
 [profile.default.fuzz]
