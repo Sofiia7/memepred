@@ -10,20 +10,15 @@ import "../src/ReferralRegistry.sol";
 import "../src/GenesisNFT.sol";
 import "../src/OrderbookMarket.sol";
 import "./mocks/MockUSDC.sol";
-import "./mocks/MockPyth.sol";
+import "./helpers/RedstoneTest.sol";
+import "./helpers/RedstoneHarness.sol";
 
-contract MockResolver {
-    address public pyth;
-    constructor(address _pyth) { pyth = _pyth; }
-}
-
-contract MarketFactoryTest is Test {
+contract MarketFactoryTest is RedstoneTest {
     MockUSDC      usdc;
-    MockPyth      pyth;
     address       resolver;
     GenesisNFT    genesisNFT;
     LiquidityPool pool;
-    MarketFactory factory;
+    MarketFactoryHarness factory;
 
     address treasury = makeAddr("treasury");
     address multisig = makeAddr("multisig");
@@ -34,10 +29,9 @@ contract MarketFactoryTest is Test {
 
     function setUp() public {
         usdc       = new MockUSDC();
-        pyth       = new MockPyth();
-        resolver   = address(new MockResolver(address(pyth)));
-        pyth.setPrice(FEED_PEPE, 1000, 0);
-        pyth.setPrice(FEED_DOGE, 2000, 0);
+        resolver   = makeAddr("resolver");
+        _setPrice(FEED_PEPE, 1000e8);
+        _setPrice(FEED_DOGE, 2000e8);
 
         genesisNFT = new GenesisNFT("ipfs://test/");
         pool       = new LiquidityPool(IERC20(address(usdc)), address(genesisNFT));
@@ -47,7 +41,7 @@ contract MarketFactoryTest is Test {
         FeeDistributor   feeDist   = new FeeDistributor(address(usdc), treasury, treasury, treasury);
         ReferralRegistry refReg    = new ReferralRegistry();
 
-        factory = new MarketFactory(
+        factory = new MarketFactoryHarness(
             address(usdc),
             resolver,
             address(feeDist),

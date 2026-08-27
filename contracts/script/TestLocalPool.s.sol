@@ -7,15 +7,6 @@ import "../src/OrderbookMarket.sol";
 import "../src/LiquidityPool.sol";
 import "../src/GenesisNFT.sol";
 import "../test/mocks/MockUSDC.sol";
-import "../test/mocks/MockPyth.sol";
-import "../test/mocks/PythUpd.sol";
-
-contract MockResolver {
-    address public pyth;
-    constructor(address _pyth) {
-        pyth = _pyth;
-    }
-}
 
 contract TestLocalPool is Script {
     function run() external {
@@ -25,9 +16,9 @@ contract TestLocalPool is Script {
         vm.startBroadcast(deployerKey);
 
         MockUSDC usdc = new MockUSDC();
-        MockPyth pyth = new MockPyth();
-        MockResolver resolver = new MockResolver(address(pyth));
-        pyth.setPrice(bytes32("PEPE/USD"), 1000, 0);
+        // Just an address allowed to settle: the oracle is no longer reached
+        // through the resolver.
+        address resolver = vm.addr(0xBEEF);
 
         GenesisNFT genesisNFT = new GenesisNFT("ipfs://genesis/");
         LiquidityPool pool = new LiquidityPool(IERC20(address(usdc)), address(genesisNFT));
@@ -60,14 +51,27 @@ contract TestLocalPool is Script {
 
         usdc.approve(address(market), type(uint256).max);
         console.log("Placing bet against LP...");
-        uint256 orderId = market.placeBetWithPyth(
-            OrderbookMarket.Direction.UP,
-            100e6,
-            address(0),
-            1000 * 1e18,
-            100,
-            pythUpd()
-        );
+        // The strike rides on the calldata as a signed RedStone payload, so the
+        // bet cannot go through a normal typed call - forge has no way to
+        // append bytes to one. Fetch a live payload first and pass it in:
+        //
+        //   REDSTONE_PAYLOAD=$(node scripts/print-redstone-payload.mjs PEPE)         //     forge script script/TestLocalPool.s.sol --broadcast
+        bytes memory payload = vm.envBytes("REDSTONE_PAYLOAD");
+        require(payload.length > 0, "REDSTONE_PAYLOAD not set - see comment above");
+
+        (bool ok, bytes memory ret) = address(market).call(bytes.concat(
+            abi.encodeWithSelector(
+                OrderbookMarket.placeBet.selector,
+                OrderbookMarket.Direction.UP,
+                uint256(100e6),
+                address(0),
+                uint256(1000 * 1e18),
+                uint256(100)
+            ),
+            payload
+        ));
+        require(ok, "placeBet reverted - is the payload fresh? the entry window is 20s");
+        uint256 orderId = abi.decode(ret, (uint256));
 
         OrderbookMarket.Order memory o = market.getOrder(orderId);
         console.log("Order matched? ", uint(o.status) == uint(OrderbookMarket.OrderStatus.MATCHED));

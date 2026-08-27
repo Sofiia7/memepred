@@ -15,6 +15,7 @@ pragma solidity ^0.8.24;
 import "forge-std/Test.sol";
 import "@redstone-finance/evm-connector/contracts/mocks/RedstoneConsumerNumericMock.sol";
 import "./helpers/RedstonePayloadBuilder.sol";
+import "./helpers/RedstoneHarness.sol";
 import "./RedstoneFixture.sol";
 
 /// Mirrors production's 3-of-5 threshold; RedStone's mock defaults to 10.

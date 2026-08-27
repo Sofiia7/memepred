@@ -19,20 +19,15 @@ import "../src/ReferralRegistry.sol";
 import "../src/GenesisNFT.sol";
 import "../src/OrderbookMarket.sol";
 import "./mocks/MockUSDC.sol";
-import "./mocks/MockPyth.sol";
+import "./helpers/RedstoneTest.sol";
+import "./helpers/RedstoneHarness.sol";
 
-contract MockResolver {
-    address public pyth;
-    constructor(address _pyth) { pyth = _pyth; }
-}
-
-contract LaunchBlockersTest is Test {
+contract LaunchBlockersTest is RedstoneTest {
     MockUSDC      usdc;
-    MockPyth      pyth;
     address       resolver;
     GenesisNFT    genesisNFT;
     LiquidityPool pool;
-    MarketFactory factory;
+    MarketFactoryHarness factory;
 
     address treasury  = makeAddr("treasury");
     address multisig  = makeAddr("multisig-standin");
@@ -46,10 +41,9 @@ contract LaunchBlockersTest is Test {
 
     function setUp() public {
         usdc       = new MockUSDC();
-        pyth       = new MockPyth();
-        resolver   = address(new MockResolver(address(pyth)));
-        pyth.setPrice(FEED_PEPE, 1000, 0);
-        pyth.setPrice(FEED_DOGE, 2000, 0);
+        resolver   = makeAddr("resolver");
+        _setPrice(FEED_PEPE, 1000e8);
+        _setPrice(FEED_DOGE, 2000e8);
 
         genesisNFT = new GenesisNFT("ipfs://test/");
         pool       = new LiquidityPool(IERC20(address(usdc)), address(genesisNFT));
@@ -58,7 +52,7 @@ contract LaunchBlockersTest is Test {
         FeeDistributor   feeDist = new FeeDistributor(address(usdc), treasury, treasury, treasury);
         ReferralRegistry refReg  = new ReferralRegistry();
 
-        factory = new MarketFactory(
+        factory = new MarketFactoryHarness(
             address(usdc), resolver, address(feeDist), address(refReg), multisig, address(pool)
         );
 
@@ -277,7 +271,7 @@ contract LaunchBlockersTest is Test {
     // A market deployed directly, bypassing the factory, is not ours: it can
     // set its own rules and then draw on pooled funds.
     function test_Pool_RefusesAMarketTheFactoryDidNotMake() public {
-        OrderbookMarket rogue = new OrderbookMarket(
+        OrderbookMarket rogue = new OrderbookMarketHarness(
             address(usdc), resolver, address(pool), treasury, treasury,
             attacker, FEED_PEPE, DUR
         );

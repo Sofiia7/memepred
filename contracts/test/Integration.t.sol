@@ -10,27 +10,21 @@ import "../src/MarketFactory.sol";
 import "../src/FeeDistributor.sol";
 import "../src/ReferralRegistry.sol";
 import "./mocks/MockUSDC.sol";
-import "./mocks/PythUpd.sol";
-import "./mocks/MockPyth.sol";
-
-contract MockResolver {
-    address public pyth;
-    constructor(address _pyth) { pyth = _pyth; }
-}
+import "./helpers/RedstoneTest.sol";
+import "./helpers/RedstoneHarness.sol";
 
 /// @notice End-to-end wiring tests covering B2/B3/B4/B5 integrations:
 ///         - MarketFactory.createMarket authorizes market on LP, FeeDistributor, ReferralRegistry.
 ///         - OrderbookMarket.placeBet registers referral via the registry.
 ///         - OrderbookMarket._settleOrder pushes fee through FeeDistributor split.
-contract IntegrationTest is Test {
+contract IntegrationTest is RedstoneTest {
     MockUSDC         usdc;
-    MockPyth         pyth;
     address          resolver;
     GenesisNFT       genesisNFT;
     LiquidityPool    pool;
     FeeDistributor   feeDist;
     ReferralRegistry refReg;
-    MarketFactory    factory;
+    MarketFactoryHarness factory;
     OrderbookMarket  market;
 
     address treasury = makeAddr("treasury");
@@ -42,9 +36,8 @@ contract IntegrationTest is Test {
 
     function setUp() public {
         usdc     = new MockUSDC();
-        pyth     = new MockPyth();
-        resolver = address(new MockResolver(address(pyth)));
-        pyth.setPrice(FEED, 1000, 0);
+        resolver = makeAddr("resolver");
+        _setPrice(FEED, 1000e8);
 
         genesisNFT = new GenesisNFT("ipfs://test/");
         pool       = new LiquidityPool(IERC20(address(usdc)), address(genesisNFT));
@@ -53,7 +46,7 @@ contract IntegrationTest is Test {
         feeDist = new FeeDistributor(address(usdc), treasury, lpSink, nftPool);
         refReg  = new ReferralRegistry();
 
-        factory = new MarketFactory(
+        factory = new MarketFactoryHarness(
             address(usdc),
             resolver,
             address(feeDist),
@@ -82,7 +75,7 @@ contract IntegrationTest is Test {
         // The 48h timelock warp above staled the oracle price set earlier
         // in this function — refresh it so every test starts with a fresh
         // price baseline regardless of the timelock simulation.
-        pyth.setPrice(FEED, 1000, 0);
+        _setPrice(FEED, 1000e8);
     }
 
     // ── B2/B5: createMarket authorizes everywhere ────────
@@ -99,8 +92,7 @@ contract IntegrationTest is Test {
 
         usdc.mint(alice, 100e6);
         vm.prank(alice); usdc.approve(address(market), type(uint256).max);
-        vm.prank(alice);
-        market.placeBetWithPyth(OrderbookMarket.Direction.UP, 25e6, bob, 1000 * 1e18, 100, pythUpd());
+        _bet(market, alice, OrderbookMarket.Direction.UP, 25e6, bob, 1000 * 1e18, 100);
 
         assertEq(refReg.referrerOf(alice), bob, "referral recorded on first bet");
     }
@@ -112,12 +104,10 @@ contract IntegrationTest is Test {
 
         usdc.mint(alice, 100e6);
         vm.prank(alice); usdc.approve(address(market), type(uint256).max);
-        vm.prank(alice);
-        market.placeBetWithPyth(OrderbookMarket.Direction.UP, 25e6, bob, 1000 * 1e18, 100, pythUpd());
+        _bet(market, alice, OrderbookMarket.Direction.UP, 25e6, bob, 1000 * 1e18, 100);
 
         // Second bet attempts a different referrer — registry must keep the first.
-        vm.prank(alice);
-        market.placeBetWithPyth(OrderbookMarket.Direction.UP, 25e6, eve, 1000 * 1e18, 100, pythUpd());
+        _bet(market, alice, OrderbookMarket.Direction.UP, 25e6, eve, 1000 * 1e18, 100);
 
         assertEq(refReg.referrerOf(alice), bob, "first referrer wins");
     }
@@ -127,8 +117,7 @@ contract IntegrationTest is Test {
 
         usdc.mint(alice, 100e6);
         vm.prank(alice); usdc.approve(address(market), type(uint256).max);
-        vm.prank(alice);
-        market.placeBetWithPyth(OrderbookMarket.Direction.UP, 25e6, address(0), 1000 * 1e18, 100, pythUpd());
+        _bet(market, alice, OrderbookMarket.Direction.UP, 25e6, address(0), 1000 * 1e18, 100);
 
         assertEq(refReg.referrerOf(alice), address(0));
     }
@@ -146,8 +135,7 @@ contract IntegrationTest is Test {
         address bob   = makeAddr("bob");
         usdc.mint(alice, 100e6);
         vm.prank(alice); usdc.approve(address(market), type(uint256).max);
-        vm.prank(alice);
-        market.placeBetWithPyth(OrderbookMarket.Direction.UP, 25e6, bob, 1000 * 1e18, 100, pythUpd());
+        _bet(market, alice, OrderbookMarket.Direction.UP, 25e6, bob, 1000 * 1e18, 100);
 
         // UP wins → user wins → settle pushes fee.
         vm.warp(block.timestamp + 15 minutes + 1);
@@ -174,10 +162,8 @@ contract IntegrationTest is Test {
         vm.prank(charlie); usdc.approve(address(market), type(uint256).max);
 
         // PvP match: Alice UP, Charlie DOWN, no referrer.
-        vm.prank(alice);
-        market.placeBetWithPyth(OrderbookMarket.Direction.UP,   25e6, address(0), 1000 * 1e18, 100, pythUpd());
-        vm.prank(charlie);
-        market.placeBetWithPyth(OrderbookMarket.Direction.DOWN, 25e6, address(0), 1000 * 1e18, 100, pythUpd());
+        _bet(market, alice, OrderbookMarket.Direction.UP, 25e6, address(0), 1000 * 1e18, 100);
+        _bet(market, charlie, OrderbookMarket.Direction.DOWN, 25e6, address(0), 1000 * 1e18, 100);
 
         vm.warp(block.timestamp + 15 minutes + 1);
         vm.prank(resolver);

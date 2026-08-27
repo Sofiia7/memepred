@@ -22,7 +22,10 @@ import "../src/BadgeNFT.sol";
 ///         the deployed addresses to assert the handoff was clean.
 contract Deploy is Script {
     address constant DEFAULT_USDC = 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913;
-    address constant DEFAULT_PYTH = 0x8250f4aF4B972684F7b336503E2D6dFeDeB1487a;
+    // No oracle address to configure any more. RedStone verifies its own
+    // signatures inside OracleResolver and OrderbookMarket against signers
+    // hardcoded in the consumer base, so there is no oracle contract to point
+    // at, nothing to whitelist per chain, and nothing to keep funded.
 
     bytes32 constant FEED_PEPE = 0xd69731a2e74ac1ce884fc3890f7ee324b6deb66147055249568869ed700882e4;
     bytes32 constant FEED_DOGE = 0xdcef50dd0a4cd2dcc17e45df1676dcb336a11a61c69df7a0299b0150c672d25c;
@@ -58,7 +61,6 @@ contract Deploy is Script {
         address keeper;
         address badgeMinter;
         address USDC;
-        address PYTH;
     }
 
     function _loadEnv() internal view returns (Env memory e) {
@@ -71,11 +73,9 @@ contract Deploy is Script {
         e.keeper      = vm.envAddress("KEEPER_ADDRESS");
         e.badgeMinter = vm.envAddress("BADGE_MINTER_ADDRESS");
         e.USDC        = _envOr("USDC_ADDRESS", DEFAULT_USDC);
-        e.PYTH        = _envOr("PYTH_ADDRESS", DEFAULT_PYTH);
         require(e.multisig != address(0),       "MULTISIG_ADDRESS not set");
         require(e.multisig != e.deployer,       "multisig must differ from deployer");
         require(e.USDC.code.length > 0,         "USDC has no code on this chain");
-        require(e.PYTH.code.length > 0,         "PYTH has no code on this chain");
     }
 
     function run() external {
@@ -89,7 +89,7 @@ contract Deploy is Script {
         // ── 1. Deploy ────────────────────────────────────────
         FeeDistributor   feeDistrib    = new FeeDistributor(e.USDC, e.treasury, e.lpFeeSink, e.nftRewards);
         ReferralRegistry referralReg   = new ReferralRegistry();
-        OracleResolver   oracleResolver = new OracleResolver(e.PYTH);
+        OracleResolver   oracleResolver = new OracleResolver();
         GenesisNFT       genesisNFT    = new GenesisNFT("ipfs://bafybeiez6a6hshxe22lkwhvbpjuiiw5ml4gup3sb2spc6nufiflrxbmcjm/");
         LiquidityPool    liquidityPool = new LiquidityPool(IERC20(e.USDC), address(genesisNFT));
         MarketFactory    factory       = new MarketFactory(

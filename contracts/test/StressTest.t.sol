@@ -10,27 +10,21 @@ import "../src/MarketFactory.sol";
 import "../src/FeeDistributor.sol";
 import "../src/ReferralRegistry.sol";
 import "./mocks/MockUSDC.sol";
-import "./mocks/PythUpd.sol";
-import "./mocks/MockPyth.sol";
-
-contract MockResolver {
-    address public pyth;
-    constructor(address _pyth) { pyth = _pyth; }
-}
+import "./helpers/RedstoneTest.sol";
+import "./helpers/RedstoneHarness.sol";
 
 /// @notice End-to-end stress run: 30 traders + 5 LPs running ~500 PvP matches,
 ///         100 LP-fallback matches, 50 emergency-refunds. Asserts the global
 ///         conservation invariant after every operation:
 ///             sum(USDC in market+pool+claimed) == sum(USDC ever in)
-contract StressTest is Test {
+contract StressTest is RedstoneTest {
     OrderbookMarket  market;
     LiquidityPool    pool;
     GenesisNFT       genesisNFT;
     FeeDistributor   feeDist;
     ReferralRegistry refReg;
-    MarketFactory    factory;
+    MarketFactoryHarness factory;
     MockUSDC         usdc;
-    MockPyth         pyth;
 
     address resolver;
     address treasury = makeAddr("treasury");
@@ -49,9 +43,8 @@ contract StressTest is Test {
     uint256 totalUsdcOut;    // every transferOut from the system
 
     function setUp() public {
-        pyth     = new MockPyth();
-        resolver = address(new MockResolver(address(pyth)));
-        pyth.setPrice(FEED, 914200, -8);
+        resolver = makeAddr("resolver");
+        _setPrice(FEED, 914200);
 
         usdc       = new MockUSDC();
         genesisNFT = new GenesisNFT("ipfs://stress/");
@@ -61,7 +54,7 @@ contract StressTest is Test {
         feeDist = new FeeDistributor(address(usdc), treasury, lpSink, nftPool);
         refReg  = new ReferralRegistry();
 
-        factory = new MarketFactory(
+        factory = new MarketFactoryHarness(
             address(usdc), resolver, address(feeDist),
             address(refReg), multisig, address(pool)
         );
@@ -134,7 +127,7 @@ contract StressTest is Test {
             vm.warp(block.timestamp + 1);
 
             // Always set a fresh price so MAX_PRICE_AGE never trips.
-            pyth.setPrice(FEED, 914200, -8);
+            _setPrice(FEED, 914200);
 
             address up   = traders[round % traders.length];
             address down = traders[(round * 7 + 3) % traders.length];
@@ -142,24 +135,21 @@ contract StressTest is Test {
 
             uint256 betAmount = 1e6 + ((round % 50) * 1e6); // 1-50 USDC
 
-            vm.prank(up);
-            try market.placeBetWithPyth(
-                OrderbookMarket.Direction.UP, betAmount, address(0), ENTRY_PRICE, 100, pythUpd()
-            ) {} catch { continue; }
+            (bool upOk,) = _tryBet(
+                market, up, OrderbookMarket.Direction.UP, betAmount, address(0), ENTRY_PRICE, 100);
+            if (!upOk) continue;
 
-            vm.prank(down);
-            try market.placeBetWithPyth(
-                OrderbookMarket.Direction.DOWN, betAmount, address(0), ENTRY_PRICE, 100, pythUpd()
-            ) {
-                pvpMatches++;
-            } catch { continue; }
+            (bool downOk,) = _tryBet(
+                market, down, OrderbookMarket.Direction.DOWN, betAmount, address(0), ENTRY_PRICE, 100);
+            if (!downOk) continue;
+            pvpMatches++;
 
             // Settle. Alternate winner direction for realistic mix.
             vm.warp(block.timestamp + DURATION + 1);
             uint256 exitPrice = (round % 2 == 0)
                 ? ENTRY_PRICE + (ENTRY_PRICE / 100)   // UP wins
                 : ENTRY_PRICE - (ENTRY_PRICE / 100);  // DOWN wins
-            pyth.setPrice(FEED, 914200, -8); // keep oracle fresh
+            _setPrice(FEED, 914200); // keep oracle fresh
             uint256 matchIdToSettle = market.nextMatchId() - 1;
             vm.prank(resolver);
             market.settleMatch(matchIdToSettle, exitPrice);
@@ -176,39 +166,36 @@ contract StressTest is Test {
         // ── LP fallback matches: solo UP (no DOWN) → pool matches.
         for (uint256 i = 0; i < 100; i++) {
             vm.warp(block.timestamp + 1);
-            pyth.setPrice(FEED, 914200, -8);
+            _setPrice(FEED, 914200);
             address t = traders[(i * 11) % traders.length];
-            vm.prank(t);
-            try market.placeBetWithPyth(
-                OrderbookMarket.Direction.UP, 5e6, address(0), ENTRY_PRICE, 100, pythUpd()
-            ) {
+            (bool betOk,) = _tryBet(
+                market, t, OrderbookMarket.Direction.UP, 5e6, address(0), ENTRY_PRICE, 100);
+            if (betOk) {
                 lpMatches++;
                 vm.warp(block.timestamp + DURATION + 1);
-                pyth.setPrice(FEED, 914200, -8);
+                _setPrice(FEED, 914200);
                 uint256 mid = market.nextMatchId() - 1;
                 vm.prank(resolver);
                 try market.settleMatch(mid, ENTRY_PRICE + 5) {} catch {}
                 uint256 oid = market.nextOrderId() - 1;
                 vm.prank(t); try market.claim(oid) {} catch {}
-            } catch {}
+            }
         }
 
         // ── Emergency refunds: 50 matched-then-abandoned cases.
         for (uint256 i = 0; i < 50; i++) {
             vm.warp(block.timestamp + 1);
-            pyth.setPrice(FEED, 914200, -8);
+            _setPrice(FEED, 914200);
             address up   = traders[(i * 13) % traders.length];
             address down = traders[(i * 17 + 5) % traders.length];
             if (up == down) continue;
 
-            vm.prank(up);
-            try market.placeBetWithPyth(
-                OrderbookMarket.Direction.UP, 3e6, address(0), ENTRY_PRICE, 100, pythUpd()
-            ) {} catch { continue; }
-            vm.prank(down);
-            try market.placeBetWithPyth(
-                OrderbookMarket.Direction.DOWN, 3e6, address(0), ENTRY_PRICE, 100, pythUpd()
-            ) {} catch { continue; }
+            (bool upOk2,) = _tryBet(
+                market, up, OrderbookMarket.Direction.UP, 3e6, address(0), ENTRY_PRICE, 100);
+            if (!upOk2) continue;
+            (bool downOk2,) = _tryBet(
+                market, down, OrderbookMarket.Direction.DOWN, 3e6, address(0), ENTRY_PRICE, 100);
+            if (!downOk2) continue;
 
             // Abandon: skip settle, jump past grace.
             uint256 grace = market.SETTLE_GRACE();

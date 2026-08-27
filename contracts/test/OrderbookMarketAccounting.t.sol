@@ -8,12 +8,13 @@ import "../src/LiquidityPool.sol";
 import "../src/GenesisNFT.sol";
 import "./mocks/MockUSDC.sol";
 import "./mocks/MockMarketRegistry.sol";
-import "./mocks/PythUpd.sol";
-import "./mocks/MockPyth.sol";
+import "./helpers/RedstoneTest.sol";
+import "./helpers/RedstoneHarness.sol";
 
+/// Forwards settlement so the market sees a contract as its resolver, which is
+/// all the resolver address is used for now that the oracle is not reached
+/// through it.
 contract MockResolverA {
-    address public pyth;
-    constructor(address _pyth) { pyth = _pyth; }
     function settleMatch(address market, uint256 matchId, uint256 exitPrice) external {
         OrderbookMarket(market).settleMatch(matchId, exitPrice);
     }
@@ -36,12 +37,11 @@ contract MockResolverA {
 ///         INV-3 (LP partial match)
 ///           When LP can only cover X of Y requested, the market match record
 ///           reflects X, NOT Y. The (Y - X) portion is queued and refundable.
-contract OrderbookMarketAccountingTest is Test {
+contract OrderbookMarketAccountingTest is RedstoneTest {
     OrderbookMarket market;
     LiquidityPool   pool;
     GenesisNFT      genesisNFT;
     MockUSDC        usdc;
-    MockPyth        pyth;
     MockResolverA   resolver;
 
     address feeDistrib = makeAddr("feeDistrib");
@@ -56,16 +56,15 @@ contract OrderbookMarketAccountingTest is Test {
     uint256 constant ENTRY_PRICE = 9142e10;
 
     function setUp() public {
-        pyth     = new MockPyth();
-        resolver = new MockResolverA(address(pyth));
-        pyth.setPrice(FEED, 9142, -8);
+        resolver = new MockResolverA();
+        _setPrice(FEED, 9142);
 
         usdc       = new MockUSDC();
         genesisNFT = new GenesisNFT("ipfs://test/");
         pool       = new LiquidityPool(IERC20(address(usdc)), address(genesisNFT));
         genesisNFT.setLiquidityPool(address(pool));
 
-        market = new OrderbookMarket(
+        market = new OrderbookMarketHarness(
             address(usdc),
             address(resolver),
             address(pool),
@@ -101,8 +100,8 @@ contract OrderbookMarketAccountingTest is Test {
     ///         No USDC silently stuck.
     function test_PartialMatch_RemainderQueued() public {
         // Bob first, so Alice's bigger order matches against him.
-        vm.prank(bob);   uint256 bobId   = market.placeBetWithPyth(OrderbookMarket.Direction.DOWN, 30e6, address(0), ENTRY_PRICE, 100, pythUpd());
-        vm.prank(alice); uint256 aliceId = market.placeBetWithPyth(OrderbookMarket.Direction.UP,   50e6, address(0), ENTRY_PRICE, 100, pythUpd());
+        uint256 bobId   = _bet(market, bob, OrderbookMarket.Direction.DOWN, 30e6, address(0), ENTRY_PRICE, 100);
+        uint256 aliceId = _bet(market, alice, OrderbookMarket.Direction.UP, 50e6, address(0), ENTRY_PRICE, 100);
 
         OrderbookMarket.Order memory ao = market.getOrder(aliceId);
         OrderbookMarket.Order memory bo = market.getOrder(bobId);
@@ -124,9 +123,9 @@ contract OrderbookMarketAccountingTest is Test {
     /// @notice Bigger-side remainder is later matched by a 2nd counterparty —
     ///         end state: Alice 50 fully filled across 2 matches, no leftover.
     function test_PartialMatch_RemainderMatchedByLater() public {
-        vm.prank(bob);   market.placeBetWithPyth(OrderbookMarket.Direction.DOWN, 30e6, address(0), ENTRY_PRICE, 100, pythUpd());
-        vm.prank(alice); uint256 aliceId = market.placeBetWithPyth(OrderbookMarket.Direction.UP,   50e6, address(0), ENTRY_PRICE, 100, pythUpd());
-        vm.prank(carol); market.placeBetWithPyth(OrderbookMarket.Direction.DOWN, 20e6, address(0), ENTRY_PRICE, 100, pythUpd());
+        _bet(market, bob, OrderbookMarket.Direction.DOWN, 30e6, address(0), ENTRY_PRICE, 100);
+        uint256 aliceId = _bet(market, alice, OrderbookMarket.Direction.UP, 50e6, address(0), ENTRY_PRICE, 100);
+        _bet(market, carol, OrderbookMarket.Direction.DOWN, 20e6, address(0), ENTRY_PRICE, 100);
 
         OrderbookMarket.Order memory ao = market.getOrder(aliceId);
         assertEq(ao.filledAmount,       50e6, "Alice fully filled");
@@ -144,9 +143,9 @@ contract OrderbookMarketAccountingTest is Test {
         uint256 startAlice = usdc.balanceOf(alice);
         uint256 startCarol = usdc.balanceOf(carol);
 
-        vm.prank(bob);   market.placeBetWithPyth(OrderbookMarket.Direction.DOWN, 30e6, address(0), ENTRY_PRICE, 100, pythUpd());
-        vm.prank(alice); uint256 aliceId = market.placeBetWithPyth(OrderbookMarket.Direction.UP, 50e6, address(0), ENTRY_PRICE, 100, pythUpd());
-        vm.prank(carol); market.placeBetWithPyth(OrderbookMarket.Direction.DOWN, 20e6, address(0), ENTRY_PRICE, 100, pythUpd());
+        _bet(market, bob, OrderbookMarket.Direction.DOWN, 30e6, address(0), ENTRY_PRICE, 100);
+        uint256 aliceId = _bet(market, alice, OrderbookMarket.Direction.UP, 50e6, address(0), ENTRY_PRICE, 100);
+        _bet(market, carol, OrderbookMarket.Direction.DOWN, 20e6, address(0), ENTRY_PRICE, 100);
 
         // Time-travel past settle.
         vm.warp(block.timestamp + DURATION + 1);
@@ -181,8 +180,8 @@ contract OrderbookMarketAccountingTest is Test {
         // Bob 5 DOWN, Alice 5.5 UP → match 5, leftover 0.5 < MIN_BET → refund 0.5.
         usdc.mint(alice, 100e6);
         uint256 startAlice = usdc.balanceOf(alice);
-        vm.prank(bob);   market.placeBetWithPyth(OrderbookMarket.Direction.DOWN, 5e6,    address(0), ENTRY_PRICE, 100, pythUpd());
-        vm.prank(alice); uint256 aId = market.placeBetWithPyth(OrderbookMarket.Direction.UP, 5_500_000, address(0), ENTRY_PRICE, 100, pythUpd());
+        _bet(market, bob, OrderbookMarket.Direction.DOWN, 5e6, address(0), ENTRY_PRICE, 100);
+        uint256 aId = _bet(market, alice, OrderbookMarket.Direction.UP, 5_500_000, address(0), ENTRY_PRICE, 100);
 
         OrderbookMarket.Order memory ao = market.getOrder(aId);
         assertEq(ao.filledAmount,       5e6, "Alice matched 5");
@@ -211,7 +210,7 @@ contract OrderbookMarketAccountingTest is Test {
         uint256 cap = (50e6 * pool.PER_MARKET_MAX_EXPOSURE_BPS()) / 10_000;
         assertEq(cap, 25e5, "2.5 USDC per-market cap");
 
-        vm.prank(alice); uint256 aId = market.placeBetWithPyth(OrderbookMarket.Direction.UP, 25e6, address(0), ENTRY_PRICE, 100, pythUpd());
+        uint256 aId = _bet(market, alice, OrderbookMarket.Direction.UP, 25e6, address(0), ENTRY_PRICE, 100);
         OrderbookMarket.Order memory ao = market.getOrder(aId);
 
         assertLe(ao.filledAmount, 25e5 + 1, "LP capped match");
@@ -230,9 +229,9 @@ contract OrderbookMarketAccountingTest is Test {
     ///         is refunded and the matched portion still settles to a claim.
     function test_RefundExpired_PartialFill_KeepsMatchedPortion() public {
         // Bob 30 DOWN vs Alice 50 UP → match 30, Alice queues 20.
-        vm.prank(bob);   market.placeBetWithPyth(OrderbookMarket.Direction.DOWN, 30e6, address(0), ENTRY_PRICE, 100, pythUpd());
+        _bet(market, bob, OrderbookMarket.Direction.DOWN, 30e6, address(0), ENTRY_PRICE, 100);
         uint256 preAlice = usdc.balanceOf(alice);
-        vm.prank(alice); uint256 aId = market.placeBetWithPyth(OrderbookMarket.Direction.UP, 50e6, address(0), ENTRY_PRICE, 100, pythUpd());
+        uint256 aId = _bet(market, alice, OrderbookMarket.Direction.UP, 50e6, address(0), ENTRY_PRICE, 100);
 
         // After MATCH_TIMEOUT, refund the unmatched 20.
         vm.warp(block.timestamp + market.MATCH_TIMEOUT() + 1);
@@ -261,7 +260,7 @@ contract OrderbookMarketAccountingTest is Test {
     /// @notice Pure-unmatched expired order goes to REFUNDED with full deposit back.
     function test_RefundExpired_NoFill_FullRefund() public {
         uint256 preAlice = usdc.balanceOf(alice);
-        vm.prank(alice); uint256 aId = market.placeBetWithPyth(OrderbookMarket.Direction.UP, 25e6, address(0), ENTRY_PRICE, 100, pythUpd());
+        uint256 aId = _bet(market, alice, OrderbookMarket.Direction.UP, 25e6, address(0), ENTRY_PRICE, 100);
 
         vm.warp(block.timestamp + market.MATCH_TIMEOUT() + 1);
         market.refundExpired(aId);
@@ -273,7 +272,7 @@ contract OrderbookMarketAccountingTest is Test {
 
     /// @notice Double-refundExpired must revert.
     function test_RefundExpired_NotIdempotent() public {
-        vm.prank(alice); uint256 aId = market.placeBetWithPyth(OrderbookMarket.Direction.UP, 25e6, address(0), ENTRY_PRICE, 100, pythUpd());
+        uint256 aId = _bet(market, alice, OrderbookMarket.Direction.UP, 25e6, address(0), ENTRY_PRICE, 100);
         vm.warp(block.timestamp + market.MATCH_TIMEOUT() + 1);
         market.refundExpired(aId);
         vm.expectRevert("already refunded");
@@ -285,9 +284,9 @@ contract OrderbookMarketAccountingTest is Test {
     // ════════════════════════════════════════════════════════
 
     function test_PlaceBet_RejectsZeroExpectedPrice() public {
-        vm.prank(alice);
-        vm.expectRevert("expectedPrice zero");
-        market.placeBetWithPyth(OrderbookMarket.Direction.UP, 25e6, address(0), 0, 100, pythUpd());
+        (bool rsOk, bytes memory rsRet) = _tryBet(market, alice, OrderbookMarket.Direction.UP, 25e6, address(0), 0, 100);
+        assertFalse(rsOk, "expected revert: expectedPrice zero");
+        assertEq(_rsReason(rsRet, ""), ": expectedPrice zero");
     }
 
     // ════════════════════════════════════════════════════════
@@ -302,8 +301,8 @@ contract OrderbookMarketAccountingTest is Test {
             usdc.mint(a, 100e6); usdc.mint(b, 100e6);
             vm.prank(a); usdc.approve(address(market), type(uint256).max);
             vm.prank(b); usdc.approve(address(market), type(uint256).max);
-            vm.prank(a); market.placeBetWithPyth(OrderbookMarket.Direction.UP,   25e6, address(0), ENTRY_PRICE, 100, pythUpd());
-            vm.prank(b); market.placeBetWithPyth(OrderbookMarket.Direction.DOWN, 25e6, address(0), ENTRY_PRICE, 100, pythUpd());
+            _bet(market, a, OrderbookMarket.Direction.UP, 25e6, address(0), ENTRY_PRICE, 100);
+            _bet(market, b, OrderbookMarket.Direction.DOWN, 25e6, address(0), ENTRY_PRICE, 100);
         }
         vm.warp(block.timestamp + DURATION + 1);
 
@@ -330,8 +329,8 @@ contract OrderbookMarketAccountingTest is Test {
     function test_GetReadySettlements_DoesNotStallAfterHeadSettled() public {
         // Create 3 PvP matches (ids 1,2,3).
         for (uint256 i = 0; i < 3; i++) {
-            vm.prank(alice); market.placeBetWithPyth(OrderbookMarket.Direction.UP,   10e6, address(0), ENTRY_PRICE, 100, pythUpd());
-            vm.prank(bob);   market.placeBetWithPyth(OrderbookMarket.Direction.DOWN, 10e6, address(0), ENTRY_PRICE, 100, pythUpd());
+            _bet(market, alice, OrderbookMarket.Direction.UP, 10e6, address(0), ENTRY_PRICE, 100);
+            _bet(market, bob, OrderbookMarket.Direction.DOWN, 10e6, address(0), ENTRY_PRICE, 100);
         }
         vm.warp(block.timestamp + DURATION + 1);
 
@@ -343,9 +342,9 @@ contract OrderbookMarketAccountingTest is Test {
 
         // A 4th match is created AFTER the first 3 are already settled.
         // Refresh the mock oracle price — a lot of time has passed.
-        pyth.setPrice(FEED, 9142, -8);
-        vm.prank(alice); market.placeBetWithPyth(OrderbookMarket.Direction.UP,   10e6, address(0), ENTRY_PRICE, 100, pythUpd());
-        vm.prank(bob);   market.placeBetWithPyth(OrderbookMarket.Direction.DOWN, 10e6, address(0), ENTRY_PRICE, 100, pythUpd());
+        _setPrice(FEED, 9142);
+        _bet(market, alice, OrderbookMarket.Direction.UP, 10e6, address(0), ENTRY_PRICE, 100);
+        _bet(market, bob, OrderbookMarket.Direction.DOWN, 10e6, address(0), ENTRY_PRICE, 100);
         vm.warp(block.timestamp + DURATION + 1);
 
         // Keeper queries with the SAME fixed window size (3) it always uses,

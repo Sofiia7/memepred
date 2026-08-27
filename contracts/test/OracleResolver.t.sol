@@ -7,19 +7,17 @@ import "../src/OracleResolver.sol";
 import "../src/OrderbookMarket.sol";
 import "../src/LiquidityPool.sol";
 import "../src/GenesisNFT.sol";
-import "../src/interfaces/IPyth.sol";
-import "./mocks/MockPyth.sol";
+import "./helpers/RedstonePayloadBuilder.sol";
+import "./helpers/RedstoneHarness.sol";
 import "./mocks/MockMarketRegistry.sol";
 import "./mocks/MockUSDC.sol";
-import "./mocks/PythUpd.sol";
 
 /// @notice Restores coverage of OracleResolver — the previous test file was
 ///         deleted during the cold-start refactor and never replaced.
 ///         Focus areas: TWAP staleness, spread detection, Pyth normalization,
 ///         keeper role gating, ETH top-up withdrawal.
 contract OracleResolverTest is Test {
-    OracleResolver resolver;
-    MockPyth       pyth;
+    OracleResolverHarness resolver;
 
     address admin  = address(this);
     address keeper = makeAddr("keeper");
@@ -28,9 +26,86 @@ contract OracleResolverTest is Test {
     bytes32 constant FEED = bytes32("PEPE/USD");
 
     function setUp() public {
-        pyth     = new MockPyth();
-        resolver = new OracleResolver(address(pyth));
+        resolver = new OracleResolverHarness();
         resolver.addKeeper(keeper);
+        // RedStone payloads are timestamped in milliseconds and the consumer
+        // rejects anything from before mid-2022, so tests cannot run at t=0.
+        vm.warp(1_787_000_000);
+    }
+
+    // ─── HELPERS ────────────────────────────────────────────
+    /**
+     * Record a price the way the keeper does: the value rides on the calldata
+     * as a RedStone payload signed by three mock signers, not as a parameter.
+     *
+     * `value8dp` is the price scaled by 1e8, which is exactly the scale the old
+     * MockPyth calls used via expo -8 - so the numbers in these tests did not
+     * have to change when the oracle did.
+     */
+    function _record(uint256 value8dp) internal {
+        _record(FEED, value8dp);
+    }
+
+    function _record(bytes32 feedId, uint256 value8dp) internal {
+        vm.prank(keeper);
+        (bool ok,) = address(resolver).call(bytes.concat(
+            abi.encodeWithSelector(OracleResolver.recordPrice.selector, feedId),
+            RedstonePayloadBuilder.buildNow(feedId, value8dp, 3)
+        ));
+        require(ok, "recordPrice reverted");
+    }
+
+    /// Settle one match, carrying `spot8dp` as the live price the recorded TWAP
+    /// is sanity-checked against. Under Pyth this was a separate setPrice call
+    /// before the resolve; now it is part of the same transaction.
+    function _resolveMatch(address market, uint256 matchId, uint256 spot8dp) internal {
+        vm.prank(keeper);
+        (bool ok,) = address(resolver).call(bytes.concat(
+            abi.encodeWithSelector(OracleResolver.resolveOrderbookMatch.selector, market, matchId),
+            RedstonePayloadBuilder.buildNow(FEED, spot8dp, 3)
+        ));
+        require(ok, "resolveOrderbookMatch reverted");
+    }
+
+    function _resolveBatch(address market, uint256 maxCount, uint256 spot8dp)
+        internal returns (uint256 settled)
+    {
+        vm.prank(keeper);
+        (bool ok, bytes memory ret) = address(resolver).call(bytes.concat(
+            abi.encodeWithSelector(OracleResolver.resolveOrderbookMarketBatch.selector, market, maxCount),
+            RedstonePayloadBuilder.buildNow(FEED, spot8dp, 3)
+        ));
+        require(ok, "resolveOrderbookMarketBatch reverted");
+        settled = abi.decode(ret, (uint256));
+    }
+
+    function _resolveAll(address market, uint256 spot8dp) internal {
+        vm.prank(keeper);
+        (bool ok,) = address(resolver).call(bytes.concat(
+            abi.encodeWithSelector(OracleResolver.resolveOrderbookMarket.selector, market),
+            RedstonePayloadBuilder.buildNow(FEED, spot8dp, 3)
+        ));
+        require(ok, "resolveOrderbookMarket reverted");
+    }
+
+    /// Place a bet the way a user does: the strike rides on the calldata of the
+    /// bet itself, so there is no separate "set the price first" step any more.
+    function _bet(
+        OrderbookMarket mkt,
+        address who,
+        OrderbookMarket.Direction dir,
+        uint256 amount,
+        uint256 entry8dp
+    ) internal {
+        vm.prank(who);
+        (bool ok,) = address(mkt).call(bytes.concat(
+            abi.encodeWithSelector(
+                OrderbookMarket.placeBet.selector,
+                dir, amount, address(0), entry8dp * 1e10, uint256(100)
+            ),
+            RedstonePayloadBuilder.buildNow(FEED, entry8dp, 3)
+        ));
+        require(ok, "placeBet reverted");
     }
 
     // ─── ACCESS CONTROL ─────────────────────────────────────
@@ -40,35 +115,38 @@ contract OracleResolverTest is Test {
         resolver.addKeeper(other);
     }
 
+    /// Carries a valid payload deliberately: without one the call would revert
+    /// for lacking a price rather than for lacking the role, and this test
+    /// would pass while proving nothing about access control.
     function test_RecordPrice_OnlyKeeper() public {
-        bytes[] memory data = new bytes[](0);
+        bytes memory callData = bytes.concat(
+            abi.encodeWithSelector(OracleResolver.recordPrice.selector, FEED),
+            RedstonePayloadBuilder.buildNow(FEED, 1e8, 3)
+        );
         vm.prank(other);
-        vm.expectRevert();
-        resolver.recordPrice(FEED, data);
+        (bool ok,) = address(resolver).call(callData);
+        assertFalse(ok, "a non-keeper must not be able to record a price");
     }
 
     function test_RemoveKeeper_RevokesAccess() public {
         resolver.removeKeeper(keeper);
-        pyth.setPrice(FEED, 1e8, -8);
-        bytes[] memory data = new bytes[](0);
+        bytes memory callData = bytes.concat(
+            abi.encodeWithSelector(OracleResolver.recordPrice.selector, FEED),
+            RedstonePayloadBuilder.buildNow(FEED, 1e8, 3)
+        );
         vm.prank(keeper);
-        vm.expectRevert();
-        resolver.recordPrice(FEED, data);
+        (bool ok,) = address(resolver).call(callData);
+        assertFalse(ok, "a revoked keeper must not be able to record a price");
     }
 
     // ─── PRICE RECORDING / TWAP ─────────────────────────────
     /// @dev TWAP of a constant price over the window equals that price.
     function test_TWAP_ConstantPrice() public {
-        pyth.setPrice(FEED, 1_000_000_00, -8); // $1.00, 8 decimals
-        bytes[] memory data = new bytes[](0);
-
-        // Record 5 prices spaced by 30s, all $1. Refresh the mock's
-        // publishTime each tick — a real feed keeps publishing even when
-        // the price itself hasn't moved.
+        // Record 5 prices spaced by 30s, all $1.00. Each _record builds a
+        // payload stamped at the current block, which is what a real feed does:
+        // it keeps publishing even when the price itself has not moved.
         for (uint256 i = 0; i < 5; i++) {
-            pyth.setPrice(FEED, 1_000_000_00, -8);
-            vm.prank(keeper);
-            resolver.recordPrice(FEED, data);
+        _record(1_000_000_00);
             vm.warp(block.timestamp + 30);
         }
 
@@ -81,11 +159,7 @@ contract OracleResolverTest is Test {
     /// @dev If the last recorded price is older than TWAP_WINDOW (5 min),
     ///      _getTWAP must revert via "no price data".
     function test_TWAP_AllStale_NotUsable() public {
-        pyth.setPrice(FEED, 1e8, -8);
-        bytes[] memory data = new bytes[](0);
-
-        vm.prank(keeper);
-        resolver.recordPrice(FEED, data);
+        _record(1e8);
 
         // Jump past the TWAP window AND past the history retention window.
         // Retention was widened from 10 minutes to HISTORY_RETENTION (2h) when
@@ -101,63 +175,36 @@ contract OracleResolverTest is Test {
         assertGt(ts0, 0, "old point retained");
         assertEq(resolver.historyHead(FEED), 0, "head not yet advanced");
 
-        // Trigger cleanup via a fresh recordPrice. Refresh the mock's own
-        // publishTime first — the staleness under test here is about the
-        // OLD history POINT, not about Pyth's live feed being down.
-        pyth.setPrice(FEED, 1e8, -8);
-        vm.prank(keeper);
-        resolver.recordPrice(FEED, data);
+        // Trigger cleanup with a fresh recordPrice. The staleness under test
+        // is that of the OLD history POINT, not of the incoming payload, which
+        // is always stamped at the current block.
+        _record(1e8);
         assertEq(resolver.historyHead(FEED), 1, "head advanced past stale entry");
     }
 
-    // ─── PYTH PRICE NORMALIZATION ───────────────────────────
-    /// @dev expo = -8 → 8 decimals → divisor 1e8 → result scaled to 1e18.
-    function test_Normalize_NegativeExpo() public {
-        // 9142 with expo -8 → 9142 * 1e18 / 1e8 = 9142e10
-        pyth.setPrice(FEED, 9142, -8);
-        bytes[] memory data = new bytes[](0);
-        vm.prank(keeper);
-        resolver.recordPrice(FEED, data);
-        (uint256 price, ) = resolver.priceHistory(FEED, 0);
-        assertEq(price, 9142e10, "9142 with expo -8");
-    }
+    // ─── PRICE NORMALIZATION ────────────────────────────────
+    // The two expo-specific tests that lived here are gone with the exponent:
+    // Pyth delivered a price plus a signed exponent, RedStone delivers a plain
+    // integer at 8 decimals. The 8dp→1e18 conversion is covered across three
+    // magnitudes in OracleResolverRedstone.t.sol.
 
-    /// @dev expo = 0 → result = price * 1e18.
-    function test_Normalize_ZeroExpo() public {
-        pyth.setPrice(FEED, 5, 0);
-        bytes[] memory data = new bytes[](0);
-        vm.prank(keeper);
-        resolver.recordPrice(FEED, data);
-        (uint256 price, ) = resolver.priceHistory(FEED, 0);
-        assertEq(price, 5e18, "5 with expo 0 = 5e18");
-    }
+    /// @dev Fuzz: any plausible price normalises without reverting or
+    ///      collapsing to zero.
+    function testFuzz_Normalize_NoRevert_PositivePrice(uint64 value8dp) public {
+        vm.assume(value8dp > 0 && value8dp < 1e15);
 
-    /// @dev Fuzz: any non-zero positive price with reasonable expo normalizes
-    ///      to a non-zero uint256 without revert.
-    function testFuzz_Normalize_NoRevert_PositivePrice(int64 raw, int8 expoSmall) public {
-        vm.assume(raw > 0 && raw < 1e15);
-        vm.assume(expoSmall > -18 && expoSmall < 0);
-        int32 expo = int32(expoSmall);
-
-        pyth.setPrice(FEED, raw, expo);
-        bytes[] memory data = new bytes[](0);
-        vm.prank(keeper);
-        resolver.recordPrice(FEED, data);
+        _record(value8dp);
 
         (uint256 price, ) = resolver.priceHistory(FEED, 0);
+        assertEq(price, uint256(value8dp) * 1e10, "8dp scaled to 1e18");
         assertGt(price, 0, "normalized > 0");
     }
 
     // ─── HISTORY CLEANUP / HEAD ADVANCE ─────────────────────
     function test_HistoryHead_NotAffectingFreshPrices() public {
-        pyth.setPrice(FEED, 1e8, -8);
-        bytes[] memory data = new bytes[](0);
-
         // 3 fresh prices in the window.
         for (uint256 i = 0; i < 3; i++) {
-            pyth.setPrice(FEED, 1e8, -8);
-            vm.prank(keeper);
-            resolver.recordPrice(FEED, data);
+        _record(1e8);
             vm.warp(block.timestamp + 60);
         }
         // Head should still be 0 — none are stale yet.
@@ -179,7 +226,7 @@ contract OracleResolverTest is Test {
         LiquidityPool pool = new LiquidityPool(IERC20(address(usdc)), address(genesisNFT));
         genesisNFT.setLiquidityPool(address(pool));
 
-        OrderbookMarket market = new OrderbookMarket(
+        OrderbookMarket market = new OrderbookMarketHarness(
             address(usdc),
             address(resolver),
             address(pool),
@@ -203,33 +250,27 @@ contract OracleResolverTest is Test {
         vm.prank(alice); usdc.approve(address(market), type(uint256).max);
         vm.prank(bob);   usdc.approve(address(market), type(uint256).max);
 
-        // Entry price locked at $1.00.
-        pyth.setPrice(FEED, 1e8, -8);
-        vm.prank(alice); market.placeBetWithPyth(OrderbookMarket.Direction.UP,   25e6, address(0), 1e18, 100, pythUpd());
-        vm.prank(bob);   market.placeBetWithPyth(OrderbookMarket.Direction.DOWN, 25e6, address(0), 1e18, 100, pythUpd());
-
-        bytes[] memory data = new bytes[](0);
+        // Entry price locked at $1.00, carried by each bet's own calldata.
+        _bet(market, alice, OrderbookMarket.Direction.UP,   25e6, 1e8);
+        _bet(market, bob,   OrderbookMarket.Direction.DOWN, 25e6, 1e8);
 
         // 8 stale ticks at $1.00 spanning the first 210s of the match.
         // Refresh the mock's publishTime each tick — a real feed keeps
         // publishing even when the price itself hasn't moved.
         for (uint256 i = 0; i < 8; i++) {
-            pyth.setPrice(FEED, 1e8, -8);
-            vm.prank(keeper); resolver.recordPrice(FEED, data);
+        _record(1e8);
             vm.warp(block.timestamp + 30);
         }
 
         // Price genuinely moves to $2.00 for the last ~90s of the match.
         for (uint256 i = 0; i < 3; i++) {
-            pyth.setPrice(FEED, 2e8, -8);
-            vm.prank(keeper); resolver.recordPrice(FEED, data);
+        _record(2e8);
             vm.warp(block.timestamp + 30);
         }
 
         // Settle just past the 5-minute duration.
         vm.warp(block.timestamp + 1);
-        vm.prank(keeper);
-        resolver.resolveOrderbookMatch(address(market), 1, data);
+        _resolveMatch(address(market), 1, 2e8);
 
         OrderbookMarket.Match memory m = market.getMatch(1);
         // A ~60s window (duration/5) sees only the $2.00 ticks → exactly
@@ -260,16 +301,13 @@ contract OracleResolverTest is Test {
 
         // Price at the moment the bet was actually due: $1.05 → UP wins.
         vm.warp(block.timestamp + 15 minutes);
-        pyth.setPrice(FEED, 105e6, -8);
-        vm.prank(keeper); resolver.recordPrice(FEED, data);
+        _record(105e6);
 
         // Keeper is down for half an hour; the coin collapses meanwhile.
         vm.warp(block.timestamp + 30 minutes);
-        pyth.setPrice(FEED, 50e6, -8);
-        vm.prank(keeper); resolver.recordPrice(FEED, data);
+        _record(50e6);
 
-        vm.prank(keeper);
-        uint256 settled = resolver.resolveOrderbookMarketBatch(address(market), data, 10);
+        uint256 settled = _resolveBatch(address(market), 10, 50e6);
 
         assertEq(settled, 1, "an overdue match must still settle");
         OrderbookMarket.Match memory m = market.getMatch(matchId);
@@ -289,17 +327,14 @@ contract OracleResolverTest is Test {
         bytes[] memory data = new bytes[](0);
 
         vm.warp(block.timestamp + 15 minutes);
-        pyth.setPrice(FEED, 105e6, -8);
-        vm.prank(keeper); resolver.recordPrice(FEED, data);
+        _record(105e6);
 
         // Outage longer than the retention window: the settleAt-era points are
         // pruned, so nothing covers this match's window any more.
         vm.warp(block.timestamp + resolver.HISTORY_RETENTION() + 10 minutes);
-        pyth.setPrice(FEED, 50e6, -8);
-        vm.prank(keeper); resolver.recordPrice(FEED, data);
+        _record(50e6);
 
-        vm.prank(keeper);
-        uint256 settled = resolver.resolveOrderbookMarketBatch(address(market), data, 10);
+        uint256 settled = _resolveBatch(address(market), 10, 50e6);
 
         assertEq(settled, 0, "must not settle a match it cannot price");
         OrderbookMarket.Match memory m = market.getMatch(matchId);
@@ -315,7 +350,7 @@ contract OracleResolverTest is Test {
         LiquidityPool pool = new LiquidityPool(IERC20(address(usdc)), address(genesisNFT));
         genesisNFT.setLiquidityPool(address(pool));
 
-        market = new OrderbookMarket(
+        market = new OrderbookMarketHarness(
             address(usdc),
             address(resolver),
             address(pool),
@@ -339,9 +374,9 @@ contract OracleResolverTest is Test {
         vm.prank(alice); usdc.approve(address(market), type(uint256).max);
         vm.prank(bob);   usdc.approve(address(market), type(uint256).max);
 
-        pyth.setPrice(FEED, 1e8, -8); // entry locked at $1.00
-        vm.prank(alice); market.placeBetWithPyth(OrderbookMarket.Direction.UP,   25e6, address(0), 1e18, 100, pythUpd());
-        vm.prank(bob);   market.placeBetWithPyth(OrderbookMarket.Direction.DOWN, 25e6, address(0), 1e18, 100, pythUpd());
+        // Entry locked at $1.00.
+        _bet(market, alice, OrderbookMarket.Direction.UP,   25e6, 1e8);
+        _bet(market, bob,   OrderbookMarket.Direction.DOWN, 25e6, 1e8);
 
         matchId = 1;
     }
@@ -349,10 +384,15 @@ contract OracleResolverTest is Test {
     function test_ResolveOrderbookMatch_Reverts_NonKeeper() public {
         (OrderbookMarket market, uint256 matchId) = _freshMarketWithOneMatch(15 minutes);
         vm.warp(block.timestamp + 15 minutes + 1);
-        bytes[] memory data = new bytes[](0);
+        // Carries a valid payload deliberately: without one the call would
+        // revert for lacking a price rather than for lacking the role.
         vm.prank(other);
-        vm.expectRevert();
-        resolver.resolveOrderbookMatch(address(market), matchId, data);
+        (bool ok,) = address(resolver).call(bytes.concat(
+            abi.encodeWithSelector(
+                OracleResolver.resolveOrderbookMatch.selector, address(market), matchId),
+            RedstonePayloadBuilder.buildNow(FEED, 1e8, 3)
+        ));
+        assertFalse(ok, "a non-keeper must not be able to settle");
     }
 
     function test_ResolveOrderbookMatch_AnomalyCancels_NoSettle() public {
@@ -362,16 +402,12 @@ contract OracleResolverTest is Test {
         // Record a price point inside the TWAP window (duration/5 = 3 min
         // for a 15-min market) so exitTwap ≈ $1.00.
         vm.warp(block.timestamp + 15 minutes - 60);
-        pyth.setPrice(FEED, 1e8, -8);
-        vm.prank(keeper); resolver.recordPrice(FEED, data);
+        _record(1e8);
         vm.warp(block.timestamp + 61); // now >= settleAt
 
         // Spot price has since diverged wildly from the TWAP → spread > 2%
         // must cancel settlement rather than lock in a bad exit price.
-        pyth.setPrice(FEED, 2e8, -8);
-
-        vm.prank(keeper);
-        resolver.resolveOrderbookMatch(address(market), matchId, data);
+        _resolveMatch(address(market), matchId, 2e8);
 
         OrderbookMarket.Match memory m = market.getMatch(matchId);
         assertFalse(m.settled, "anomaly must block settlement");
@@ -387,18 +423,15 @@ contract OracleResolverTest is Test {
         usdc.mint(dave,  100e6);
         vm.prank(carol); usdc.approve(address(market), type(uint256).max);
         vm.prank(dave);  usdc.approve(address(market), type(uint256).max);
-        vm.prank(carol); market.placeBetWithPyth(OrderbookMarket.Direction.UP,   25e6, address(0), 1e18, 100, pythUpd());
-        vm.prank(dave);  market.placeBetWithPyth(OrderbookMarket.Direction.DOWN, 25e6, address(0), 1e18, 100, pythUpd());
+        _bet(market, carol, OrderbookMarket.Direction.UP,   25e6, 1e8);
+        _bet(market, dave,  OrderbookMarket.Direction.DOWN, 25e6, 1e8);
 
         bytes[] memory data = new bytes[](0);
         vm.warp(block.timestamp + 15 minutes - 60);
-        pyth.setPrice(FEED, 1e8, -8);
-        vm.prank(keeper); resolver.recordPrice(FEED, data);
+        _record(1e8);
         vm.warp(block.timestamp + 61);
-        pyth.setPrice(FEED, 1e8, -8); // refresh spot for the anomaly check at resolve time
-
-        vm.prank(keeper);
-        uint256 settled = resolver.resolveOrderbookMarketBatch(address(market), data, 10);
+        // The spot the anomaly check uses now rides on the resolve call itself.
+        uint256 settled = _resolveBatch(address(market), 10, 1e8);
         assertEq(settled, 2, "both ready matches settled in one batch call");
     }
 
@@ -406,29 +439,38 @@ contract OracleResolverTest is Test {
         (OrderbookMarket market, uint256 matchId) = _freshMarketWithOneMatch(15 minutes);
         bytes[] memory data = new bytes[](0);
         vm.warp(block.timestamp + 15 minutes - 60);
-        pyth.setPrice(FEED, 1e8, -8);
-        vm.prank(keeper); resolver.recordPrice(FEED, data);
+        _record(1e8);
         vm.warp(block.timestamp + 61);
-        pyth.setPrice(FEED, 1e8, -8); // refresh spot for the anomaly check at resolve time
-
-        vm.prank(keeper);
-        resolver.resolveOrderbookMarket(address(market), data);
+        _resolveAll(address(market), 1e8);
 
         OrderbookMarket.Match memory m = market.getMatch(matchId);
         assertTrue(m.settled, "unbounded wrapper settles the ready match");
     }
 
     // ─── ETH MANAGEMENT ─────────────────────────────────────
-    function test_ReceiveAndWithdrawETH() public {
-        // Top up resolver with 1 ETH.
+    /**
+     * The resolver no longer accepts ether at all. Its payable receive() existed
+     * to fund Pyth update fees; RedStone charges nothing, so a balance here is
+     * now a mistake, and refusing it stops anyone quietly recreating the
+     * "resolver ran dry and settlement stopped" failure.
+     */
+    function test_RejectsPlainEther() public {
         vm.deal(address(this), 1 ether);
-        (bool ok, ) = address(resolver).call{value: 1 ether}("");
-        assertTrue(ok);
-        assertEq(address(resolver).balance, 1 ether);
 
-        // Withdraw 0.5 ETH as admin.
+        (bool ok, ) = address(resolver).call{value: 1 ether}("");
+
+        assertFalse(ok, "the resolver must not accept ether any more");
+        assertEq(address(resolver).balance, 0);
+    }
+
+    /// withdrawETH survives only to rescue a forced send, which no missing
+    /// receive() can block. vm.deal stands in, since nothing can pay in normally.
+    function test_WithdrawRescuesForcedEther() public {
+        vm.deal(address(resolver), 1 ether);
+
         address payable sink = payable(makeAddr("sink"));
         resolver.withdrawETH(sink, 0.5 ether);
+
         assertEq(address(resolver).balance, 0.5 ether);
         assertEq(sink.balance, 0.5 ether);
     }
@@ -459,16 +501,12 @@ contract OracleResolverTest is Test {
         bytes[] memory data = new bytes[](0);
 
         vm.warp(block.timestamp + 15 minutes - 60);
-        pyth.setPrice(FEED, 1e8, -8);
-        vm.prank(keeper); resolver.recordPrice(FEED, data);
+        _record(1e8);
         vm.warp(block.timestamp + 61);
 
         // Spot diverges wildly from the recorded TWAP → batch path must also
         // cancel settlement rather than lock in a bad exit price.
-        pyth.setPrice(FEED, 2e8, -8);
-
-        vm.prank(keeper);
-        uint256 settled = resolver.resolveOrderbookMarketBatch(address(market), data, 10);
+        uint256 settled = _resolveBatch(address(market), 10, 2e8);
 
         assertEq(settled, 0, "anomaly must block settlement in the batch path too");
         OrderbookMarket.Match memory m = market.getMatch(matchId);
@@ -495,20 +533,16 @@ contract OracleResolverTest is Test {
         // and inside the unrelated 10-min history-prune cutoff (so it's
         // excluded by the CAP, not by unrelated garbage collection).
         vm.warp(block.timestamp + 24 hours - 8 minutes);
-        pyth.setPrice(FEED, 5e8, -8);
-        vm.prank(keeper); resolver.recordPrice(FEED, data);
+        _record(5e8);
 
         // Fresh tick 2 minutes before settle.
         vm.warp(block.timestamp + 6 minutes);
-        pyth.setPrice(FEED, 2e8, -8);
-        vm.prank(keeper); resolver.recordPrice(FEED, data);
+        _record(2e8);
 
         // Advance the remaining 2 minutes to settle = duration + 1s exactly.
         vm.warp(block.timestamp + 2 minutes);
-        pyth.setPrice(FEED, 2e8, -8); // fresh spot matching the expected TWAP
-
-        vm.prank(keeper);
-        resolver.resolveOrderbookMatch(address(market), matchId, data);
+        // Fresh spot matching the expected TWAP.
+        _resolveMatch(address(market), matchId, 2e8);
 
         OrderbookMarket.Match memory m = market.getMatch(matchId);
         assertTrue(m.settled, "capped window must settle cleanly, not treat the 8-min-old tick as an anomaly");
@@ -525,18 +559,14 @@ contract OracleResolverTest is Test {
         bytes[] memory data = new bytes[](0);
 
         vm.warp(block.timestamp + 35); // t=35: 26s before the eventual t=61 settle
-        pyth.setPrice(FEED, 5e8, -8);
-        vm.prank(keeper); resolver.recordPrice(FEED, data);
+        _record(5e8);
 
         vm.warp(block.timestamp + 20); // t=55: 6s before settle
-        pyth.setPrice(FEED, 2e8, -8);
-        vm.prank(keeper); resolver.recordPrice(FEED, data);
+        _record(2e8);
 
         vm.warp(block.timestamp + 6); // t=61 = duration + 1s
-        pyth.setPrice(FEED, 3.5e8, -8); // fresh spot matching the expected blended TWAP
-
-        vm.prank(keeper);
-        resolver.resolveOrderbookMatch(address(market), matchId, data);
+        // Fresh spot matching the expected blended TWAP.
+        _resolveMatch(address(market), matchId, 3.5e8);
 
         OrderbookMarket.Match memory m = market.getMatch(matchId);
         assertTrue(m.settled);
@@ -553,7 +583,11 @@ contract OracleResolverTest is Test {
 
         vm.prank(keeper);
         vm.expectRevert(bytes("no price data"));
-        resolver.resolveOrderbookMatch(address(market), matchId, data);
+        (bool ok,) = address(resolver).call(bytes.concat(
+            abi.encodeWithSelector(OracleResolver.resolveOrderbookMatch.selector, address(market), matchId),
+            RedstonePayloadBuilder.buildNow(FEED, 1e8, 3)
+        ));
+        ok; // silence unused; expectRevert already asserted the failure
     }
 
     // Required for ETH-receiving tests.

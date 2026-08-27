@@ -10,31 +10,25 @@ import "../src/ReferralRegistry.sol";
 import "../src/GenesisNFT.sol";
 import "../src/OrderbookMarket.sol";
 import "./mocks/MockUSDC.sol";
-import "./mocks/PythUpd.sol";
-import "./mocks/MockPyth.sol";
-
-contract MockResolver {
-    address public pyth;
-    constructor(address _pyth) { pyth = _pyth; }
-}
+import "./helpers/RedstoneTest.sol";
+import "./helpers/RedstoneHarness.sol";
 
 /**
  * Sprint 5.6 — markets are EIP-1167 clones rather than full deployments.
  *
- * The rest of the suite exercises markets built by `new OrderbookMarket(...)`,
+ * The rest of the suite exercises markets built by `new OrderbookMarketHarness(...)`,
  * which runs a constructor. A clone never does: it starts with completely
  * empty storage and borrows the implementation's *code*. Every assertion here
  * is about that gap — the class of bug where something is set up in the
  * constructor, keeps passing every existing test (they all deploy directly),
  * and is silently zero on every market real users actually touch.
  */
-contract MarketCloneTest is Test {
+contract MarketCloneTest is RedstoneTest {
     MockUSDC      usdc;
-    MockPyth      pyth;
     address       resolver;
     GenesisNFT    genesisNFT;
     LiquidityPool pool;
-    MarketFactory factory;
+    MarketFactoryHarness factory;
 
     address treasury = makeAddr("treasury");
     address multisig = makeAddr("multisig");
@@ -50,10 +44,10 @@ contract MarketCloneTest is Test {
 
     function setUp() public {
         usdc     = new MockUSDC();
-        pyth     = new MockPyth();
-        resolver = address(new MockResolver(address(pyth)));
-        pyth.setPrice(FEED_PEPE, 914200, -8);
-        pyth.setPrice(FEED_DOGE, 914200, -8);
+        resolver = makeAddr("resolver");
+        // Priced per clone in _clone(): rsFeedId is a single register, so
+        // setting both here would leave only the last one and hand every PEPE
+        // market a DOGE payload.
 
         genesisNFT = new GenesisNFT("ipfs://test/");
         pool       = new LiquidityPool(IERC20(address(usdc)), address(genesisNFT));
@@ -62,7 +56,7 @@ contract MarketCloneTest is Test {
         FeeDistributor   feeDist = new FeeDistributor(address(usdc), treasury, treasury, treasury);
         ReferralRegistry refReg  = new ReferralRegistry();
 
-        factory = new MarketFactory(
+        factory = new MarketFactoryHarness(
             address(usdc), resolver, address(feeDist),
             address(refReg), multisig, address(pool)
         );
@@ -78,6 +72,8 @@ contract MarketCloneTest is Test {
     }
 
     function _clone(bytes32 feed, uint256 dur) internal returns (OrderbookMarket) {
+        // Payloads have to be signed for the feed this clone prices.
+        _setPrice(feed, 914200);
         return OrderbookMarket(factory.createMarket(feed, dur));
     }
 
@@ -104,12 +100,10 @@ contract MarketCloneTest is Test {
         _approve(alice, address(m));
         _approve(bob,   address(m));
 
-        vm.prank(alice);
-        uint256 aliceId = m.placeBetWithPyth(OrderbookMarket.Direction.UP, 50e6, address(0), ENTRY_PRICE, 100, pythUpd());
+        uint256 aliceId = _bet(m, alice, OrderbookMarket.Direction.UP, 50e6, address(0), ENTRY_PRICE, 100);
         assertEq(m.getOrder(aliceId).matchId, 0, "unmatched order must read as matchId 0");
 
-        vm.prank(bob);
-        uint256 bobId = m.placeBetWithPyth(OrderbookMarket.Direction.DOWN, 50e6, address(0), ENTRY_PRICE, 100, pythUpd());
+        uint256 bobId = _bet(m, bob, OrderbookMarket.Direction.DOWN, 50e6, address(0), ENTRY_PRICE, 100);
         assertTrue(m.getOrder(bobId).matchId != 0, "matched order must not collide with the 0 sentinel");
         assertEq(m.getOrder(aliceId).matchId, m.getOrder(bobId).matchId);
     }
@@ -143,8 +137,10 @@ contract MarketCloneTest is Test {
         OrderbookMarket b = _clone(FEED_DOGE, DUR_1H);
 
         _approve(alice, address(a));
-        vm.prank(alice);
-        a.placeBetWithPyth(OrderbookMarket.Direction.UP, 50e6, address(0), ENTRY_PRICE, 100, pythUpd());
+        // Cloning B moved the payload register to DOGE; bet on A and the
+        // payload must be for A's feed again.
+        _setPrice(FEED_PEPE, 914200);
+        _bet(a, alice, OrderbookMarket.Direction.UP, 50e6, address(0), ENTRY_PRICE, 100);
 
         assertEq(a.nextOrderId(), 2, "market A should have consumed an id");
         assertEq(b.nextOrderId(), 1, "market B must be untouched by A's activity");
@@ -184,7 +180,7 @@ contract MarketCloneTest is Test {
     /// A directly-deployed market (the path the rest of the suite uses) is
     /// still configured and locked in one step.
     function test_DirectDeploy_StillWorksAndIsLocked() public {
-        OrderbookMarket m = new OrderbookMarket(
+        OrderbookMarket m = new OrderbookMarketHarness(
             address(usdc), resolver, address(pool), treasury,
             address(0), multisig, FEED_PEPE, DUR_15M
         );
@@ -204,9 +200,8 @@ contract MarketCloneTest is Test {
 
         factory.pauseMarketsForFeed(FEED_PEPE);
 
-        vm.prank(alice);
-        vm.expectRevert();
-        m.placeBetWithPyth(OrderbookMarket.Direction.UP, 50e6, address(0), ENTRY_PRICE, 100, pythUpd());
+        (bool rsOk,) = _tryBet(m, alice, OrderbookMarket.Direction.UP, 50e6, address(0), ENTRY_PRICE, 100);
+        assertFalse(rsOk, "expected the bet to be rejected");
     }
 
     // ── END-TO-END THROUGH A CLONE ────────────────────────
@@ -215,10 +210,8 @@ contract MarketCloneTest is Test {
         _approve(alice, address(m));
         _approve(bob,   address(m));
 
-        vm.prank(alice);
-        uint256 aliceId = m.placeBetWithPyth(OrderbookMarket.Direction.UP, 50e6, address(0), ENTRY_PRICE, 100, pythUpd());
-        vm.prank(bob);
-        m.placeBetWithPyth(OrderbookMarket.Direction.DOWN, 50e6, address(0), ENTRY_PRICE, 100, pythUpd());
+        uint256 aliceId = _bet(m, alice, OrderbookMarket.Direction.UP, 50e6, address(0), ENTRY_PRICE, 100);
+        _bet(m, bob, OrderbookMarket.Direction.DOWN, 50e6, address(0), ENTRY_PRICE, 100);
 
         uint256 matchId = m.getOrder(aliceId).matchId;
         assertEq(matchId, 1, "first match on a clone must be id 1");
@@ -237,7 +230,7 @@ contract MarketCloneTest is Test {
 
     // ── THE POINT OF THE EXERCISE ─────────────────────────
     /// Guards the cost regression this refactor exists to fix. A full
-    /// `new OrderbookMarket(...)` was ~3.85M gas; the clone path should sit
+    /// `new OrderbookMarketHarness(...)` was ~3.85M gas; the clone path should sit
     /// near ~250k. The bound is deliberately loose — it's here to catch
     /// someone reverting to a real deployment, not to police ±10k.
     function test_Gas_CreateMarketStaysCheap() public {

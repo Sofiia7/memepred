@@ -132,16 +132,9 @@ contract MarketFactory is Ownable {
         // config leaves it permanently initialized (OrderbookMarket._init
         // runs in the constructor), so nobody can call initialize() on the
         // implementation itself.
-        marketImplementation = address(new OrderbookMarket(
-            _usdc,
-            _resolver,
-            _liquidityPool,
-            _feeDistributor,
-            _referralRegistry,
-            _multisig,
-            bytes32(0),
-            0
-        ));
+        marketImplementation = _deployMarketImplementation(
+            _usdc, _resolver, _liquidityPool, _feeDistributor, _referralRegistry, _multisig
+        );
 
         allowedDurations.push(5 minutes);
         allowedDurations.push(15 minutes);
@@ -196,6 +189,40 @@ contract MarketFactory is Ownable {
         ReferralRegistry(referralRegistry).authorizeMarket(market);
 
         emit MarketCreated(market, feedId, duration, block.timestamp);
+    }
+
+    /**
+     * @dev Deploys the contract every market is a clone of. Split out and
+     *      virtual because the implementation must be deployed *by the
+     *      factory*: OrderbookMarket takes its `factory` immutable from
+     *      msg.sender, and initialize() is gated on it, so an implementation
+     *      deployed by anyone else would leave every clone uninitializable.
+     *      Overriding this is therefore the only way to vary the market
+     *      contract - which the tests need in order to substitute a market
+     *      that trusts RedStone's mock signer set instead of the production
+     *      one, and which a future market variant would need too.
+     */
+    function _deployMarketImplementation(
+        address _usdc,
+        address _resolver,
+        address _liquidityPool,
+        address _feeDistributor,
+        address _referralRegistry,
+        address _multisig
+    ) internal virtual returns (address) {
+        // Zeroed per-instance config leaves it permanently initialized
+        // (OrderbookMarket._init runs in the constructor), so nobody can call
+        // initialize() on the implementation itself.
+        return address(new OrderbookMarket(
+            _usdc,
+            _resolver,
+            _liquidityPool,
+            _feeDistributor,
+            _referralRegistry,
+            _multisig,
+            bytes32(0),
+            0
+        ));
     }
 
     function addFeed(bytes32 feedId) external onlyOwner {

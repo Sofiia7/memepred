@@ -5,7 +5,7 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
-import "./interfaces/IPyth.sol";
+import "@redstone-finance/evm-connector/contracts/data-services/PrimaryProdDataServiceConsumerBase.sol";
 
 interface ILiquidityPool {
     /// @return matchedAmount actual USDC the pool took from `amount` (0 .. amount).
@@ -15,10 +15,6 @@ interface ILiquidityPool {
 
     function onMatchSettled (uint256 matchId, bool upWon) external;
     function onMatchRefunded(uint256 matchId)            external;
-}
-
-interface IOracleResolver {
-    function pyth() external view returns (address);
 }
 
 interface IFeeDistributor {
@@ -50,7 +46,7 @@ interface IReferralRegistry {
  *      the previous bug where the larger side of an unequal PvP match silently
  *      lost the unmatched portion of their stake.
  */
-contract OrderbookMarket is ReentrancyGuard, Pausable {
+contract OrderbookMarket is ReentrancyGuard, Pausable, PrimaryProdDataServiceConsumerBase {
     using SafeERC20 for IERC20;
 
     // ── TYPES ──────────────────────────────────────────────
@@ -91,7 +87,7 @@ contract OrderbookMarket is ReentrancyGuard, Pausable {
 
     // Sprint 5.6: 45 -> 20. The 45s figure existed to keep the bare
     // placeBet() overload usable between the keeper's 30s pushes. That
-    // overload is gone (see placeBetWithPyth), so the bound no longer has to
+    // overload is gone (see placeBet), so the bound no longer has to
     // accommodate a keeper cadence at all — every bet now carries its own
     // update and the stored price is whatever the caller just submitted.
     //
@@ -108,6 +104,28 @@ contract OrderbookMarket is ReentrancyGuard, Pausable {
     // Tightening further starts rejecting slow signers for no extra security,
     // since the honest case never approaches the bound.
     uint256 public constant ENTRY_MAX_PRICE_AGE = 20;
+
+    /// A price claiming to be from the future is worth even less than a stale
+    /// one; allow only enough slack for ordinary clock skew between signers.
+    uint256 public constant ENTRY_MAX_PRICE_AHEAD = 10;
+
+    /**
+     * @inheritdoc RedstoneConsumerBase
+     * @dev Stated here rather than inherited. RedStone's defaults are 3 minutes
+     *      back and 1 minute forward, which on a 5-minute market is most of the
+     *      bet: someone could watch the price move and enter at a strike they
+     *      already know is wrong. This is the guard the long comment on
+     *      placeBet is about, so it must not be a value their next release can
+     *      change under us.
+     */
+    function validateTimestamp(uint256 receivedTimestampMilliseconds) public view override {
+        uint256 receivedSeconds = receivedTimestampMilliseconds / 1000;
+        if (receivedSeconds > block.timestamp) {
+            require(receivedSeconds - block.timestamp <= ENTRY_MAX_PRICE_AHEAD, "price from the future");
+        } else {
+            require(block.timestamp - receivedSeconds <= ENTRY_MAX_PRICE_AGE, "price too old");
+        }
+    }
 
     // ── LP ECONOMICS (Sprint 5.5 audit fix) ────────────────
     // PvP matches never cost the pool anything; only LP-matched wagers put
@@ -302,44 +320,31 @@ contract OrderbookMarket is ReentrancyGuard, Pausable {
      *      protects an honest user from the price moving between rendering
      *      and execution; it says nothing about staleness.
      *
-     *      Pyth is a PULL oracle: the consumer is meant to bring a fresh
-     *      signed update and pay for it atomically. Reading a keeper-pushed
-     *      value was using a pull oracle in push mode and reintroducing
+     *      RedStone is a PULL oracle: the caller brings a freshly signed
+     *      price and the contract verifies it. Reading a keeper-pushed value
+     *      instead was using a pull oracle in push mode and reintroducing
      *      exactly the staleness the pull design exists to remove.
      *
-     *      Three things are required together; any one alone is insufficient:
+     *      Two things are required together; either alone is insufficient:
      *        1. this being the only entry point, so no stale path remains;
-     *        2. non-empty `priceUpdateData` — an empty array used to skip the
-     *           update entirely and behave identically to the bare overload,
-     *           so removing that overload without this would change nothing;
-     *        3. a tight ENTRY_MAX_PRICE_AGE — `updatePriceFeeds` silently
-     *           no-ops on an update older than what is stored (it does not
-     *           revert), so a sniper can satisfy (2) with a deliberately old
-     *           VAA and still read a stale strike. The age bound is what
-     *           actually closes that.
+     *        2. a tight ENTRY_MAX_PRICE_AGE, enforced by our own
+     *           validateTimestamp override rather than RedStone's much looser
+     *           3-minute default.
      *
-     *      Residual window is one block plus Hermes latency, not 45 seconds.
+     *      Residual window is one block plus gateway latency, not 45 seconds.
+     *
+     *      The price rides as a signed payload appended to this call's
+     *      calldata - there is no parameter for it, and no fee, so this
+     *      function is no longer payable. Callers must append the payload;
+     *      a call without one cannot produce a price and reverts.
      */
-    function placeBetWithPyth(
+    function placeBet(
         Direction dir,
         uint256   amount,
         address   referrer,
         uint256   expectedPrice,
-        uint256   slippageBps,
-        bytes[] calldata priceUpdateData
-    ) external payable nonReentrant whenNotPaused returns (uint256 orderId) {
-        require(priceUpdateData.length > 0, "price update required");
-
-        address pythAddress = IOracleResolver(resolver).pyth();
-        uint256 updateFee   = IPyth(pythAddress).getUpdateFee(priceUpdateData);
-        require(msg.value >= updateFee, "pyth fee");
-        IPyth(pythAddress).updatePriceFeeds{value: updateFee}(priceUpdateData);
-
-        uint256 refund = msg.value - updateFee;
-        if (refund > 0) {
-            (bool ok, ) = msg.sender.call{value: refund}("");
-            require(ok, "refund failed");
-        }
+        uint256   slippageBps
+    ) external nonReentrant whenNotPaused returns (uint256 orderId) {
         return _placeBet(dir, amount, referrer, expectedPrice, slippageBps);
     }
 
@@ -865,21 +870,20 @@ contract OrderbookMarket is ReentrancyGuard, Pausable {
     }
 
     // ── INTERNAL PYTH PRICE ────────────────────────────────
-    function _getCurrentPrice() internal view returns (uint256) {
-        address pythAddress = IOracleResolver(resolver).pyth();
-        IPyth.Price memory p = IPyth(pythAddress).getPriceNoOlderThan(pythFeedId, ENTRY_MAX_PRICE_AGE);
-        require(p.price > 0, "non-positive price");
+    /**
+     * The strike, taken from the signed payload on this call's own calldata.
+     *
+     * RedStone publishes at 8 decimals and everything here works in 1e18, so
+     * the scaling is load-bearing: without it every strike is ten billion times
+     * too small. Freshness is enforced by the validateTimestamp override above,
+     * which getOracleNumericValueFromTxMsg calls on the way through.
+     */
+    uint256 private constant REDSTONE_DECIMALS_TO_WAD = 1e10; // 1e18 / 1e8
 
-        int32 expo = p.expo;
-        uint256 price = uint256(int256(p.price));
-        if (expo < 0) {
-            // forge-lint: disable-next-line(unsafe-typecast)
-            uint256 divisor = 10 ** uint32(-expo);
-            return (price * 1e18) / divisor;
-        } else {
-            // forge-lint: disable-next-line(unsafe-typecast)
-            return price * 1e18 * (10 ** uint32(expo));
-        }
+    function _getCurrentPrice() internal view returns (uint256) {
+        uint256 price = getOracleNumericValueFromTxMsg(pythFeedId) * REDSTONE_DECIMALS_TO_WAD;
+        require(price > 0, "non-positive price");
+        return price;
     }
 
     // ── ADMIN ──────────────────────────────────────────────

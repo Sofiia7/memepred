@@ -8,24 +8,16 @@ import "../src/LiquidityPool.sol";
 import "../src/GenesisNFT.sol";
 import "./mocks/MockUSDC.sol";
 import "./mocks/MockMarketRegistry.sol";
-import "./mocks/PythUpd.sol";
-import "./mocks/MockPyth.sol";
+import "./helpers/RedstoneTest.sol";
+import "./helpers/RedstoneHarness.sol";
 
-contract MockResolver {
-    address public pyth;
-    constructor(address _pyth) {
-        pyth = _pyth;
-    }
-}
-
-contract OrderbookMarketTest is Test {
+contract OrderbookMarketTest is RedstoneTest {
     OrderbookMarket market;
     LiquidityPool   pool;
     GenesisNFT      genesisNFT;
     MockUSDC        usdc;
 
     address resolver;
-    MockPyth pyth;
     address feeDistrib    = makeAddr("feeDistrib");
     address multisig      = makeAddr("multisig");
     address alice         = makeAddr("alice");
@@ -37,16 +29,15 @@ contract OrderbookMarketTest is Test {
     uint256 constant DURATION    = 15 minutes;
 
     function setUp() public {
-        pyth = new MockPyth();
-        resolver = address(new MockResolver(address(pyth)));
+        resolver = makeAddr("resolver");
         // ENTRY_PRICE = 9142e12. So 914200 * 1e18 / 10^8 = 914200 * 1e10 = 9142e12
-        pyth.setPrice(bytes32("PEPE/USD"), 914200, -8);
+        _setPrice(bytes32("PEPE/USD"), 914200);
         usdc       = new MockUSDC();
         genesisNFT = new GenesisNFT("ipfs://test/");
         pool       = new LiquidityPool(IERC20(address(usdc)), address(genesisNFT));
         genesisNFT.setLiquidityPool(address(pool));
 
-        market = new OrderbookMarket(
+        market = new OrderbookMarketHarness(
             address(usdc),
             resolver,
             address(pool),
@@ -77,14 +68,10 @@ contract OrderbookMarketTest is Test {
     // ── PvP MATCHING ──────────────────────────────────────
     function test_Match_PvP_Success() public {
         // Alice bets UP
-        vm.prank(alice);
-        uint256 aliceOrderId = market.placeBetWithPyth(
-            OrderbookMarket.Direction.UP, 25e6, address(0), ENTRY_PRICE, 100, pythUpd());
+        uint256 aliceOrderId = _bet(market, alice, OrderbookMarket.Direction.UP, 25e6, address(0), ENTRY_PRICE, 100);
 
         // Bob bets DOWN — should match with Alice
-        vm.prank(bob);
-        uint256 bobOrderId = market.placeBetWithPyth(
-            OrderbookMarket.Direction.DOWN, 25e6, address(0), ENTRY_PRICE, 100, pythUpd());
+        uint256 bobOrderId = _bet(market, bob, OrderbookMarket.Direction.DOWN, 25e6, address(0), ENTRY_PRICE, 100);
 
         OrderbookMarket.Order memory aliceOrder = market.getOrder(aliceOrderId);
         OrderbookMarket.Order memory bobOrder   = market.getOrder(bobOrderId);
@@ -101,9 +88,7 @@ contract OrderbookMarketTest is Test {
         pool.deposit(500e6, lpProvider);
 
         // Alice bets UP — no PvP opponent → LP matches
-        vm.prank(alice);
-        uint256 orderId = market.placeBetWithPyth(
-            OrderbookMarket.Direction.UP, 25e6, address(0), ENTRY_PRICE, 100, pythUpd());
+        uint256 orderId = _bet(market, alice, OrderbookMarket.Direction.UP, 25e6, address(0), ENTRY_PRICE, 100);
 
         OrderbookMarket.Order memory order = market.getOrder(orderId);
         assertEq(uint(order.status), uint(OrderbookMarket.OrderStatus.MATCHED));
@@ -115,9 +100,7 @@ contract OrderbookMarketTest is Test {
     // ── REFUND IF NO MATCH ────────────────────────────────
     function test_Refund_If_No_Match() public {
         // Alice bets UP — no opponent, no LP
-        vm.prank(alice);
-        uint256 orderId = market.placeBetWithPyth(
-            OrderbookMarket.Direction.UP, 25e6, address(0), ENTRY_PRICE, 100, pythUpd());
+        uint256 orderId = _bet(market, alice, OrderbookMarket.Direction.UP, 25e6, address(0), ENTRY_PRICE, 100);
 
         // 5 minutes pass
         vm.warp(block.timestamp + 5 minutes + 1);
@@ -132,10 +115,8 @@ contract OrderbookMarketTest is Test {
 
     // ── SETTLE & CLAIM (PvP) ──────────────────────────────
     function test_Settle_And_Claim_PvP() public {
-        vm.prank(alice);
-        market.placeBetWithPyth(OrderbookMarket.Direction.UP, 50e6, address(0), ENTRY_PRICE, 100, pythUpd());
-        vm.prank(bob);
-        market.placeBetWithPyth(OrderbookMarket.Direction.DOWN, 50e6, address(0), ENTRY_PRICE, 100, pythUpd());
+        _bet(market, alice, OrderbookMarket.Direction.UP, 50e6, address(0), ENTRY_PRICE, 100);
+        _bet(market, bob, OrderbookMarket.Direction.DOWN, 50e6, address(0), ENTRY_PRICE, 100);
 
         // Fast forward past duration
         vm.warp(block.timestamp + DURATION + 1);
@@ -158,9 +139,7 @@ contract OrderbookMarketTest is Test {
         vm.prank(lpProvider);
         pool.deposit(500e6, lpProvider);
 
-        vm.prank(alice);
-        uint256 orderId = market.placeBetWithPyth(
-            OrderbookMarket.Direction.UP, 25e6, address(0), ENTRY_PRICE, 100, pythUpd());
+        uint256 orderId = _bet(market, alice, OrderbookMarket.Direction.UP, 25e6, address(0), ENTRY_PRICE, 100);
 
         vm.warp(block.timestamp + DURATION + 1);
 
@@ -180,48 +159,62 @@ contract OrderbookMarketTest is Test {
 
     // ── REVERTS ───────────────────────────────────────────
     function test_PlaceBet_Reverts_BelowMin() public {
-        vm.prank(alice);
-        vm.expectRevert("below min");
-        market.placeBetWithPyth(OrderbookMarket.Direction.UP, 0.5e6, address(0), ENTRY_PRICE, 100, pythUpd());
+        (bool rsOk, bytes memory rsRet) = _tryBet(market, alice, OrderbookMarket.Direction.UP, 0.5e6, address(0), ENTRY_PRICE, 100);
+        assertFalse(rsOk, "expected revert: below min");
+        assertEq(_rsReason(rsRet, ""), ": below min");
     }
 
     function test_PlaceBet_Reverts_AboveMax() public {
-        vm.prank(alice);
-        vm.expectRevert("above max");
-        market.placeBetWithPyth(OrderbookMarket.Direction.UP, 101e6, address(0), ENTRY_PRICE, 100, pythUpd());
+        (bool rsOk, bytes memory rsRet) = _tryBet(market, alice, OrderbookMarket.Direction.UP, 101e6, address(0), ENTRY_PRICE, 100);
+        assertFalse(rsOk, "expected revert: above max");
+        assertEq(_rsReason(rsRet, ""), ": above max");
     }
 
     function test_PlaceBet_Reverts_SelfReferral() public {
-        vm.prank(alice);
-        vm.expectRevert("self referral");
-        market.placeBetWithPyth(OrderbookMarket.Direction.UP, 10e6, alice, ENTRY_PRICE, 100, pythUpd());
+        (bool rsOk, bytes memory rsRet) = _tryBet(market, alice, OrderbookMarket.Direction.UP, 10e6, alice, ENTRY_PRICE, 100);
+        assertFalse(rsOk, "expected revert: self referral");
+        assertEq(_rsReason(rsRet, ""), ": self referral");
     }
 
     /// @dev Sprint 5.5: proves ENTRY_MAX_PRICE_AGE actually blocks a stale
     ///      Pyth price. Before this session MockPyth ignored the `age` arg
     ///      entirely, so this protection existed in the contract but had
     ///      never been exercised by any test.
+    /**
+     * Staleness has to be constructed deliberately now. Under Pyth a price sat
+     * on-chain and went stale where it lay, so warping forward was enough; with
+     * a pull oracle the caller mints the price at call time, so the only way to
+     * be stale is to bring an old payload on purpose - which is exactly what a
+     * sniper would do, and exactly what this has to reject.
+     */
     function test_PlaceBet_Reverts_StalePrice() public {
-        vm.warp(block.timestamp + market.ENTRY_MAX_PRICE_AGE() + 1);
-        vm.prank(alice);
-        vm.expectRevert("stale price");
-        market.placeBetWithPyth(OrderbookMarket.Direction.UP, 25e6, address(0), ENTRY_PRICE, 100, pythUpd());
+        (bool rsOk, bytes memory rsRet) = _tryBetAged(
+            market, alice, OrderbookMarket.Direction.UP, 25e6, address(0), ENTRY_PRICE, 100,
+            market.ENTRY_MAX_PRICE_AGE() + 1
+        );
+        assertFalse(rsOk, "a price older than the entry window must be rejected");
+        assertEq(_rsReason(rsRet, ""), ": price too old");
+    }
+
+    function test_PlaceBet_AcceptsAPriceInsideTheEntryWindow() public {
+        (bool rsOk,) = _tryBetAged(
+            market, alice, OrderbookMarket.Direction.UP, 25e6, address(0), ENTRY_PRICE, 100,
+            market.ENTRY_MAX_PRICE_AGE() - 1
+        );
+        assertTrue(rsOk, "a price inside the entry window must be accepted");
     }
 
     function test_PlaceBet_Succeeds_AfterRefreshingStalePrice() public {
         vm.warp(block.timestamp + market.ENTRY_MAX_PRICE_AGE() + 1);
-        pyth.setPrice(bytes32("PEPE/USD"), 914200, -8); // refresh
-        vm.prank(alice);
-        uint256 orderId = market.placeBetWithPyth(OrderbookMarket.Direction.UP, 25e6, address(0), ENTRY_PRICE, 100, pythUpd());
+        _setPrice(bytes32("PEPE/USD"), 914200); // refresh
+        uint256 orderId = _bet(market, alice, OrderbookMarket.Direction.UP, 25e6, address(0), ENTRY_PRICE, 100);
         OrderbookMarket.Order memory o = market.getOrder(orderId);
         assertEq(o.amount, 25e6, "bet placed once price is fresh again");
     }
 
     function test_Claim_Reverts_NotYourOrder() public {
-        vm.prank(alice);
-        market.placeBetWithPyth(OrderbookMarket.Direction.UP, 25e6, address(0), ENTRY_PRICE, 100, pythUpd());
-        vm.prank(bob);
-        market.placeBetWithPyth(OrderbookMarket.Direction.DOWN, 25e6, address(0), ENTRY_PRICE, 100, pythUpd());
+        _bet(market, alice, OrderbookMarket.Direction.UP, 25e6, address(0), ENTRY_PRICE, 100);
+        _bet(market, bob, OrderbookMarket.Direction.DOWN, 25e6, address(0), ENTRY_PRICE, 100);
 
         vm.warp(block.timestamp + DURATION + 1);
         vm.prank(resolver);
@@ -233,19 +226,15 @@ contract OrderbookMarketTest is Test {
     }
 
     function test_Refund_Reverts_NotExpired() public {
-        vm.prank(alice);
-        uint256 orderId = market.placeBetWithPyth(
-            OrderbookMarket.Direction.UP, 25e6, address(0), ENTRY_PRICE, 100, pythUpd());
+        uint256 orderId = _bet(market, alice, OrderbookMarket.Direction.UP, 25e6, address(0), ENTRY_PRICE, 100);
 
         vm.expectRevert("not expired");
         market.refundExpired(orderId);
     }
 
     function test_Settle_Reverts_OnlyResolver() public {
-        vm.prank(alice);
-        market.placeBetWithPyth(OrderbookMarket.Direction.UP, 25e6, address(0), ENTRY_PRICE, 100, pythUpd());
-        vm.prank(bob);
-        market.placeBetWithPyth(OrderbookMarket.Direction.DOWN, 25e6, address(0), ENTRY_PRICE, 100, pythUpd());
+        _bet(market, alice, OrderbookMarket.Direction.UP, 25e6, address(0), ENTRY_PRICE, 100);
+        _bet(market, bob, OrderbookMarket.Direction.DOWN, 25e6, address(0), ENTRY_PRICE, 100);
 
         vm.warp(block.timestamp + DURATION + 1);
         vm.prank(alice);
@@ -255,8 +244,7 @@ contract OrderbookMarketTest is Test {
 
     // ── VIEWS ─────────────────────────────────────────────
     function test_GetPendingDepth() public {
-        vm.prank(alice);
-        market.placeBetWithPyth(OrderbookMarket.Direction.UP, 25e6, address(0), ENTRY_PRICE, 100, pythUpd());
+        _bet(market, alice, OrderbookMarket.Direction.UP, 25e6, address(0), ENTRY_PRICE, 100);
 
         (uint256 up, uint256 down) = market.getPendingDepth();
         assertEq(up, 1);
@@ -264,8 +252,7 @@ contract OrderbookMarketTest is Test {
     }
 
     function test_GetTraderOrders() public {
-        vm.prank(alice);
-        market.placeBetWithPyth(OrderbookMarket.Direction.UP, 25e6, address(0), ENTRY_PRICE, 100, pythUpd());
+        _bet(market, alice, OrderbookMarket.Direction.UP, 25e6, address(0), ENTRY_PRICE, 100);
 
         uint256[] memory orderIds = market.getTraderOrders(alice);
         assertEq(orderIds.length, 1);
@@ -273,10 +260,8 @@ contract OrderbookMarketTest is Test {
     }
 
     function test_GetPendingSettlements() public {
-        vm.prank(alice);
-        market.placeBetWithPyth(OrderbookMarket.Direction.UP, 25e6, address(0), ENTRY_PRICE, 100, pythUpd());
-        vm.prank(bob);
-        market.placeBetWithPyth(OrderbookMarket.Direction.DOWN, 25e6, address(0), ENTRY_PRICE, 100, pythUpd());
+        _bet(market, alice, OrderbookMarket.Direction.UP, 25e6, address(0), ENTRY_PRICE, 100);
+        _bet(market, bob, OrderbookMarket.Direction.DOWN, 25e6, address(0), ENTRY_PRICE, 100);
 
         // Not ready yet
         uint256[] memory ready = market.getPendingSettlements();
@@ -294,9 +279,8 @@ contract OrderbookMarketTest is Test {
         vm.prank(multisig);
         market.pause();
 
-        vm.prank(alice);
-        vm.expectRevert();
-        market.placeBetWithPyth(OrderbookMarket.Direction.UP, 10e6, address(0), ENTRY_PRICE, 100, pythUpd());
+        (bool rsOk,) = _tryBet(market, alice, OrderbookMarket.Direction.UP, 10e6, address(0), ENTRY_PRICE, 100);
+        assertFalse(rsOk, "expected the bet to be rejected");
     }
 
     function test_Pause_Reverts_NonMultisig() public {
@@ -308,8 +292,7 @@ contract OrderbookMarketTest is Test {
     // ── FUZZ ──────────────────────────────────────────────
     function testFuzz_PlaceBet_AmountRange(uint256 amount) public {
         amount = bound(amount, 1e6, 100e6);
-        vm.prank(alice);
-        market.placeBetWithPyth(OrderbookMarket.Direction.UP, amount, address(0), ENTRY_PRICE, 100, pythUpd());
+        _bet(market, alice, OrderbookMarket.Direction.UP, amount, address(0), ENTRY_PRICE, 100);
 
         (uint256 up,) = market.getPendingDepth();
         assertEq(up, 1);
@@ -324,10 +307,8 @@ contract OrderbookMarketTest is Test {
         vm.prank(alice); usdc.approve(address(market), type(uint256).max);
         vm.prank(bob);   usdc.approve(address(market), type(uint256).max);
 
-        vm.prank(alice);
-        market.placeBetWithPyth(OrderbookMarket.Direction.UP, upAmount, address(0), ENTRY_PRICE, 100, pythUpd());
-        vm.prank(bob);
-        market.placeBetWithPyth(OrderbookMarket.Direction.DOWN, downAmount, address(0), ENTRY_PRICE, 100, pythUpd());
+        _bet(market, alice, OrderbookMarket.Direction.UP, upAmount, address(0), ENTRY_PRICE, 100);
+        _bet(market, bob, OrderbookMarket.Direction.DOWN, downAmount, address(0), ENTRY_PRICE, 100);
 
         vm.warp(block.timestamp + DURATION + 1);
         vm.prank(resolver);
@@ -363,30 +344,26 @@ contract OrderbookMarketTest is Test {
         // diff = 142e12. spread = 142e12 * 10_000 / 9000e12 = 157 bps
         uint256 expectedPrice = 9000e12;
         
-        vm.prank(alice);
-        vm.expectRevert("price slippage exceeded");
-        market.placeBetWithPyth(
-            OrderbookMarket.Direction.UP, 
-            25e6, 
-            address(0), 
-            expectedPrice, 
-            150, // allow only 1.5% (150 bps), spread is 157.7
-            pythUpd()
+        // _tryBet rather than vm.expectRevert: the low-level call is caught in
+        // the helper instead of propagating, so the cheatcode would never be
+        // satisfied and the test would fail for an unrelated reason.
+        (bool ok, bytes memory ret) = _tryBet(
+            market, alice, OrderbookMarket.Direction.UP, 25e6, address(0),
+            expectedPrice,
+            150 // allow only 1.5% (150 bps), spread is 157.7
         );
+        assertFalse(ok, "slippage beyond tolerance must be rejected");
+        assertEq(_rsReason(ret, ""), ": price slippage exceeded");
     }
 
     function test_Slippage_Success_WithinDeviation() public {
         // diff = 142 bps approx
         uint256 expectedPrice = 9000e12;
         
-        vm.prank(alice);
-        market.placeBetWithPyth(
-            OrderbookMarket.Direction.UP, 
-            25e6, 
-            address(0), 
-            expectedPrice, 
-            200, // allow 2%
-            pythUpd()
+        _bet(
+            market, alice, OrderbookMarket.Direction.UP, 25e6, address(0),
+            expectedPrice,
+            200 // allow 2%
         );
 
         OrderbookMarket.Order memory o = market.getOrder(1);
