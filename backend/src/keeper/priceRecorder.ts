@@ -1,6 +1,6 @@
 import { pg } from '../db/pg.js'
-import { FEED_IDS, PYTH_HERMES, PYTH_API_KEY } from '../config.js'
-import { hermesFetch } from '../lib/hermes.js'
+import { FEED_SYMBOLS, FEED_IDS } from '../config.js'
+import { fetchPrice } from '../lib/redstone.js'
 
 /**
  * Record prices from Pyth Hermes every 30 seconds.
@@ -8,15 +8,9 @@ import { hermesFetch } from '../lib/hermes.js'
 export async function recordAllPrices() {
   for (const [symbol, feedId] of Object.entries(FEED_IDS)) {
     try {
-      const hermesUrl = `${PYTH_HERMES}/api/latest_price_feeds?ids[]=${feedId}&binary=true`
-      const hermes    = await hermesFetch(hermesUrl, PYTH_API_KEY)
-      const data      = await hermes.json() as any[]
-
-      if (!data[0]) continue
-
-      const price   = parseInt(data[0].price.price)
-      const expo    = data[0].price.expo
-      const priceUsd = price * Math.pow(10, expo)
+      // RedStone hands back a plain number, so there is no exponent to apply.
+      // Median across authorised signers - see lib/redstone.ts.
+      const priceUsd = await fetchPrice(symbol)
 
       await pg.query(
         'INSERT INTO price_history (feed_id, symbol, price, recorded_at) VALUES ($1, $2, $3, NOW())',

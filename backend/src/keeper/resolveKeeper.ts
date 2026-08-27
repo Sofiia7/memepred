@@ -8,13 +8,14 @@
  */
 import {
   createPublicClient,
+  encodeFunctionData,
   http,
   type Address,
 } from 'viem'
 import { base, baseSepolia } from 'viem/chains'
 import { pg } from '../db/pg.js'
-import { CONTRACTS, PYTH_HERMES, PYTH_API_KEY } from '../config.js'
-import { hermesFetch } from '../lib/hermes.js'
+import { CONTRACTS } from '../config.js'
+import { fetchPayload, withPayload, bytes32ToFeedId } from '../lib/redstone.js'
 import { getKeeperWalletClient } from './keeperWallet.js'
 
 const chain = process.env.CHAIN_ID === '8453' ? base : baseSepolia
@@ -24,10 +25,10 @@ const ORACLE_RESOLVER_BATCH_ABI = [
     name: 'resolveOrderbookMarketBatch',
     type: 'function',
     stateMutability: 'nonpayable',
+    // The price is a calldata suffix, not an argument.
     inputs: [
-      { name: 'market',          type: 'address' },
-      { name: 'priceUpdateData', type: 'bytes[]' },
-      { name: 'maxCount',        type: 'uint256' },
+      { name: 'market',   type: 'address' },
+      { name: 'maxCount', type: 'uint256' },
     ],
     outputs: [{ name: 'settled', type: 'uint256' }],
   },
@@ -101,11 +102,15 @@ async function pendingMarkets(): Promise<Address[]> {
   return r.rows.map((x) => x.market_address as Address)
 }
 
-async function fetchHermesUpdate(feedId: `0x${string}`): Promise<`0x${string}`[]> {
-  const url = `${PYTH_HERMES}/v2/updates/price/latest?ids[]=${feedId}&encoding=hex&parsed=false`
-  const r = await hermesFetch(url, PYTH_API_KEY)
-  const j = (await r.json()) as { binary: { data: string[] } }
-  return j.binary.data.map((h) => (h.startsWith('0x') ? h : `0x${h}`) as `0x${string}`)
+/**
+ * The signed price for a market's feed, as a calldata suffix.
+ *
+ * The market stores its feed as a bytes32 symbol, which is also the gateway's
+ * key, so the trailing zero padding is stripped back off to look it up.
+ */
+async function fetchOraclePayload(feedId: `0x${string}`): Promise<string> {
+  const symbol = Buffer.from(feedId.slice(2), 'hex').toString('utf8').replace(/\u0000+$/, '')
+  return fetchPayload(symbol)
 }
 
 export async function settlePendingMarkets() {
@@ -136,7 +141,15 @@ export async function settlePendingMarkets() {
         })
         if (ready.length === 0) break
 
-        const updateData = await fetchHermesUpdate(feedId as `0x${string}`)
+        const payload = await fetchOraclePayload(feedId as `0x${string}`)
+        const settleCallData = withPayload(
+          encodeFunctionData({
+            abi:          ORACLE_RESOLVER_BATCH_ABI,
+            functionName: 'resolveOrderbookMarketBatch',
+            args:         [market, BigInt(MAX_PER_TX)],
+          }),
+          payload,
+        )
 
         // Simulate first. Gas is pinned at 1.8M below, so a revert burns the
         // entire 1.8M — and this loop runs every 60s and retries MAX_LOOPS
@@ -152,12 +165,13 @@ export async function settlePendingMarkets() {
         // the window — legitimate, transient, and exactly what should not cost
         // 1.8M gas a minute to rediscover.
         try {
-          await publicClient.simulateContract({
-            account:      wallet.account,
-            address:      CONTRACTS.ORACLE_RESOLVER as Address,
-            abi:          ORACLE_RESOLVER_BATCH_ABI,
-            functionName: 'resolveOrderbookMarketBatch',
-            args:         [market, updateData, BigInt(MAX_PER_TX)],
+          // publicClient.call rather than simulateContract: the latter encodes
+          // the call itself, leaving nowhere to append the signed price, so it
+          // would simulate a call the chain would never see and always revert.
+          await publicClient.call({
+            account: wallet.account,
+            to:      CONTRACTS.ORACLE_RESOLVER as Address,
+            data:    settleCallData,
           })
         } catch (simErr: any) {
           console.warn(
@@ -167,12 +181,10 @@ export async function settlePendingMarkets() {
           break
         }
 
-        const hash = await wallet.writeContract({
-          address:      CONTRACTS.ORACLE_RESOLVER as Address,
-          abi:          ORACLE_RESOLVER_BATCH_ABI,
-          functionName: 'resolveOrderbookMarketBatch',
-          args:         [market, updateData, BigInt(MAX_PER_TX)],
-          gas:          1_800_000n,
+        const hash = await wallet.sendTransaction({
+          to:   CONTRACTS.ORACLE_RESOLVER as Address,
+          data: settleCallData,
+          gas:  1_800_000n,
         })
         const receipt = await publicClient.waitForTransactionReceipt({ hash })
 

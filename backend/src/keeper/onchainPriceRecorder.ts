@@ -1,8 +1,8 @@
-import { createPublicClient, http, type Address } from 'viem'
+import { createPublicClient, http, encodeFunctionData, type Address } from 'viem'
 import { base, baseSepolia } from 'viem/chains'
 const chain = process.env.CHAIN_ID === '8453' ? base : baseSepolia
-import { FEED_IDS, PYTH_HERMES, PYTH_API_KEY, ORACLE_RESOLVER_ABI, CONTRACTS } from '../config.js'
-import { hermesFetch } from '../lib/hermes.js'
+import { FEED_IDS, ORACLE_RESOLVER_ABI, CONTRACTS } from '../config.js'
+import { fetchPayload, withPayload } from '../lib/redstone.js'
 import { getKeeperWalletClient } from './keeperWallet.js'
 import { lastUserActivityMs } from '../lib/activity.js'
 import { pg } from '../db/pg.js'
@@ -161,22 +161,26 @@ export async function recordPricesOnChain() {
 
   for (const [symbol, feedId] of Object.entries(FEED_IDS)) {
     try {
-      // Hermes binary VAA endpoint (v2/updates/price/latest).
-      const url = `${PYTH_HERMES}/v2/updates/price/latest?ids[]=${feedId}&encoding=hex&parsed=false`
-      const r   = await hermesFetch(url, PYTH_API_KEY)
-      const json = await r.json() as { binary: { data: string[] } }
-      const updateData = json.binary.data.map(h => (h.startsWith('0x') ? h : `0x${h}`) as `0x${string}`)
+      // The signed price rides on the calldata rather than in an argument,
+      // so this cannot go through writeContract - viem gives no way to append
+      // bytes to an encoded call.
+      const payload = await fetchPayload(symbol)
 
       // OracleResolver pays Pyth from its own ETH balance — recordPrice is
       // nonpayable, no `value` argument. Pin gas because Pyth's price-feed
       // update reverts in gas-estimation when the publishTime is already
       // on-chain, which viem can't detect.
-      const hash = await wallet.writeContract({
-        address:      CONTRACTS.ORACLE_RESOLVER as Address,
-        abi:          ORACLE_RESOLVER_ABI,
-        functionName: 'recordPrice',
-        args:         [feedId as `0x${string}`, updateData],
-        gas:          500_000n,
+      const hash = await wallet.sendTransaction({
+        to:   CONTRACTS.ORACLE_RESOLVER as Address,
+        data: withPayload(
+          encodeFunctionData({
+            abi:          ORACLE_RESOLVER_ABI,
+            functionName: 'recordPrice',
+            args:         [feedId as `0x${string}`],
+          }),
+          payload,
+        ),
+        gas: 500_000n,
       })
       await publicClient.waitForTransactionReceipt({ hash })
     } catch (err) {

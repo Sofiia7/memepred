@@ -11,13 +11,14 @@ import { profileRoutes }     from './routes/profile.js'
 import { referralRoutes }    from './routes/referral.js'
 import poolRoutes            from './routes/pool.js'
 import { keeperHealthRoutes } from './routes/keeperHealth.js'
-import { pythRoutes }        from './routes/pyth.js'
+import { oracleRoutes }      from './routes/oracle.js'
 import { pg }                from './db/pg.js'
 import { runMigrations }     from './db/migrate.js'
 import { redis }             from './db/redis.js'
 import { markUserActivity }  from './lib/activity.js'
 import { makeClientKey }     from './lib/clientKey.js'
-import { PORT, PYTH_HERMES, PYTH_API_KEY, SUPPORTED_FEED_IDS } from './config.js'
+import { fetchPayload, fetchPrice } from './lib/redstone.js'
+import { PORT, FEED_SYMBOLS } from './config.js'
 
 const app = Fastify({ logger: true })
 
@@ -70,14 +71,16 @@ await app.register(referralRoutes,    { prefix: '/api/referral' })
 await app.register(poolRoutes)        // mounts /api/pool/*
 await app.register(keeperHealthRoutes)// mounts /api/keeper/health
 
-// Hermes has required a bearer token since 2026-08-26, and Vite bakes every
-// VITE_* value into the public bundle, so the browser cannot hold one. The
-// frontend reads prices and bet payloads through here instead.
-await app.register(pythRoutes, {
-  prefix:       '/api/pyth',
-  apiKey:       PYTH_API_KEY,
-  hermesUrl:    PYTH_HERMES,
-  allowedFeeds: SUPPORTED_FEED_IDS,
+// RedStone prices for the frontend. No credential is involved - the gateway
+// is public - but the browser would otherwise have to bundle
+// @redstone-finance/protocol and its ethers v5 dependency just to concatenate
+// a payload, and one cache here keeps our gateway request rate flat instead of
+// scaling with concurrent visitors.
+await app.register(oracleRoutes, {
+  prefix:       '/api/oracle',
+  allowedFeeds: new Set(FEED_SYMBOLS),
+  fetchPayload,
+  fetchPrice,
 })
 
 app.get('/health', async () => ({ status: 'ok', ts: Date.now() }))

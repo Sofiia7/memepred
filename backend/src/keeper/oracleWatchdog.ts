@@ -26,8 +26,8 @@ import {
 } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 import { base, baseSepolia } from 'viem/chains'
-import { CONTRACTS, PYTH_HERMES, PYTH_API_KEY } from '../config.js'
-import { hermesFetch, HermesAuthError } from '../lib/hermes.js'
+import { CONTRACTS } from '../config.js'
+import { fetchPayload, bytes32ToFeedId } from '../lib/redstone.js'
 import { nextFailStreak, STALE_FAIL_LIMIT, type FeedPing } from './feedStreak.js'
 import { redis } from '../db/redis.js'
 import { getKeeperWalletClient } from './keeperWallet.js'
@@ -198,7 +198,7 @@ async function checkFeedsAndAutoPause() {
   }
 
   for (const feedId of feeds) {
-    const ping   = await pingHermes(feedId)
+    const ping   = await pingOracle(feedId)
     const streak = nextFailStreak(failStreak.get(feedId) ?? 0, ping)
     failStreak.set(feedId, streak)
 
@@ -215,22 +215,25 @@ async function checkFeedsAndAutoPause() {
   }
 }
 
-async function pingHermes(feedId: string): Promise<FeedPing> {
-  const url = `${PYTH_HERMES}/v2/updates/price/latest?ids[]=${feedId}&encoding=hex&parsed=false`
+/**
+ * Can we still build a usable payload for this feed?
+ *
+ * Deliberately the same call the keeper makes to actually push a price, so a
+ * green watchdog means the write path works rather than merely that some
+ * endpoint answered.
+ */
+async function pingOracle(feedId: string): Promise<FeedPing> {
+  const symbol = Buffer.from(feedId.slice(2), 'hex').toString('utf8').replace(/\u0000+$/, '')
   try {
-    const r = await hermesFetch(url, PYTH_API_KEY)
-    const j = (await r.json()) as { binary?: { data?: unknown[] } }
-    return Array.isArray(j.binary?.data) && j.binary!.data!.length > 0
-      ? 'ok'
-      : 'unavailable'
+    const payload = await fetchPayload(symbol)
+    return payload.length > 2 ? 'ok' : 'unavailable'
   } catch (err) {
-    // Distinguished rather than lumped in with a dead feed: our credentials
-    // being wrong says nothing about whether Pyth is publishing, and acting as
-    // if it did would pause every market at once.
-    if (err instanceof HermesAuthError) {
-      console.error(`[watchdog] cannot reach Hermes: ${err.message}`)
-      return 'unauthenticated'
-    }
+    // "not enough authorised signers" is about the gateway's data, not our
+    // credentials, so it counts toward the feed's streak like any other
+    // unavailability. There is no credential to be wrong any more - which is
+    // why the 'unauthenticated' arm now only exists for the pause-safety
+    // guarantee described in feedStreak.ts.
+    console.error(`[watchdog] cannot build a payload for ${symbol}:`, err)
     return 'unavailable'
   }
 }

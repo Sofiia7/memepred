@@ -1,4 +1,5 @@
 import { config } from 'dotenv'
+import { feedIdToBytes32 } from './lib/redstone.js'
 config()
 
 import { type Address } from 'viem'
@@ -34,28 +35,29 @@ export const CONTRACTS = {
  * sufficient to stop market creation, because marketCreator intersects this
  * map with the factory's list rather than trusting the factory alone.
  */
-export const FEED_IDS: Record<string, string> = {
-  PEPE:  '0xd69731a2e74ac1ce884fc3890f7ee324b6deb66147055249568869ed700882e4',
-  DOGE:  '0xdcef50dd0a4cd2dcc17e45df1676dcb336a11a61c69df7a0299b0150c672d25c',
-  // BRETT and TOSHI are still whitelisted on the factory and can be re-enabled
-  // by uncommenting — no contract change needed, since marketCreator derives
-  // its scope from this map.
-  // BRETT: '0x9b5729efe3d68e537cdcb2ca70444dea5f06e1660b562632609757076d0b9448',
-  // TOSHI: '0x3450d9fbb8c3cf749578315668e21fabb4cd78dcfda1c1cba698b804bae2db2a',
-}
+/**
+ * 2026-08-27: these are RedStone symbols right-padded into a bytes32, not Pyth
+ * feed hashes. Pyth put every memecoin behind a $500/month plan, so the oracle
+ * moved; see lib/redstone.ts. The symbol is also the gateway's own key, so one
+ * value serves both the on-chain id and the fetch.
+ *
+ * BRETT, DEGEN, BONK, WIF, SHIB and FLOKI are all available on RedStone and can
+ * be added here - each still needs `addFeed` on the factory (multisig-only).
+ * TOSHI and MORPHO are NOT on RedStone; they were on the old Pyth list and
+ * would silently produce markets with no price if copied across.
+ */
+export const FEED_SYMBOLS = ['PEPE', 'DOGE'] as const
+
+export const FEED_IDS: Record<string, string> = Object.fromEntries(
+  FEED_SYMBOLS.map((s) => [s, feedIdToBytes32(s)]),
+)
 
 /** Lowercased feed ids from FEED_IDS, for O(1) membership checks. */
 export const SUPPORTED_FEED_IDS = new Set(
   Object.values(FEED_IDS).map((f) => f.toLowerCase()),
 )
 
-export const PYTH_HERMES = process.env.PYTH_HERMES_URL || 'https://hermes.pyth.network'
-/**
- * Bearer token for Hermes, issued from Pyth Terminal. Required since the Pyth
- * Core upgrade cut off unauthenticated access on 2026-08-26 16:00 UTC. Never
- * expose this to the browser - the frontend goes through /api/pyth/updates.
- */
-export const PYTH_API_KEY = process.env.PYTH_API_KEY
+// Pyth is gone; RedStone gateway settings live in lib/redstone.ts.
 export const BASE_RPC_URL = process.env.BASE_RPC_URL || 'https://mainnet.base.org'
 export const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://localhost:5432/flipthememe'
 export const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379'
@@ -67,9 +69,10 @@ export const ORACLE_RESOLVER_ABI = [
     name: 'recordPrice',
     type: 'function',
     stateMutability: 'nonpayable',
+    // No price parameter: it rides on the calldata as a RedStone payload, so
+    // every call has to be encoded and then extended - see lib/redstone.ts.
     inputs: [
-      { name: 'feedId', type: 'bytes32' },
-      { name: 'priceUpdateData', type: 'bytes[]' }
+      { name: 'feedId', type: 'bytes32' }
     ],
     outputs: []
   },
