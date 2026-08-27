@@ -1,7 +1,8 @@
 import { createPublicClient, http, type Address } from 'viem'
 import { base, baseSepolia } from 'viem/chains'
 const chain = process.env.CHAIN_ID === '8453' ? base : baseSepolia
-import { FEED_IDS, PYTH_HERMES, ORACLE_RESOLVER_ABI, CONTRACTS } from '../config.js'
+import { FEED_IDS, PYTH_HERMES, PYTH_API_KEY, ORACLE_RESOLVER_ABI, CONTRACTS } from '../config.js'
+import { hermesFetch } from '../lib/hermes.js'
 import { getKeeperWalletClient } from './keeperWallet.js'
 import { lastUserActivityMs } from '../lib/activity.js'
 import { pg } from '../db/pg.js'
@@ -162,8 +163,7 @@ export async function recordPricesOnChain() {
     try {
       // Hermes binary VAA endpoint (v2/updates/price/latest).
       const url = `${PYTH_HERMES}/v2/updates/price/latest?ids[]=${feedId}&encoding=hex&parsed=false`
-      const r   = await fetch(url)
-      if (!r.ok) throw new Error(`hermes ${r.status}`)
+      const r   = await hermesFetch(url, PYTH_API_KEY)
       const json = await r.json() as { binary: { data: string[] } }
       const updateData = json.binary.data.map(h => (h.startsWith('0x') ? h : `0x${h}`) as `0x${string}`)
 

@@ -26,7 +26,9 @@ import {
 } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 import { base, baseSepolia } from 'viem/chains'
-import { CONTRACTS, PYTH_HERMES } from '../config.js'
+import { CONTRACTS, PYTH_HERMES, PYTH_API_KEY } from '../config.js'
+import { hermesFetch, HermesAuthError } from '../lib/hermes.js'
+import { nextFailStreak, STALE_FAIL_LIMIT, type FeedPing } from './feedStreak.js'
 import { redis } from '../db/redis.js'
 import { getKeeperWalletClient } from './keeperWallet.js'
 
@@ -44,8 +46,6 @@ const publicClient = createPublicClient({
 const ETH_WARN_WEI    = BigInt(process.env.RESOLVER_ETH_WARN_WEI    ?? '20000000000000000')
 /** Page (treat as critical) below this. Default: 0.005 ETH. */
 const ETH_CRIT_WEI    = BigInt(process.env.RESOLVER_ETH_CRIT_WEI    ?? '5000000000000000')
-/** Consecutive Hermes failures per feed before auto-pausing. */
-const STALE_FAIL_LIMIT = Number(process.env.STALE_FAIL_LIMIT ?? '5')
 /** Per-feed cool-down after pausing — don't spam pause txs. */
 const PAUSE_COOLDOWN_MS = Number(process.env.PAUSE_COOLDOWN_MS ?? String(15 * 60_000))
 
@@ -198,8 +198,8 @@ async function checkFeedsAndAutoPause() {
   }
 
   for (const feedId of feeds) {
-    const ok = await pingHermes(feedId)
-    const streak = ok ? 0 : (failStreak.get(feedId) ?? 0) + 1
+    const ping   = await pingHermes(feedId)
+    const streak = nextFailStreak(failStreak.get(feedId) ?? 0, ping)
     failStreak.set(feedId, streak)
 
     watchdogState.feedStatus[feedId] = {
@@ -207,21 +207,31 @@ async function checkFeedsAndAutoPause() {
       lastPausedAt: lastPauseAt.get(feedId),
     }
 
-    if (!ok && streak >= STALE_FAIL_LIMIT) {
+    // Only 'unavailable' can reach the limit; see feedStreak.ts for why a
+    // credentials failure must not pause anything.
+    if (ping === 'unavailable' && streak >= STALE_FAIL_LIMIT) {
       await maybePauseFeed(feedId, streak)
     }
   }
 }
 
-async function pingHermes(feedId: string): Promise<boolean> {
+async function pingHermes(feedId: string): Promise<FeedPing> {
+  const url = `${PYTH_HERMES}/v2/updates/price/latest?ids[]=${feedId}&encoding=hex&parsed=false`
   try {
-    const url = `${PYTH_HERMES}/v2/updates/price/latest?ids[]=${feedId}&encoding=hex&parsed=false`
-    const r = await fetch(url, { signal: AbortSignal.timeout(8_000) })
-    if (!r.ok) return false
+    const r = await hermesFetch(url, PYTH_API_KEY)
     const j = (await r.json()) as { binary?: { data?: unknown[] } }
     return Array.isArray(j.binary?.data) && j.binary!.data!.length > 0
-  } catch {
-    return false
+      ? 'ok'
+      : 'unavailable'
+  } catch (err) {
+    // Distinguished rather than lumped in with a dead feed: our credentials
+    // being wrong says nothing about whether Pyth is publishing, and acting as
+    // if it did would pause every market at once.
+    if (err instanceof HermesAuthError) {
+      console.error(`[watchdog] cannot reach Hermes: ${err.message}`)
+      return 'unauthenticated'
+    }
+    return 'unavailable'
   }
 }
 

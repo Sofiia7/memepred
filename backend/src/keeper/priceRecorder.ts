@@ -1,5 +1,6 @@
 import { pg } from '../db/pg.js'
-import { FEED_IDS, PYTH_HERMES } from '../config.js'
+import { FEED_IDS, PYTH_HERMES, PYTH_API_KEY } from '../config.js'
+import { hermesFetch } from '../lib/hermes.js'
 
 /**
  * Record prices from Pyth Hermes every 30 seconds.
@@ -8,7 +9,7 @@ export async function recordAllPrices() {
   for (const [symbol, feedId] of Object.entries(FEED_IDS)) {
     try {
       const hermesUrl = `${PYTH_HERMES}/api/latest_price_feeds?ids[]=${feedId}&binary=true`
-      const hermes    = await fetch(hermesUrl)
+      const hermes    = await hermesFetch(hermesUrl, PYTH_API_KEY)
       const data      = await hermes.json() as any[]
 
       if (!data[0]) continue

@@ -50,6 +50,12 @@ export const SUPPORTED_FEED_IDS = new Set(
 )
 
 export const PYTH_HERMES = process.env.PYTH_HERMES_URL || 'https://hermes.pyth.network'
+/**
+ * Bearer token for Hermes, issued from Pyth Terminal. Required since the Pyth
+ * Core upgrade cut off unauthenticated access on 2026-08-26 16:00 UTC. Never
+ * expose this to the browser - the frontend goes through /api/pyth/updates.
+ */
+export const PYTH_API_KEY = process.env.PYTH_API_KEY
 export const BASE_RPC_URL = process.env.BASE_RPC_URL || 'https://mainnet.base.org'
 export const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://localhost:5432/flipthememe'
 export const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379'

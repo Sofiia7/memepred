@@ -13,7 +13,8 @@ import {
 } from 'viem'
 import { base, baseSepolia } from 'viem/chains'
 import { pg } from '../db/pg.js'
-import { CONTRACTS, PYTH_HERMES } from '../config.js'
+import { CONTRACTS, PYTH_HERMES, PYTH_API_KEY } from '../config.js'
+import { hermesFetch } from '../lib/hermes.js'
 import { getKeeperWalletClient } from './keeperWallet.js'
 
 const chain = process.env.CHAIN_ID === '8453' ? base : baseSepolia
@@ -102,8 +103,7 @@ async function pendingMarkets(): Promise<Address[]> {
 
 async function fetchHermesUpdate(feedId: `0x${string}`): Promise<`0x${string}`[]> {
   const url = `${PYTH_HERMES}/v2/updates/price/latest?ids[]=${feedId}&encoding=hex&parsed=false`
-  const r = await fetch(url)
-  if (!r.ok) throw new Error(`hermes ${r.status}`)
+  const r = await hermesFetch(url, PYTH_API_KEY)
   const j = (await r.json()) as { binary: { data: string[] } }
   return j.binary.data.map((h) => (h.startsWith('0x') ? h : `0x${h}`) as `0x${string}`)
 }

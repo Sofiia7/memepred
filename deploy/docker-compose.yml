@@ -65,6 +65,11 @@ services:
       PORT:         "3001"
       BASE_RPC_URL: ${BASE_RPC_URL}
       PYTH_HERMES_URL:    ${PYTH_HERMES_URL:-https://hermes.pyth.network}
+      # Bearer token for Hermes, required since the Pyth Core upgrade on
+      # 2026-08-26 16:00 UTC. The backend needs it because the browser cannot:
+      # Vite bakes VITE_* into the public bundle, so the frontend reads prices
+      # through /api/pyth/updates instead of calling Pyth itself.
+      PYTH_API_KEY:       ${PYTH_API_KEY}
       CHAIN_ID:           ${CHAIN_ID:-84532}
       WORKER_SECRET:      ${WORKER_SECRET}
       USDC_ADDRESS:       ${USDC_ADDRESS}
@@ -93,6 +98,8 @@ services:
       REDIS_URL:    redis://default:${REDIS_PASSWORD}@redis:6379
       BASE_RPC_URL: ${BASE_RPC_URL}
       PYTH_HERMES_URL:           ${PYTH_HERMES_URL:-https://hermes.pyth.network}
+      # Without this every price push, settlement and feed ping gets a 401.
+      PYTH_API_KEY:              ${PYTH_API_KEY}
       USDC_ADDRESS:              ${USDC_ADDRESS}
       MARKET_FACTORY:            ${MARKET_FACTORY}
       ORACLE_RESOLVER:           ${ORACLE_RESOLVER}

@@ -17,6 +17,7 @@ import {
 import { parseUnits, maxUint256, decodeEventLog, type Address, type Hash } from 'viem'
 import { CONTRACTS, ORDERBOOK_MARKET_ABI, ERC20_ABI } from '../lib/contracts'
 import { getPendingReferrer } from '../lib/referral'
+import { pythUpdatesUrl } from '../lib/pyth'
 import { useEnsureChain } from './useEnsureChain'
 
 export type Direction = 0 | 1  // 0=UP, 1=DOWN
@@ -168,12 +169,9 @@ export function usePlaceBet({
       }
 
       let priceUpdateData: `0x${string}`[] = []
-      const hermes = import.meta.env.VITE_PYTH_HERMES || 'https://hermes.pyth.network'
       try {
-        const r = await fetch(
-          `${hermes}/v2/updates/price/latest?ids[]=${marketFeedId}&encoding=hex&parsed=false`,
-        )
-        if (!r.ok) throw new Error(`Hermes responded ${r.status}`)
+        const r = await fetch(pythUpdatesUrl(marketFeedId, false))
+        if (!r.ok) throw new Error(`Price feed responded ${r.status}`)
         const j = (await r.json()) as { binary: { data: string[] } }
         priceUpdateData = j.binary.data.map((h) =>
           (h.startsWith('0x') ? h : `0x${h}`) as `0x${string}`,

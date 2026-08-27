@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 
-const HERMES = import.meta.env.VITE_PYTH_HERMES ?? import.meta.env.VITE_PYTH_HERMES_URL ?? 'https://hermes.pyth.network'
+import { pythUpdatesUrl } from '../lib/pyth.js'
 
 export interface PythPrice {
   raw: bigint           // 1e18-normalized for contract calls
@@ -20,9 +20,8 @@ export function usePythPrice(feedId?: string | null): PythPrice {
 
     async function tick() {
       try {
-        const id = feedId!.startsWith('0x') ? feedId!.slice(2) : feedId!
-        const r = await fetch(`${HERMES}/v2/updates/price/latest?ids[]=${id}&encoding=hex&parsed=true`)
-        if (!r.ok) throw new Error('hermes ' + r.status)
+        const r = await fetch(pythUpdatesUrl(feedId!, true))
+        if (!r.ok) throw new Error('price feed ' + r.status)
         const j = await r.json() as any
         const p = j.parsed?.[0]?.price
         if (!p || cancel) return
