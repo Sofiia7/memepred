@@ -86,8 +86,13 @@ contract OracleResolverTest is Test {
         vm.prank(keeper);
         resolver.recordPrice(FEED, data);
 
-        // Jump past the 5-min TWAP window (and past 10-min cleanup head).
-        vm.warp(block.timestamp + 11 minutes);
+        // Jump past the TWAP window AND past the history retention window.
+        // Retention was widened from 10 minutes to HISTORY_RETENTION (2h) when
+        // the exit price became anchored to each match's settleAt: with
+        // anchored pricing, history has to outlive a late keeper or an overdue
+        // match cannot be priced at all. The behaviour under test — stale
+        // points eventually get pruned — is unchanged; only the age is.
+        vm.warp(block.timestamp + resolver.HISTORY_RETENTION() + 1 minutes);
 
         // We can't call _getTWAP directly (internal); confirm history retains
         // a stale point and head advances on next recordPrice cleanup.
@@ -233,6 +238,68 @@ contract OracleResolverTest is Test {
     ///      the only coverage of resolveOrderbookMatch/_resolveBatch was the
     ///      one TWAP-window test above — the anomaly-cancel branch and the
     ///      batch/unbounded wrappers had zero coverage.
+    /**
+     * The exit price must come from the match's own settleAt, not from whenever
+     * the keeper got around to it.
+     *
+     * Entry is $1.00. At settleAt the price is $1.05, so UP won on the merits.
+     * The keeper then goes down for 30 minutes and, on recovery, the market has
+     * collapsed to $0.50. Before anchoring, settlement read the price at keeper
+     * time and UP lost despite having been right — a user's entire stake turned
+     * on when a server came back.
+     */
+    function test_LateSettlement_UsesPriceAtSettleAt_NotAtKeeperTime() public {
+        (OrderbookMarket market, uint256 matchId) = _freshMarketWithOneMatch(15 minutes);
+        bytes[] memory data = new bytes[](0);
+
+        // Price at the moment the bet was actually due: $1.05 → UP wins.
+        vm.warp(block.timestamp + 15 minutes);
+        pyth.setPrice(FEED, 105e6, -8);
+        vm.prank(keeper); resolver.recordPrice(FEED, data);
+
+        // Keeper is down for half an hour; the coin collapses meanwhile.
+        vm.warp(block.timestamp + 30 minutes);
+        pyth.setPrice(FEED, 50e6, -8);
+        vm.prank(keeper); resolver.recordPrice(FEED, data);
+
+        vm.prank(keeper);
+        uint256 settled = resolver.resolveOrderbookMarketBatch(address(market), data, 10);
+
+        assertEq(settled, 1, "an overdue match must still settle");
+        OrderbookMarket.Match memory m = market.getMatch(matchId);
+        assertTrue(m.settled, "settled");
+        assertTrue(m.upWon, "UP was right at settleAt and must win regardless of keeper lateness");
+        assertGt(m.exitPrice, m.entryPrice, "exit price is the one from settleAt");
+    }
+
+    /**
+     * Past HISTORY_RETENTION there is no honest price for the match's deadline.
+     * Settling anyway would invent a winner, so the match is skipped and left
+     * for the permissionless emergencyRefundMatch — and, importantly, the rest
+     * of the batch is not reverted.
+     */
+    function test_SettlementBeyondRetention_SkipsRatherThanInventingAWinner() public {
+        (OrderbookMarket market, uint256 matchId) = _freshMarketWithOneMatch(15 minutes);
+        bytes[] memory data = new bytes[](0);
+
+        vm.warp(block.timestamp + 15 minutes);
+        pyth.setPrice(FEED, 105e6, -8);
+        vm.prank(keeper); resolver.recordPrice(FEED, data);
+
+        // Outage longer than the retention window: the settleAt-era points are
+        // pruned, so nothing covers this match's window any more.
+        vm.warp(block.timestamp + resolver.HISTORY_RETENTION() + 10 minutes);
+        pyth.setPrice(FEED, 50e6, -8);
+        vm.prank(keeper); resolver.recordPrice(FEED, data);
+
+        vm.prank(keeper);
+        uint256 settled = resolver.resolveOrderbookMarketBatch(address(market), data, 10);
+
+        assertEq(settled, 0, "must not settle a match it cannot price");
+        OrderbookMarket.Match memory m = market.getMatch(matchId);
+        assertFalse(m.settled, "left unsettled for emergencyRefundMatch");
+    }
+
     function _freshMarketWithOneMatch(uint256 duration)
         internal
         returns (OrderbookMarket market, uint256 matchId)

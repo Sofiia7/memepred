@@ -36,9 +36,31 @@ contract OracleResolver is AccessControl {
     uint256 public constant MAX_PRICE_AGE = 60; // секунд
     uint256 public constant MAX_SPREAD_BPS = 200; // 2% — если больше → отмена рынка
 
+    /**
+     * How long price points are kept.
+     *
+     * The exit price is now averaged over the window ending at each match's own
+     * settleAt (see _getTWAPAt), so history has to outlive a late keeper or
+     * there is nothing to settle against. It used to be pruned at 10 minutes,
+     * which is shorter than a routine container restart — with anchored pricing
+     * that would have made every match after a short outage unsettleable.
+     *
+     * Two hours is the compromise: it absorbs ordinary operational blips while
+     * keeping the array bounded (~240 points per feed at the 30s push cadence).
+     * Past it a match cannot be priced honestly at all, and the right outcome is
+     * the permissionless emergencyRefundMatch, not a made-up winner.
+     */
+    uint256 public constant HISTORY_RETENTION = 2 hours;
+
+    /// Caps the backward scan in _getTWAPAt so a long history can't make
+    /// settlement cost unbounded gas.
+    uint256 private constant MAX_SCAN = 512;
+
     event PriceRecorded(bytes32 indexed feedId, uint256 price, uint256 ts);
     event MarketResolved(address indexed market, bool upWon, uint256 entry, uint256 exit);
     event MarketRefunded(address indexed market, string reason);
+    /// A match came due but no recorded price covers its settleAt window.
+    event MatchUnpriceable(address indexed market, uint256 indexed matchId, uint256 settleAt);
 
     constructor(address _pyth) {
         pyth = IPyth(_pyth);
@@ -141,24 +163,55 @@ contract OracleResolver is AccessControl {
         uint256 updateFee = pyth.getUpdateFee(priceUpdateData);
         pyth.updatePriceFeeds{value: updateFee}(priceUpdateData);
 
-        uint256 exitTwap = _getTWAP(feedId, _twapWindowFor(m.duration()));
-
-        // Anomaly check: TWAP vs spot.
-        IPyth.Price memory spot = pyth.getPriceNoOlderThan(feedId, MAX_PRICE_AGE);
-        uint256 spotPrice = _normalizePrice(spot);
-        if (_spread(exitTwap, spotPrice) > MAX_SPREAD_BPS) {
-            emit MarketRefunded(market, "oracle spread too high");
-            return 0;
-        }
-
+        uint256 window = _twapWindowFor(m.duration());
         uint256[] memory ready = m.getReadySettlements(0, maxCount);
-        for (uint256 i = 0; i < ready.length; i++) {
-            m.settleMatch(ready[i], exitTwap);
-        }
-        settled = ready.length;
 
-        if (settled > 0) {
-            emit MarketResolved(market, true, 0, exitTwap);
+        // Each match is priced at its OWN settleAt. A single batch-wide exit
+        // price was wrong twice: matches in one market have different settleAt
+        // values, and the price was read at keeper time rather than at the
+        // moment the bet was actually due.
+        for (uint256 i = 0; i < ready.length; i++) {
+            uint256 settleAt = m.getMatch(ready[i]).settleAt;
+            (uint256 exitTwap, uint256 spotAtAnchor, bool ok) =
+                _getTWAPAt(feedId, window, settleAt);
+
+            if (!ok) {
+                // No recorded price anywhere near this match's deadline —
+                // usually a keeper outage longer than HISTORY_RETENTION. Skip
+                // it rather than inventing a winner; once SETTLE_GRACE lapses
+                // anyone can call emergencyRefundMatch and both sides get their
+                // stake back.
+                emit MatchUnpriceable(market, ready[i], settleAt);
+                continue;
+            }
+
+            // Two anomaly checks, because they catch different things.
+            //
+            // (a) Internal consistency: the average over the window versus the
+            //     last tick at or before settleAt. Meaningful at any age.
+            if (_spread(exitTwap, spotAtAnchor) > MAX_SPREAD_BPS) {
+                emit MarketRefunded(market, "oracle spread too high");
+                continue;
+            }
+            // (b) History versus live reality: the original guard, which is what
+            //     catches stale or poisoned history. Only applied when we are
+            //     settling promptly — for a match that came due hours ago the
+            //     recorded price and the current spot legitimately differ, and
+            //     comparing them would block every overdue settlement. Kept
+            //     tight (MAX_PRICE_AGE) so a memecoin's ordinary 2% drift over a
+            //     few minutes doesn't trip it on the happy path.
+            if (block.timestamp <= settleAt + MAX_PRICE_AGE) {
+                IPyth.Price memory spot = pyth.getPriceNoOlderThan(feedId, MAX_PRICE_AGE);
+                if (_spread(exitTwap, _normalizePrice(spot)) > MAX_SPREAD_BPS) {
+                    emit MarketRefunded(market, "oracle spread too high");
+                    continue;
+                }
+            }
+
+            m.settleMatch(ready[i], exitTwap);
+            settled++;
+            emit MarketResolved(market, exitTwap > m.getMatch(ready[i]).entryPrice,
+                                m.getMatch(ready[i]).entryPrice, exitTwap);
         }
     }
 
@@ -174,20 +227,50 @@ contract OracleResolver is AccessControl {
     }
 
     function _getTWAP(bytes32 feedId, uint256 window) internal view returns (uint256) {
+        (uint256 twap, , bool ok) = _getTWAPAt(feedId, window, block.timestamp);
+        require(ok, "no price data");
+        return twap;
+    }
+
+    /**
+     * @dev TWAP over the window ENDING AT `anchor`, plus the last price at or
+     *      before `anchor`.
+     *
+     *      The window used to end at block.timestamp, i.e. whenever the keeper
+     *      happened to run. Nothing tied the exit price to the moment the match
+     *      was actually due, so a keeper that came back six hours late settled
+     *      every overdue match against the price six hours later: a user who was
+     *      right at their settleAt could lose their whole stake because the coin
+     *      moved afterwards. The 2% spread guard could not catch it either — it
+     *      compared the current TWAP against the current spot, which of course
+     *      agreed.
+     *
+     *      Returns ok=false rather than reverting when the window holds no data,
+     *      so one unpriceable match cannot block a whole batch.
+     */
+    function _getTWAPAt(bytes32 feedId, uint256 window, uint256 anchor)
+        internal view returns (uint256 twap, uint256 spotAtAnchor, bool ok)
+    {
         PricePoint[] storage history = priceHistory[feedId];
         uint256 head   = historyHead[feedId];
-        uint256 cutoff = block.timestamp > window ? block.timestamp - window : 0;
-        uint256 sum = 0;
+        uint256 cutoff = anchor > window ? anchor - window : 0;
+
+        uint256 sum   = 0;
         uint256 count = 0;
+        uint256 scanned = 0;
 
         for (uint256 i = history.length; i > head; i--) {
-            if (history[i-1].ts < cutoff) break;
-            sum += history[i-1].price;
+            if (scanned++ >= MAX_SCAN) break;
+            PricePoint storage p = history[i-1];
+            if (p.ts > anchor) continue;          // not yet due at settleAt
+            if (p.ts < cutoff) break;             // older than the window
+            if (count == 0) spotAtAnchor = p.price; // newest point <= anchor
+            sum += p.price;
             count++;
         }
 
-        require(count > 0, "no price data");
-        return sum / count;
+        if (count == 0) return (0, 0, false);
+        return (sum / count, spotAtAnchor, true);
     }
 
     function _spread(uint256 a, uint256 b) internal pure returns (uint256) {
@@ -211,8 +294,8 @@ contract OracleResolver is AccessControl {
     }
 
     function _cleanHistory(bytes32 feedId) internal {
-        if (block.timestamp < 10 minutes) return; // prevent underflow
-        uint256 cutoff = block.timestamp - 10 minutes;
+        if (block.timestamp < HISTORY_RETENTION) return; // prevent underflow
+        uint256 cutoff = block.timestamp - HISTORY_RETENTION;
         PricePoint[] storage history = priceHistory[feedId];
         uint256 i = historyHead[feedId];
         // Advance head past stale entries; do NOT shift the array.
