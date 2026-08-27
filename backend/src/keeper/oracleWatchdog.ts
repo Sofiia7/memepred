@@ -24,6 +24,7 @@ import {
   formatEther,
   type Address,
 } from 'viem'
+import { privateKeyToAccount } from 'viem/accounts'
 import { base, baseSepolia } from 'viem/chains'
 import { CONTRACTS, PYTH_HERMES } from '../config.js'
 import { redis } from '../db/redis.js'
@@ -87,6 +88,9 @@ const lastPauseAt = new Map<string, number>()
 export const watchdogState = {
   resolverEthWei: 0n,
   resolverEthAlert: 'unknown' as 'ok' | 'warn' | 'critical' | 'unknown',
+  keeperEthWei:    0n,
+  keeperEthAlert:  'unknown' as 'ok' | 'warn' | 'critical' | 'unknown',
+  keeperAddress:   '' as string,
   feedStatus:      {} as Record<string, { failStreak: number; lastPausedAt?: number }>,
   lastTick:        0,
 }
@@ -96,6 +100,7 @@ export async function oracleWatchdogTick() {
 
   await Promise.allSettled([
     checkResolverEthBalance(),
+    checkKeeperEthBalance(),
     checkFeedsAndAutoPause(),
   ])
 
@@ -107,6 +112,9 @@ export async function oracleWatchdogTick() {
       JSON.stringify({
         resolverEthWei:    watchdogState.resolverEthWei.toString(),
         resolverEthAlert:  watchdogState.resolverEthAlert,
+        keeperEthWei:      watchdogState.keeperEthWei.toString(),
+        keeperEthAlert:    watchdogState.keeperEthAlert,
+        keeperAddress:     watchdogState.keeperAddress,
         feedStatus:        watchdogState.feedStatus,
         lastTick:          watchdogState.lastTick,
       }),
@@ -117,6 +125,40 @@ export async function oracleWatchdogTick() {
 }
 
 // ── 2.5 — Resolver ETH balance ────────────────────────────────
+/**
+ * The keeper EOA's own balance — the thing that actually pays for every
+ * settlement, market rollover and price push.
+ *
+ * Nothing watched it before. On 2026-07-26 the wallet fell 12 gwei short of its
+ * next transaction and every write started throwing; each loop caught the error
+ * into console.error, the process stayed up, and this watchdog kept succeeding
+ * because it only does eth_calls and Hermes pings. /api/keeper/health therefore
+ * reported a healthy keeper for 14 days while it created no markets and settled
+ * nothing. Whatever else is broken, an empty wallet must not look like health.
+ */
+async function checkKeeperEthBalance() {
+  const pk = process.env.KEEPER_PRIVATE_KEY
+  if (!pk) return
+  try {
+    const account = privateKeyToAccount(pk as `0x${string}`)
+    watchdogState.keeperAddress = account.address
+    const bal = await publicClient.getBalance({ address: account.address })
+    watchdogState.keeperEthWei = bal
+
+    if (bal < ETH_CRIT_WEI) {
+      watchdogState.keeperEthAlert = 'critical'
+      console.error(`[watchdog] CRITICAL: keeper wallet ${account.address} = ${formatEther(bal)} ETH — settlements, market creation and price pushes are all failing`)
+    } else if (bal < ETH_WARN_WEI) {
+      watchdogState.keeperEthAlert = 'warn'
+      console.warn(`[watchdog] WARN: keeper wallet ${account.address} = ${formatEther(bal)} ETH`)
+    } else {
+      watchdogState.keeperEthAlert = 'ok'
+    }
+  } catch (err) {
+    console.error('[watchdog] keeper balance check failed:', err)
+  }
+}
+
 async function checkResolverEthBalance() {
   if (!CONTRACTS.ORACLE_RESOLVER) return
   try {
