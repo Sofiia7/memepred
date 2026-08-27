@@ -122,20 +122,21 @@ export const ORDERBOOK_MARKET_ABI = [
   // gone from the contract. It priced a bet off the keeper's last on-chain
   // push, so the strike could be seconds old — enough for anyone watching
   // Hermes live to enter against a price they already knew had moved.
-  // placeBetWithPyth is now the only way to bet, and it rejects an empty
-  // update array. Do not re-add a fallback here: there is nothing to fall back
-  // to on-chain, and a call would simply revert.
+  // The only way to bet. The price is not an argument: it rides on the tail of
+  // the calldata as a signed RedStone payload, so this cannot be called through
+  // wagmi's writeContract - see lib/oracle.ts. Do not add an overload that
+  // works without one; there is nothing to fall back to on-chain, and pricing a
+  // bet off a stale value is the hole this design closes.
   {
-    name: 'placeBetWithPyth',
+    name: 'placeBet',
     type: 'function',
-    stateMutability: 'payable',
+    stateMutability: 'nonpayable',
     inputs: [
-      { name: 'dir',             type: 'uint8'   },
-      { name: 'amount',          type: 'uint256' },
-      { name: 'referrer',        type: 'address' },
-      { name: 'expectedPrice',   type: 'uint256' },
-      { name: 'slippageBps',     type: 'uint256' },
-      { name: 'priceUpdateData', type: 'bytes[]' }
+      { name: 'dir',           type: 'uint8'   },
+      { name: 'amount',        type: 'uint256' },
+      { name: 'referrer',      type: 'address' },
+      { name: 'expectedPrice', type: 'uint256' },
+      { name: 'slippageBps',   type: 'uint256' }
     ],
     outputs: [{ name: 'orderId', type: 'uint256' }]
   },

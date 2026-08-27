@@ -9,15 +9,16 @@
 import { useState, useCallback, useEffect } from 'react'
 import {
   useWriteContract,
+  useSendTransaction,
   useWaitForTransactionReceipt,
   useReadContract,
   useAccount,
   usePublicClient,
 } from 'wagmi'
-import { parseUnits, maxUint256, decodeEventLog, type Address, type Hash } from 'viem'
+import { parseUnits, maxUint256, decodeEventLog, type Address, type Hash, encodeFunctionData } from 'viem'
 import { CONTRACTS, ORDERBOOK_MARKET_ABI, ERC20_ABI } from '../lib/contracts'
 import { getPendingReferrer } from '../lib/referral'
-import { pythUpdatesUrl } from '../lib/pyth'
+import { fetchBetPayload, withPayload } from '../lib/oracle'
 import { useEnsureChain } from './useEnsureChain'
 
 export type Direction = 0 | 1  // 0=UP, 1=DOWN
@@ -31,20 +32,7 @@ export type Direction = 0 | 1  // 0=UP, 1=DOWN
  * bet, and everyone else was asked to park ~$0.19 for no reason. Pyth's actual
  * fee on Base is 1 wei per update. Now we ask what it costs and send that.
  */
-const PYTH_FEE_ABI = [{
-  name: 'getUpdateFee', type: 'function', stateMutability: 'view',
-  inputs:  [{ name: 'updateData', type: 'bytes[]' }],
-  outputs: [{ type: 'uint256' }],
-}] as const
-
-const RESOLVER_PYTH_ABI = [{
-  name: 'pyth', type: 'function', stateMutability: 'view',
-  inputs: [], outputs: [{ type: 'address' }],
-}] as const
-
 /** OracleResolver.pyth is immutable, so this is safe to resolve once. */
-let cachedPythAddress: Address | null = null
-
 interface UsePlaceBetArgs {
   marketAddress: Address
   direction:     Direction
@@ -98,7 +86,7 @@ export function usePlaceBet({
   const { writeContractAsync: approve, data: approveTxHash } = useWriteContract()
   useWaitForTransactionReceipt({ hash: approveTxHash, query: { enabled: !!approveTxHash } })
 
-  const { writeContractAsync: placeBet, data: betTxHash } = useWriteContract()
+  const { sendTransactionAsync: sendBet, data: betTxHash } = useSendTransaction()
   const { data: betReceipt, isSuccess: betReceiptOk } = useWaitForTransactionReceipt({
     hash: betTxHash,
     query: { enabled: !!betTxHash },
@@ -152,72 +140,45 @@ export function usePlaceBet({
 
       setStep('betting')
 
-      // 4.2: fetch fresh Pyth VAA for THIS market's feedId, not a global one.
+      // The strike has to come from a freshly signed oracle price, fetched
+      // right now.
       //
-      // Sprint 5.6: this is no longer best-effort. The contract's bare
-      // placeBet() overload has been removed and an empty update array is
-      // rejected, because pricing a bet off the keeper's last push meant the
-      // strike could be seconds stale — long enough for anyone watching Hermes
-      // live to enter against a price they already knew had moved. There is
-      // therefore no fallback to fall back to: no fresh update, no bet.
-      //
-      // Failing here is the correct outcome. The alternative was placing the
-      // user's bet at a strike we know may be wrong, which is worse than
-      // asking them to retry.
+      // This is not best-effort and has no fallback. Pricing a bet off the
+      // keeper's last push meant the strike could be seconds stale - long
+      // enough for anyone watching the oracle live to enter against a price
+      // they already knew had moved - so the contract has no entry point that
+      // accepts anything else. Failing here and asking the user to retry is
+      // the correct outcome; placing their bet at a strike we know may be
+      // wrong is worse.
       if (!marketFeedId) {
-        throw new Error('Market price feed unavailable — cannot price this bet.')
+        throw new Error('Market price feed unavailable - cannot price this bet.')
       }
 
-      let priceUpdateData: `0x${string}`[] = []
+      let payload: `0x${string}`
       try {
-        const r = await fetch(pythUpdatesUrl(marketFeedId, false))
-        if (!r.ok) throw new Error(`Price feed responded ${r.status}`)
-        const j = (await r.json()) as { binary: { data: string[] } }
-        priceUpdateData = j.binary.data.map((h) =>
-          (h.startsWith('0x') ? h : `0x${h}`) as `0x${string}`,
-        )
+        payload = await fetchBetPayload(marketFeedId)
       } catch (e: any) {
         throw new Error(
           `Couldn't fetch a live price (${e?.message ?? 'network error'}). ` +
           `Bets are priced from a fresh oracle update, so please try again in a moment.`,
         )
       }
-      if (priceUpdateData.length === 0) {
-        throw new Error('Price feed returned no update — please try again in a moment.')
-      }
 
-      // Quote Pyth's fee and send exactly it, rather than parking a buffer in
-      // the user's wallet. On Base this comes back as 1 wei.
-      if (!publicClient) throw new Error('No RPC connection — please retry.')
-      let pythFeeWei: bigint
-      try {
-        if (!cachedPythAddress) {
-          cachedPythAddress = await publicClient.readContract({
-            address: CONTRACTS.ORACLE_RESOLVER,
-            abi: RESOLVER_PYTH_ABI,
-            functionName: 'pyth',
-          }) as Address
-        }
-        pythFeeWei = await publicClient.readContract({
-          address: cachedPythAddress,
-          abi: PYTH_FEE_ABI,
-          functionName: 'getUpdateFee',
-          args: [priceUpdateData],
-        }) as bigint
-      } catch (e: any) {
-        // Deliberately not falling back to a padded value: guessing high is
-        // what this change exists to remove, and guessing low reverts anyway.
-        throw new Error(
-          `Couldn't read the oracle fee (${e?.message ?? 'network error'}). Please try again.`,
-        )
-      }
-
-      await placeBet({
-        address: marketAddress,
-        abi: ORDERBOOK_MARKET_ABI,
-        functionName: 'placeBetWithPyth',
-        args: [direction, amountWei, effectiveReferrer, expectedPrice, BigInt(slippageBps), priceUpdateData],
-        value: pythFeeWei,
+      // sendTransaction with hand-built calldata, not writeContract: RedStone
+      // reads the price from the tail of the calldata, and writeContract
+      // encodes the call itself with nowhere to append. There is also no fee
+      // to attach any more - RedStone verifies signatures inside our own
+      // contract and charges nothing, so placeBet is not even payable.
+      await sendBet({
+        to: marketAddress,
+        data: withPayload(
+          encodeFunctionData({
+            abi: ORDERBOOK_MARKET_ABI,
+            functionName: 'placeBet',
+            args: [direction, amountWei, effectiveReferrer, expectedPrice, BigInt(slippageBps)],
+          }),
+          payload,
+        ),
       })
 
       setStep('confirmed')
@@ -225,7 +186,7 @@ export function usePlaceBet({
       setStep('error')
       setError(err?.shortMessage || err?.message || 'Transaction failed')
     }
-  }, [address, amountWei, allowance, direction, marketAddress, effectiveReferrer, expectedPrice, slippageBps, marketFeedId, approve, refetchAllowance, placeBet, ensureChain, publicClient])
+  }, [address, amountWei, allowance, direction, marketAddress, effectiveReferrer, expectedPrice, slippageBps, marketFeedId, approve, refetchAllowance, sendBet, ensureChain, publicClient])
 
   return {
     execute,

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 
-import { pythUpdatesUrl } from '../lib/pyth.js'
+import { fetchDisplayPrice } from '../lib/oracle.js'
 
 export interface PythPrice {
   raw: bigint           // 1e18-normalized for contract calls
@@ -20,18 +20,12 @@ export function usePythPrice(feedId?: string | null): PythPrice {
 
     async function tick() {
       try {
-        const r = await fetch(pythUpdatesUrl(feedId!, true))
-        if (!r.ok) throw new Error('price feed ' + r.status)
-        const j = await r.json() as any
-        const p = j.parsed?.[0]?.price
-        if (!p || cancel) return
-        const price = BigInt(p.price)
-        const expo = Number(p.expo)
-        const wei = expo < 0
-          ? (price * 10n ** 18n) / (10n ** BigInt(-expo))
-          : (price * 10n ** 18n) * (10n ** BigInt(expo))
-        setRaw(wei)
-        setDisplay(Number(p.price) * Math.pow(10, expo))
+        // RedStone hands back a plain number, so there is no exponent to
+        // apply - only the scaling to the 1e18 the contracts work in.
+        const usd = await fetchDisplayPrice(feedId!)
+        if (cancel) return
+        setRaw(BigInt(Math.round(usd * 1e18)))
+        setDisplay(usd)
       } catch {
         /* network blip — keep last */
       } finally {
