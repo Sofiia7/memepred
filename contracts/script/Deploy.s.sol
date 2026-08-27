@@ -27,24 +27,22 @@ contract Deploy is Script {
     // hardcoded in the consumer base, so there is no oracle contract to point
     // at, nothing to whitelist per chain, and nothing to keep funded.
 
-    bytes32 constant FEED_PEPE = 0xd69731a2e74ac1ce884fc3890f7ee324b6deb66147055249568869ed700882e4;
-    bytes32 constant FEED_DOGE = 0xdcef50dd0a4cd2dcc17e45df1676dcb336a11a61c69df7a0299b0150c672d25c;
-
-    // Tier A — Base-native memes, highest CEF relevance. Source:
-    // docs/sprint5/pyth-feeds-base-memes.md ("add these immediately on the
-    // Sepolia soak"). Kept out of the PEPE/DOGE pair above since those two
-    // predate this research and are cross-chain (Tier B).
-    bytes32 constant FEED_BRETT  = 0x9b5729efe3d68e537cdcb2ca70444dea5f06e1660b562632609757076d0b9448;
-    bytes32 constant FEED_TOSHI  = 0x3450d9fbb8c3cf749578315668e21fabb4cd78dcfda1c1cba698b804bae2db2a;
-    bytes32 constant FEED_DEGEN  = 0x9c93e4a22c56885af427ac4277437e756e7ec403fbc892f975d497383bb33560;
-    bytes32 constant FEED_AERO   = 0x9db37f4d5654aad3e37e2e14ffd8d53265fb3026d1d8f91146539eebaa2ef45f;
-    bytes32 constant FEED_MORPHO = 0x5b2a4c542d4a74dd11784079ef337c0403685e3114ba0d9909b5c7a7e06fdc42;
-    bytes32 constant FEED_WELL   = 0x3cf6bab8bf8041dc8ee2a3edebe16b5f9f4ff3cce46006aeb15c885ba4779d0b;
-    bytes32 constant FEED_BAN    = 0xa6320c8329924601f4d092dd3f562376f657fa0b5d0cba9e4385a24aaf135384;
-    bytes32 constant FEED_B3     = 0xe9f7026d0e26b2643da0cc976bd6107d07092e11f2e4701f98a3c2ef45f0135a;
-    bytes32 constant FEED_MOBY   = 0xedbaef2120caa0cc107c332bc2e9ef79b51c80fa4bb746098015c5c366aec42f;
-    bytes32 constant FEED_AVNT   = 0xc4aa2587b3d35cd526b8e7827f78399d16c7861f719331869c07e5fa499606d0;
-    bytes32 constant FEED_AIXBT  = 0x0fc54579a29ba60a08fdb5c28348f22fd3bec18e221dd6b90369950db638a5a7;
+    /**
+     * Feeds, as RedStone identifies them: the symbol right-padded into a
+     * bytes32, not a Pyth feed hash.
+     *
+     * The thirteen Pyth hashes that used to live here were whitelisted by this
+     * script on 2026-08-27 and are dead weight on-chain: nothing can price
+     * them, marketCreator skips them, and the watchdog had to learn to ignore
+     * them. Only whitelist what the keeper actually carries a price for -
+     * every extra feed is a market slot the cron will try to fill.
+     *
+     * RedStone also serves BRETT, DEGEN, BONK, WIF, SHIB and FLOKI, so those
+     * can be added here and in the keeper's FEED_SYMBOLS together. TOSHI and
+     * MORPHO were on the old Pyth list and RedStone does not carry them.
+     */
+    bytes32 constant FEED_PEPE = bytes32("PEPE");
+    bytes32 constant FEED_DOGE = bytes32("DOGE");
 
     function _envOr(string memory key, address fallback_) internal view returns (address) {
         try vm.envAddress(key) returns (address a) { if (a != address(0)) return a; } catch {}
@@ -114,17 +112,6 @@ contract Deploy is Script {
 
         factory.addFeed(FEED_PEPE);
         factory.addFeed(FEED_DOGE);
-        factory.addFeed(FEED_BRETT);
-        factory.addFeed(FEED_TOSHI);
-        factory.addFeed(FEED_DEGEN);
-        factory.addFeed(FEED_AERO);
-        factory.addFeed(FEED_MORPHO);
-        factory.addFeed(FEED_WELL);
-        factory.addFeed(FEED_BAN);
-        factory.addFeed(FEED_B3);
-        factory.addFeed(FEED_MOBY);
-        factory.addFeed(FEED_AVNT);
-        factory.addFeed(FEED_AIXBT);
 
         // Roles that should belong to operational (non-multisig) wallets BEFORE
         // we hand ownership over.

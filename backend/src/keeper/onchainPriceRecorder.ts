@@ -35,67 +35,23 @@ const ACTIVITY_WINDOW_MS = Number(process.env.PRICE_ACTIVITY_WINDOW_MS ?? String
 let lastPushAt = 0
 
 /**
- * Two things must hold before a push is worth sending, because `recordPrice`
- * pins gas at 500k (estimation is unreliable here — see the call site) and a
- * revert therefore burns the whole 500k, not a fraction. Both checks are plain
- * reads and cost nothing on-chain.
+ * Nothing to pre-flight any more.
  *
- *  1. OracleResolver holds ETH. It pays Pyth's update fee from its own
- *     balance; at zero, every push reverts.
- *  2. The Pyth contract it points at actually responds. `OracleResolver.pyth`
- *     is IMMUTABLE, so a wrong address cannot be corrected without redeploying
- *     the whole stack — and a wrong address fails silently in the worst way,
- *     as a revert per push, forever.
+ * This used to make two reads before every push, and both were about Pyth:
+ * that OracleResolver held ETH to pay Pyth's update fee, and that the Pyth
+ * contract it pointed at actually answered. RedStone charges nothing and is
+ * verified inside our own contract, so there is no fee to fund and no oracle
+ * address to be wrong.
  *
- * (2) exists because of a real incident: `.env` carried Pyth's Base MAINNET
- * address with the note "same address on Sepolia". It is not. On Base Sepolia
- * that address holds a 708-byte stub reverting "unsupported" on every call, so
- * every Sepolia deployment had a dead price path — no bare placeBet, no
- * settlement — while the keeper paid 500k gas per attempt to discover it. A
- * one-call liveness probe turns that into a log line.
+ * Leaving the balance check in place after the migration was worse than
+ * useless: it blocked every price push on a resolver balance that no longer
+ * matters, which is exactly the outage it was written to prevent, arrived at
+ * from the other direction.
+ *
+ * The failure modes that remain announce themselves earlier and more cheaply -
+ * a gateway that will not serve makes fetchPayload throw before any gas is
+ * spent, and an empty keeper wallet is the watchdog's job.
  */
-async function preflightOk(): Promise<boolean> {
-  try {
-    const bal = await publicClient.getBalance({
-      address: CONTRACTS.ORACLE_RESOLVER as Address,
-    })
-    if (bal === 0n) {
-      console.error(
-        '[onchainPriceRecorder] OracleResolver has 0 ETH — skipping push; ' +
-        'every attempt would revert and burn its full pinned gas limit. ' +
-        'oracleWatchdog is already paging on this.',
-      )
-      return false
-    }
-  } catch (err) {
-    // Can't read → attempt anyway. A missed price is worse than one wasted revert.
-    console.error('[onchainPriceRecorder] resolver balance check failed:', err)
-    return true
-  }
-
-  try {
-    const pythAddr = await publicClient.readContract({
-      address:      CONTRACTS.ORACLE_RESOLVER as Address,
-      abi:          [{ name: 'pyth', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] }] as const,
-      functionName: 'pyth',
-    })
-    await publicClient.readContract({
-      address:      pythAddr as Address,
-      abi:          [{ name: 'getValidTimePeriod', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint256' }] }] as const,
-      functionName: 'getValidTimePeriod',
-    })
-  } catch {
-    console.error(
-      '[onchainPriceRecorder] CONFIG ERROR: OracleResolver.pyth() does not ' +
-      'answer getValidTimePeriod() — wrong Pyth address for this chain. The ' +
-      'address is immutable, so this needs a redeploy, not an env change. ' +
-      'Skipping pushes until then rather than burning 500k gas per attempt.',
-    )
-    return false
-  }
-
-  return true
-}
 
 /**
  * True when the fast cadence is worth paying for.
@@ -142,7 +98,6 @@ export async function recordPricesOnChain() {
     console.warn('ORACLE_RESOLVER address missing'); return
   }
 
-  if (!(await preflightOk())) return
 
   if (!(await shouldUseFastCadence())) {
     // lastPushAt is 0 until the first push of this process, so don't report

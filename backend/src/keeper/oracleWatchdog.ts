@@ -26,7 +26,7 @@ import {
 } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 import { base, baseSepolia } from 'viem/chains'
-import { CONTRACTS } from '../config.js'
+import { CONTRACTS, SUPPORTED_FEED_IDS } from '../config.js'
 import { fetchPayload, bytes32ToFeedId } from '../lib/redstone.js'
 import { nextFailStreak, STALE_FAIL_LIMIT, type FeedPing } from './feedStreak.js'
 import { redis } from '../db/redis.js'
@@ -159,6 +159,15 @@ async function checkKeeperEthBalance() {
   }
 }
 
+/**
+ * The resolver's balance stopped meaning anything when the oracle moved.
+ *
+ * It used to pay Pyth's update fee, so an empty resolver stopped settlement -
+ * one of the three failures behind the two-week outage. RedStone charges
+ * nothing, and the contract no longer even accepts ether. The balance is
+ * reported for visibility but must not page: alerting on a number that cannot
+ * cause an outage is how real alerts get ignored.
+ */
 async function checkResolverEthBalance() {
   if (!CONTRACTS.ORACLE_RESOLVER) return
   try {
@@ -167,15 +176,8 @@ async function checkResolverEthBalance() {
     })
     watchdogState.resolverEthWei = bal
 
-    if (bal < ETH_CRIT_WEI) {
-      watchdogState.resolverEthAlert = 'critical'
-      console.error(`[watchdog] CRITICAL: OracleResolver balance = ${formatEther(bal)} ETH — settle will start reverting`)
-    } else if (bal < ETH_WARN_WEI) {
-      watchdogState.resolverEthAlert = 'warn'
-      console.warn(`[watchdog] WARN: OracleResolver balance = ${formatEther(bal)} ETH`)
-    } else {
-      watchdogState.resolverEthAlert = 'ok'
-    }
+    // Always 'ok': nothing spends this balance any more. See the note above.
+    watchdogState.resolverEthAlert = 'ok'
   } catch (err) {
     console.error('[watchdog] balance check failed:', err)
   }
@@ -197,7 +199,19 @@ async function checkFeedsAndAutoPause() {
     return
   }
 
-  for (const feedId of feeds) {
+  // Only feeds we carry a price for. The factory's list also holds feeds
+  // whitelisted for an oracle we no longer use, whose bytes32 decodes to
+  // nonsense - pinging those produced a stack trace per feed per tick and,
+  // worse, advanced their fail streak toward auto-pausing markets that were
+  // never real. marketCreator intersects the same way.
+  const priceable = feeds.filter((f) => SUPPORTED_FEED_IDS.has(f.toLowerCase()))
+  if (priceable.length < feeds.length) {
+    console.warn(
+      `[watchdog] ignoring ${feeds.length - priceable.length} factory feed(s) with no price coverage`,
+    )
+  }
+
+  for (const feedId of priceable) {
     const ping   = await pingOracle(feedId)
     const streak = nextFailStreak(failStreak.get(feedId) ?? 0, ping)
     failStreak.set(feedId, streak)
