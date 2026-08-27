@@ -6,6 +6,52 @@ import { zAddress, parse } from '../lib/validate.js'
 
 const Params = z.object({ address: zAddress })
 
+/**
+ * Did this order win? Derived from settled matches, NOT from payout_usdc.
+ *
+ * payout_usdc is only written by the indexer's Claimed handler, so
+ * `COALESCE(payout_usdc,0) > 0` — what this used to say — was false for every
+ * order that had won but not yet been claimed. That fed three visible bugs at
+ * once: the profile counted a pending winner as a loss, profit showed a
+ * full-stake loss, and Portfolio rendered "LOST" with no claim button (the
+ * button's own condition required won === true, so it could never appear —
+ * by the time payout_usdc existed, the order was already CLAIMED).
+ *
+ * Expects the orders table to be aliased `o`.
+ */
+const WON_EXPR = `EXISTS (
+  SELECT 1
+  FROM order_matches om
+  JOIN matches m
+    ON m.market_address = om.market_address AND m.match_id = om.match_id
+  WHERE om.market_address = o.market_address
+    AND om.order_id       = o.order_id
+    AND m.settled
+    AND ((o.direction = 'UP') = m.up_won)
+)`
+
+/**
+ * Realised PnL across an order's settled matches: each match stakes `amount`
+ * per side, so the winner nets +amount and the loser -amount. Reads from
+ * matches rather than payout_usdc for the same reason as WON_EXPR.
+ *
+ * Approximation: ignores LP_TAKER_FEE_BPS (1%, charged only when the LP is the
+ * counterparty and the user wins), so a win against the pool reads about 1%
+ * high. Deliberate — the exact figure lives on-chain in Order.payout, and a
+ * profile stat that is 1% optimistic beats one that reports every unclaimed
+ * winner as a total loss.
+ */
+const PNL_EXPR = `COALESCE((
+  SELECT SUM(CASE WHEN (o.direction = 'UP') = m.up_won
+                  THEN m.amount_usdc ELSE -m.amount_usdc END)
+  FROM order_matches om
+  JOIN matches m
+    ON m.market_address = om.market_address AND m.match_id = om.match_id
+  WHERE om.market_address = o.market_address
+    AND om.order_id       = o.order_id
+    AND m.settled
+), 0)`
+
 export async function profileRoutes(app: FastifyInstance) {
 
   app.get('/:address', async (req, reply) => {
@@ -16,25 +62,18 @@ export async function profileRoutes(app: FastifyInstance) {
     const cached = await redis.get(cacheKey)
     if (cached) return JSON.parse(cached)
 
-    // Sprint 3.3: query orders directly. "Won" = order has payout > 0.
+    // Sprint 3.3: query orders directly.
     // Volume uses filled_amount (what was actually at risk after partial
     // refunds), so a half-filled-then-refunded order doesn't inflate stats.
     const stats = await pg.query(`
       SELECT
-        COUNT(*) FILTER (WHERE status IN ('SETTLED','CLAIMED'))
-                                                                AS total_bets,
-        COUNT(*) FILTER (WHERE status IN ('SETTLED','CLAIMED')
-                          AND COALESCE(payout_usdc,0) > 0)      AS won_bets,
-        COALESCE(SUM(filled_amount), 0)                          AS total_volume,
-        COALESCE(SUM(
-          CASE
-            WHEN status = 'CLAIMED' THEN COALESCE(payout_usdc, 0) - filled_amount
-            WHEN status = 'SETTLED' THEN COALESCE(payout_usdc, 0) - filled_amount
-            ELSE 0
-          END
-        ), 0)                                                    AS profit
-      FROM orders
-      WHERE trader_address = $1
+        COUNT(*) FILTER (WHERE o.status IN ('SETTLED','CLAIMED'))  AS total_bets,
+        COUNT(*) FILTER (WHERE o.status IN ('SETTLED','CLAIMED')
+                          AND ${WON_EXPR})                         AS won_bets,
+        COALESCE(SUM(o.filled_amount), 0)                          AS total_volume,
+        COALESCE(SUM(${PNL_EXPR}), 0)                              AS profit
+      FROM orders o
+      WHERE o.trader_address = $1
     `, [addr])
 
     const streak = await pg.query(
@@ -52,7 +91,18 @@ export async function profileRoutes(app: FastifyInstance) {
              o.filled_amount, o.status,
              o.payout_usdc, o.placed_at, o.settled_at, o.claimed_at,
              o.feed_symbol,
-             COALESCE(payout_usdc, 0) > 0 AS won
+             -- The UI distinguishes three states and keys its claim button off
+             -- them, so this has to be tri-state: NULL while the bet is still
+             -- running, then a real boolean. It used to be a plain
+             -- "payout > 0", which is never NULL, so the UI pending branch was
+             -- unreachable and every live bet rendered as LOST.
+             CASE WHEN o.status IN ('PENDING', 'MATCHED') THEN NULL
+                  ELSE ${WON_EXPR}
+             END                          AS won,
+             -- The frontend Bet type expects "claimed"; the API only ever sent
+             -- claimed_at, so the UI negation was always true and an
+             -- already-claimed order stayed in the "ready to claim" list.
+             (o.claimed_at IS NOT NULL)   AS claimed
       FROM orders o
       WHERE o.trader_address = $1
       ORDER BY o.placed_at DESC

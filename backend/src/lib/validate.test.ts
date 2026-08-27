@@ -41,13 +41,21 @@ describe('zTF', () => {
 })
 
 describe('zStatus', () => {
-  it.each(['OPEN', 'RESOLVED', 'REFUNDED'])('accepts %s', (status) => {
+  it.each(['OPEN', 'CLOSED', 'RESOLVED', 'REFUNDED'])('accepts %s', (status) => {
     expect(zStatus.safeParse(status).success).toBe(true)
+  })
+
+  // This assertion used to read `.toBe(false)`, locking in a real bug: the
+  // keeper writes 'CLOSED' into markets.status itself (marketCreator.ts
+  // closeExpiredMarkets), so the API was rejecting a value it had stored, and
+  // `?status=CLOSED` returned a 400 rather than the closed markets.
+  it('accepts every status the backend is capable of writing', () => {
+    expect(zStatus.safeParse('CLOSED').success).toBe(true)
   })
 
   it('rejects a lowercase or unknown status', () => {
     expect(zStatus.safeParse('open').success).toBe(false)
-    expect(zStatus.safeParse('CLOSED').success).toBe(false)
+    expect(zStatus.safeParse('SETTLED').success).toBe(false)
   })
 })
 

@@ -66,10 +66,61 @@ async function markIngested(tx: string, logIndex: number): Promise<boolean> {
   return r.rowCount! > 0 // true if newly inserted (not seen before)
 }
 
+/**
+ * Markets that can still emit an event we care about.
+ *
+ * This used to be `status IN ('OPEN','RESOLVED')`, which was wrong twice over.
+ * Nothing in the backend has ever written 'RESOLVED' (grep it), so the filter
+ * was really just `status = 'OPEN'` — and marketCreator.closeExpiredMarkets()
+ * flips a market to 'CLOSED' the moment close_time passes. But a match settles
+ * at matchedAt + duration, which is always AFTER close_time, so MatchSettled,
+ * Claimed and OrderRefunded all fire once the market has already dropped out of
+ * this list. Settlements were therefore never indexed: on 2026-08-09 the one
+ * real match in production read settled=true on-chain and settled=f in the DB,
+ * and the orderbook cursor had been frozen for 14 days.
+ *
+ * The window is derived from the contract's own deadlines rather than a round
+ * number: the last possible MatchSettled is close_time + duration (the latest
+ * settleAt) + SETTLE_GRACE (24h, after which only emergencyRefundMatch works).
+ * An hour of slack absorbs clock skew and a late keeper. Orders that are still
+ * holding money are included regardless of age, because Claimed has no deadline
+ * at all — a user can come back a year later.
+ */
 async function activeMarkets(): Promise<Address[]> {
-  const r = await pg.query("SELECT market_address FROM markets WHERE status IN ('OPEN','RESOLVED')")
+  const r = await pg.query(`
+    SELECT DISTINCT m.market_address
+    FROM markets m
+    WHERE m.status = 'OPEN'
+       OR m.close_time + (m.duration_secs * INTERVAL '1 second')
+                       + INTERVAL '25 hours' > NOW()
+       OR EXISTS (
+            SELECT 1 FROM orders o
+            WHERE o.market_address = m.market_address
+              AND o.status NOT IN ('CLAIMED', 'REFUNDED')
+          )
+  `)
   return r.rows.map((x) => x.market_address as Address)
 }
+
+/**
+ * A market is RESOLVED once every match it ever had is settled. Nothing wrote
+ * this status before, so `markets.status` only ever moved OPEN -> CLOSED and
+ * the API's `?status=RESOLVED` filter could never return a row.
+ */
+async function markResolvedMarkets(addresses: Address[]) {
+  if (addresses.length === 0) return
+  await pg.query(`
+    UPDATE markets m SET status = 'RESOLVED'
+    WHERE m.market_address = ANY($1::text[])
+      AND m.status = 'CLOSED'
+      AND EXISTS     (SELECT 1 FROM matches x WHERE x.market_address = m.market_address)
+      AND NOT EXISTS (SELECT 1 FROM matches x WHERE x.market_address = m.market_address
+                                               AND x.settled = FALSE)
+  `, [addresses.map((a) => a.toLowerCase())])
+}
+
+/** getLogs takes an address array, but nodes cap how many they will accept. */
+const ADDRESS_BATCH = 250
 
 const tsCache = new Map<bigint, number>()
 async function blockTs(bn: bigint): Promise<number> {
@@ -131,12 +182,22 @@ async function indexFactory(toBlock: bigint) {
 
 // ── ORDERBOOK: per-market events → orders/matches/order_matches ──
 async function indexMarketEvents(toBlock: bigint) {
-  const markets = await activeMarkets()
-  if (markets.length === 0) return
-
   const stream = 'orderbook'
   const from   = (await getCursor(stream)) + 1n
   if (from > toBlock) return
+
+  const markets = await activeMarkets()
+
+  // Read the cursor BEFORE this check and advance it even with nothing to scan.
+  // The old code returned early on an empty list, so when market creation
+  // stalled (keeper out of gas on 2026-07-26) the cursor froze at that block
+  // while the factory and referral streams kept moving. Two weeks later it was
+  // 605k blocks behind and would have had to replay all of it. No markets means
+  // no market events, so skipping to the head loses nothing.
+  if (markets.length === 0) {
+    await setCursor(stream, toBlock)
+    return
+  }
 
   for (let start = from; start <= toBlock; start += CHUNK) {
     const end = start + CHUNK - 1n > toBlock ? toBlock : start + CHUNK - 1n
@@ -152,15 +213,29 @@ async function indexMarketEvents(toBlock: bigint) {
     // Batched it's ~5.5k/day and the free tier covers it several times over.
     // It also removed the `over rate limit` errors the public node was
     // returning, since seven parallel calls hit the per-second cap directly.
-    const all = await client.getLogs({
-      address: markets,
-      events: [
-        E_ORDER_PLACED, E_ORDER_MATCHED, E_LP_MATCHED, E_ORDER_FILLED,
-        E_MATCH_SETTLED, E_ORDER_REFUNDED, E_CLAIMED,
-      ],
-      fromBlock: start,
-      toBlock:   end,
-    })
+    // Widening activeMarkets() to cover the settlement window means the address
+    // list now tracks ~a day of rollovers instead of only the handful that are
+    // open, and nodes reject an over-long address filter outright. Slice it.
+    const all: Log[] = []
+    for (let i = 0; i < markets.length; i += ADDRESS_BATCH) {
+      const slice = markets.slice(i, i + ADDRESS_BATCH)
+      all.push(...await client.getLogs({
+        address: slice,
+        events: [
+          E_ORDER_PLACED, E_ORDER_MATCHED, E_LP_MATCHED, E_ORDER_FILLED,
+          E_MATCH_SETTLED, E_ORDER_REFUNDED, E_CLAIMED,
+        ],
+        fromBlock: start,
+        toBlock:   end,
+      }))
+    }
+    // Batching breaks the node's block/log-index ordering across slices, and the
+    // handlers below depend on it (OrderPlaced must land before OrderFilled for
+    // the same order). Restore it.
+    all.sort((a, b) =>
+      a.blockNumber === b.blockNumber
+        ? Number(a.logIndex! - b.logIndex!)
+        : Number(a.blockNumber! - b.blockNumber!))
 
     // Partition by event name. Order within each bucket is preserved from the
     // node's response, which is block- then log-index-ordered — the same
@@ -312,6 +387,11 @@ async function indexMarketEvents(toBlock: bigint) {
                           payout_usdc = $2::numeric / 1e6
         WHERE market_address = $3 AND order_id = $4
       `, [ts, a.payout.toString(), log.address.toLowerCase(), a.orderId.toString()])
+    }
+
+    // Only worth re-checking markets that just had a settlement land.
+    if (settled.length > 0) {
+      await markResolvedMarkets([...new Set(settled.map((l) => l.address as Address))])
     }
 
     await setCursor(stream, end)

@@ -63,6 +63,36 @@ export function OrderPage() {
     }
   }
 
+  /**
+   * Recover a stake from a match the keeper never settled.
+   *
+   * Past settleAt + SETTLE_GRACE (24h) the contract refuses to settle at all —
+   * resolveOrderbookMarketBatch reverts with "settlement window expired" — and
+   * emergencyRefundMatch becomes the only way to get the money out. It is
+   * permissionless by design, but nothing in the app ever called it: the ABI
+   * entry existed and had no caller, so a keeper outage longer than a day left
+   * users staring at "Awaiting market settlement…" forever with their funds
+   * recoverable only by hand-crafting a call on Basescan.
+   */
+  async function handleEmergencyRefund(matchId: bigint) {
+    setRefundError(undefined)
+    setRefundPending(true)
+    try {
+      const chainCheck = await ensureChain()
+      if (!chainCheck.ok) { setRefundError(chainCheck.error); return }
+      await refundExpired({
+        address: marketAddress,
+        abi: ORDERBOOK_MARKET_ABI,
+        functionName: 'emergencyRefundMatch',
+        args: [matchId],
+      })
+    } catch (e: any) {
+      setRefundError(e?.shortMessage || e?.message || 'Recovery failed')
+    } finally {
+      setRefundPending(false)
+    }
+  }
+
   return (
     <>
       <ScreenTitle title={`Order #${orderId.toString()}`} />
@@ -72,6 +102,7 @@ export function OrderPage() {
         orderId={orderId}
         onClaim={() => claim(orderId)}
         onRefund={handleRefund}
+        onEmergencyRefund={handleEmergencyRefund}
         txPending={claimPending || refundPending}
       />
 

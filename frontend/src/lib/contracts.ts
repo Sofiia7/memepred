@@ -19,6 +19,12 @@ export const CONTRACTS = {
 export const MIN_BET_USD = 1
 export const MAX_BET_USD = 100
 
+// Mirrors OrderbookMarket.SETTLE_GRACE (24 hours). Past settleAt + this, the
+// contract refuses to settle ("settlement window expired") and the only way to
+// get a stake back is the permissionless emergencyRefundMatch. The UI needs the
+// number to know when to offer that.
+export const SETTLE_GRACE_SEC = 24 * 60 * 60
+
 // ── ABIs ───────────────────────────────────────────────────
 
 // Legacy PvPMarket ABI (kept for backward compatibility)

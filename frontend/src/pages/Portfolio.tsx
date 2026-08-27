@@ -18,9 +18,11 @@ interface Bet {
   match_id:       string | null
   direction:      'UP' | 'DOWN'
   amount_usdc:    string
+  /** null while the bet is still running; a real boolean once it has settled. */
   won:            boolean | null
   payout_usdc:    string | null
   claimed:        boolean
+  status:         'PENDING' | 'MATCHED' | 'SETTLED' | 'CLAIMED' | 'REFUNDED'
   placed_at:      string
   settled_at:     string | null
   feed_symbol:    string
@@ -64,11 +66,18 @@ function BetRow({ bet }: { bet: Bet }) {
   const isUp = bet.direction === 'UP'
   const amount = parseFloat(bet.amount_usdc)
   const payout = bet.payout_usdc ? parseFloat(bet.payout_usdc) : null
+  // Drive this off the order's own status rather than inferring it from the
+  // payout: a settled winner has no payout recorded until it is claimed, so the
+  // old chain (won === null ? … : won ? 'WON' : 'LOST') rendered every live and
+  // every unclaimed-winning bet as LOST, and hid the claim button behind a
+  // condition that could only become true after the money had already been
+  // taken. REFUNDED is its own outcome — the stake came back, nobody lost.
   const status =
-    bet.won === null ? 'PENDING' :
-    bet.claimed ? 'CLAIMED' :
-    bet.won ? 'WON' : 'LOST'
-  const canClaim = bet.won === true && !bet.claimed && bet.order_id
+    bet.status === 'REFUNDED' ? 'REFUNDED' :
+    bet.status === 'CLAIMED'  ? 'CLAIMED'  :
+    bet.won === null          ? 'PENDING'  :
+    bet.won                   ? 'WON'      : 'LOST'
+  const canClaim = bet.status === 'SETTLED' && bet.won === true && !bet.claimed && bet.order_id
 
   const rowContent = (
     <>
@@ -208,7 +217,12 @@ export function Portfolio() {
   }
 
   const ownedBadgeIds = new Set((profile.badges ?? []).map((b) => b.badge_id))
-  const claimable = profile.recentBets.filter((b) => b.won === true && b.order_id && !b.claimed)
+  // Same condition as BetRow's canClaim — an order is claimable only while it
+  // is SETTLED. Without the status check an already-claimed bet reappeared here
+  // forever, because the API never sent `claimed` and `!undefined` is true.
+  const claimable = profile.recentBets.filter(
+    (b) => b.status === 'SETTLED' && b.won === true && b.order_id && !b.claimed,
+  )
 
   return (
     <>

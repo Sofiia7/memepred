@@ -17,7 +17,7 @@ import { useReadContract } from 'wagmi'
 import { useEffect, useState } from 'react'
 import type { Address } from 'viem'
 import { formatUnits } from 'viem'
-import { ORDERBOOK_MARKET_ABI } from '../lib/contracts'
+import { ORDERBOOK_MARKET_ABI, SETTLE_GRACE_SEC } from '../lib/contracts'
 import { useOrderStatus } from '../hooks/useOrderStatus'
 import { ShareCard } from './ShareCard'
 
@@ -26,6 +26,8 @@ interface Props {
   orderId:       bigint
   onClaim?:      () => void
   onRefund?:     () => void
+  /** Called with the matchId once the 24h settlement grace period has lapsed. */
+  onEmergencyRefund?: (matchId: bigint) => void
   txPending?:    boolean
 }
 
@@ -41,9 +43,11 @@ export function OrderStatusCard({
   orderId,
   onClaim,
   onRefund,
+  onEmergencyRefund,
   txPending,
 }: Props) {
-  const { status, secondsLeft, isLpMatch, refetch } = useOrderStatus(marketAddress, orderId)
+  const { status, secondsLeft, isLpMatch, settleAt, matchId, refetch } =
+    useOrderStatus(marketAddress, orderId)
 
   // Re-read order details (full struct, including filled & unmatchedRefunded).
   const { data: order } = useReadContract({
@@ -61,6 +65,11 @@ export function OrderStatusCard({
     const id = setInterval(() => setNow(Math.floor(Date.now() / 1000)), 1000)
     return () => clearInterval(id)
   }, [status])
+
+  // Past settleAt + SETTLE_GRACE the contract will not settle this match at
+  // all, so "awaiting settlement" stops being true and the stake has to be
+  // recoverable from the UI. Reuses the countdown clock above.
+  const graceLapsed = settleAt !== undefined && now > settleAt + SETTLE_GRACE_SEC
 
   if (!order) {
     return <div className="osc osc-loading">Loading order…</div>
@@ -111,7 +120,26 @@ export function OrderStatusCard({
           {dir} · ${filledUsd} at risk
           {filled < amount && ` (partial fill — $${amountUsd} deposit)`}
         </div>
-        <div className="osc-sub">Awaiting market settlement…</div>
+        <div className="osc-sub">
+          {graceLapsed
+            ? 'Settlement is overdue — the keeper never resolved this match.'
+            : 'Awaiting market settlement…'}
+        </div>
+        {graceLapsed && matchId !== undefined && matchId > 0n && onEmergencyRefund && (
+          <>
+            <button
+              className="osc-btn"
+              disabled={txPending}
+              onClick={() => onEmergencyRefund(matchId)}
+            >
+              {txPending ? 'Processing…' : 'Recover my stake'}
+            </button>
+            <div className="osc-sub">
+              Returns your deposit. The market can no longer be settled, so
+              neither side wins.
+            </div>
+          </>
+        )}
       </div>
     )
   }
