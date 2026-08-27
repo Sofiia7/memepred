@@ -8,8 +8,21 @@
 #
 # Backups: see ./scripts/backup-db.sh (cron-friendly).
 
+# Docker's json-file driver is unbounded by default. The keeper logs the whole
+# viem error object — Pyth calldata included, ~10 kB — on every failed tx, so a
+# single stuck transaction retrying on a timer wrote 4 GB in 3 days and would
+# have filled the disk (and taken down the other project sharing this VPS)
+# in about a month. Cap every service; 20 MB x 5 files is far more history
+# than anyone reads, and bounds the whole stack at ~500 MB.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
+
 services:
   postgres:
+    logging: *default-logging
     image: timescale/timescaledb:latest-pg16
     restart: unless-stopped
     environment:
@@ -28,6 +41,7 @@ services:
       - "127.0.0.1:5432:5432"
 
   redis:
+    logging: *default-logging
     image: redis:7-alpine
     restart: unless-stopped
     command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}"]
@@ -37,6 +51,7 @@ services:
       - "127.0.0.1:6379:6379"
 
   backend:
+    logging: *default-logging
     build:
       context:    ../backend
       dockerfile: ../deploy/backend.Dockerfile
@@ -64,6 +79,7 @@ services:
       - "127.0.0.1:3001:3001"
 
   keeper:
+    logging: *default-logging
     build:
       context:    ../backend
       dockerfile: ../deploy/backend.Dockerfile
@@ -89,6 +105,7 @@ services:
       CHAIN_ID:                  ${CHAIN_ID:-84532}
 
   caddy:
+    logging: *default-logging
     image: caddy:2-alpine
     restart: unless-stopped
     environment:
