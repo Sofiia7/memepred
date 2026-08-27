@@ -57,11 +57,25 @@ export function feedIdToBytes32(symbol: string): `0x${string}` {
   return stringToHex(symbol, { size: 32 })
 }
 
-/** The symbol back out of a bytes32 feed id, trailing padding removed. */
+/**
+ * The symbol back out of a bytes32 feed id, trailing padding removed.
+ *
+ * Returns '' for anything that is not a plain symbol. The factory still carries
+ * feeds whitelisted for the old oracle, whose bytes32 is a hash - decoding one
+ * yields mojibake, and that string reached users as a market named after
+ * garbage. Callers are expected to show UNKNOWN rather than pass it through.
+ */
 export function bytes32ToFeedId(feedId: string): string {
-  return Buffer.from(feedId.replace(/^0x/, ''), 'hex')
-    .toString('utf8')
-    .replace(/\u0000+$/, '')
+  const raw = Buffer.from(feedId.replace(/^0x/, ''), 'hex')
+
+  // Everything after the first NUL has to be padding, or this was never a
+  // symbol in the first place.
+  const end = raw.indexOf(0)
+  const body = end === -1 ? raw : raw.subarray(0, end)
+  if (end !== -1 && raw.subarray(end).some((x) => x !== 0)) return ''
+
+  const symbol = body.toString('latin1')
+  return /^[A-Za-z0-9_.-]+$/.test(symbol) ? symbol : ''
 }
 
 /**

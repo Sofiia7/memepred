@@ -1,3 +1,4 @@
+import { bytes32ToFeedId } from '../lib/redstone.js'
 /**
  * indexer — Sprint 3.2
  *
@@ -131,29 +132,21 @@ async function blockTs(bn: bigint): Promise<number> {
   return ts
 }
 
-// Sprint 5.5 audit fix: this map only had PEPE/DOGE while the factory has
-// had all 13 Tier A feeds whitelisted since the Sprint 5 feed rollout (see
-// docs/sprint5/pyth-feeds-base-memes.md) — every other feed's markets were
-// silently falling through to 'UNKNOWN', which is exactly the "UNKNOWN / USD"
-// market group users see on the Markets page. Verified against the live
-// factory's getAllFeedIds() on 2026-07-07 rather than trusting the doc.
+/**
+ * The symbol a market's feed id names.
+ *
+ * This used to be a hardcoded table of Pyth feed hashes, and it fell out of
+ * date exactly the way such a table does: the factory gained feeds the map
+ * never learned, and their markets showed up on the Markets page as
+ * "UNKNOWN / USD".
+ *
+ * RedStone identifies a feed by its symbol padded into a bytes32, so there is
+ * nothing left to look up - the id decodes to the answer, and cannot drift.
+ * Ids that are not a plain symbol (the old Pyth hashes are still whitelisted
+ * on the factory) decode to '' rather than to mojibake, and still read UNKNOWN.
+ */
 function feedSymbolFromId(feedId: string): string {
-  const map: Record<string, string> = {
-    '0xd69731a2e74ac1ce884fc3890f7ee324b6deb66147055249568869ed700882e4': 'PEPE',
-    '0xdcef50dd0a4cd2dcc17e45df1676dcb336a11a61c69df7a0299b0150c672d25c': 'DOGE',
-    '0x9b5729efe3d68e537cdcb2ca70444dea5f06e1660b562632609757076d0b9448': 'BRETT',
-    '0x3450d9fbb8c3cf749578315668e21fabb4cd78dcfda1c1cba698b804bae2db2a': 'TOSHI',
-    '0x9c93e4a22c56885af427ac4277437e756e7ec403fbc892f975d497383bb33560': 'DEGEN',
-    '0x9db37f4d5654aad3e37e2e14ffd8d53265fb3026d1d8f91146539eebaa2ef45f': 'AERO',
-    '0x5b2a4c542d4a74dd11784079ef337c0403685e3114ba0d9909b5c7a7e06fdc42': 'MORPHO',
-    '0x3cf6bab8bf8041dc8ee2a3edebe16b5f9f4ff3cce46006aeb15c885ba4779d0b': 'WELL',
-    '0xa6320c8329924601f4d092dd3f562376f657fa0b5d0cba9e4385a24aaf135384': 'BAN',
-    '0xe9f7026d0e26b2643da0cc976bd6107d07092e11f2e4701f98a3c2ef45f0135a': 'B3',
-    '0xedbaef2120caa0cc107c332bc2e9ef79b51c80fa4bb746098015c5c366aec42f': 'MOBY',
-    '0xc4aa2587b3d35cd526b8e7827f78399d16c7861f719331869c07e5fa499606d0': 'AVNT',
-    '0x0fc54579a29ba60a08fdb5c28348f22fd3bec18e221dd6b90369950db638a5a7': 'AIXBT',
-  }
-  return map[feedId.toLowerCase()] ?? 'UNKNOWN'
+  return bytes32ToFeedId(feedId) || 'UNKNOWN'
 }
 
 // ── FACTORY: MarketCreated → markets row ──────────────────────

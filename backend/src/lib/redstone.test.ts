@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import {
   feedIdToBytes32,
+  bytes32ToFeedId,
   selectAuthorisedPackages,
   withPayload,
   fetchPayload,
@@ -33,6 +34,40 @@ describe('feedIdToBytes32', () => {
 
   it('keeps distinct feeds distinct', () => {
     expect(feedIdToBytes32('PEPE')).not.toBe(feedIdToBytes32('DOGE'))
+  })
+})
+
+describe('bytes32ToFeedId', () => {
+  it('round-trips a symbol through the padded form the contracts store', () => {
+    expect(bytes32ToFeedId(feedIdToBytes32('PEPE'))).toBe('PEPE')
+    expect(bytes32ToFeedId(feedIdToBytes32('DOGE'))).toBe('DOGE')
+  })
+
+  it('accepts an id without the 0x prefix', () => {
+    expect(bytes32ToFeedId(feedIdToBytes32('PEPE').slice(2))).toBe('PEPE')
+  })
+
+  /**
+   * The factory still carries feeds whitelisted for the old oracle, whose
+   * bytes32 is a hash rather than a padded symbol. Decoding one produces
+   * mojibake, and that string reached users as a market named after garbage -
+   * so anything that is not a plain symbol has to come back empty and let the
+   * caller say UNKNOWN instead.
+   */
+  it('refuses to turn a hash into a symbol', () => {
+    const pythPepeHash =
+      '0xd69731a2e74ac1ce884fc3890f7ee324b6deb66147055249568869ed700882e4'
+
+    expect(bytes32ToFeedId(pythPepeHash)).toBe('')
+  })
+
+  it('refuses an id carrying control characters', () => {
+    expect(bytes32ToFeedId('0x50450045' + '00'.repeat(28))).toBe('')
+  })
+
+  it('allows the characters real symbols use', () => {
+    expect(bytes32ToFeedId(feedIdToBytes32('1000PEPE'))).toBe('1000PEPE')
+    expect(bytes32ToFeedId(feedIdToBytes32('ETH_2'))).toBe('ETH_2')
   })
 })
 

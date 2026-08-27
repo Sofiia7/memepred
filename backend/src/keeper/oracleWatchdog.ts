@@ -44,6 +44,30 @@ const publicClient = createPublicClient({
 // ── Thresholds ────────────────────────────────────────────────
 /** Warn if OracleResolver ETH is below this. Default: 0.02 ETH. */
 const ETH_WARN_WEI    = BigInt(process.env.RESOLVER_ETH_WARN_WEI    ?? '20000000000000000')
+
+/**
+ * The keeper wallet's own thresholds, expressed as runway rather than as a
+ * round number of ether.
+ *
+ * It used to share the resolver's, which were sized for Pyth: the resolver paid
+ * an update fee out of its balance and both wallets were assumed to burn at a
+ * similar rate. Neither is true now - the resolver spends nothing at all, and
+ * the keeper is the only thing paying for anything.
+ *
+ * Measured on Base Sepolia on 2026-08-27, across market rollovers and on-chain
+ * price pushes: 0.000039 ETH/hour, about 0.0009 ETH/day. So:
+ *
+ *   warn      0.003 ETH  ~ 3 days   - top up soon
+ *   critical  0.0005 ETH ~ 13 hours - it will stop working
+ *
+ * Critical is what makes /api/keeper/health answer 503, and 503 has to mean
+ * "this is about to stop", not "there is less than a week left". The shared
+ * threshold reported a healthy keeper with three days of runway as down, which
+ * is the same way a resolver-balance alarm that cannot cause an outage teaches
+ * people to ignore the light that can.
+ */
+const KEEPER_ETH_WARN_WEI = BigInt(process.env.KEEPER_ETH_WARN_WEI ?? '3000000000000000')
+const KEEPER_ETH_CRIT_WEI = BigInt(process.env.KEEPER_ETH_CRIT_WEI ?? '500000000000000')
 /** Page (treat as critical) below this. Default: 0.005 ETH. */
 const ETH_CRIT_WEI    = BigInt(process.env.RESOLVER_ETH_CRIT_WEI    ?? '5000000000000000')
 /** Per-feed cool-down after pausing — don't spam pause txs. */
@@ -145,10 +169,10 @@ async function checkKeeperEthBalance() {
     const bal = await publicClient.getBalance({ address: account.address })
     watchdogState.keeperEthWei = bal
 
-    if (bal < ETH_CRIT_WEI) {
+    if (bal < KEEPER_ETH_CRIT_WEI) {
       watchdogState.keeperEthAlert = 'critical'
       console.error(`[watchdog] CRITICAL: keeper wallet ${account.address} = ${formatEther(bal)} ETH — settlements, market creation and price pushes are all failing`)
-    } else if (bal < ETH_WARN_WEI) {
+    } else if (bal < KEEPER_ETH_WARN_WEI) {
       watchdogState.keeperEthAlert = 'warn'
       console.warn(`[watchdog] WARN: keeper wallet ${account.address} = ${formatEther(bal)} ETH`)
     } else {
