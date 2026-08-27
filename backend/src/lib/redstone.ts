@@ -7,21 +7,21 @@
  * public gateway with no credential at all, which is why there is no API key
  * anywhere in this file and should never be one.
  *
- * Note what this deliberately does NOT use: RedStone's own SDK. It now refuses
- * to run without an authenticated gateway - "Empty authenticatedGateways array
- * provided" - the same direction Pyth went. The public gateway still serves the
- * signed packages to anyone, and @redstone-finance/protocol turns them into a
- * calldata payload without the SDK's gateway logic. If that stops being true,
- * the migration's premise has changed and this is where it will show first.
+ * Note what this deliberately does NOT use: any RedStone package at all.
+ *
+ * Their SDK now refuses to run without an authenticated gateway - "Empty
+ * authenticatedGateways array provided" - the same direction Pyth went. The
+ * public gateway still serves the signed packages to anyone, so only the
+ * payload assembly was ever needed from them, and @redstone-finance/protocol
+ * brought ethers v5 with it: @ethersproject/providers and a `ws` carrying four
+ * high-severity advisories, in the image of a service that opens no websocket.
+ * redstonePayload.ts does that assembly with viem instead.
+ *
+ * If the public gateway ever starts demanding a credential, the migration's
+ * premise has changed and this is where it will show first.
  */
-import proto from '@redstone-finance/protocol'
 import { stringToHex } from 'viem'
-
-const { SignedDataPackage, RedstonePayload, recoverDeserializedSignerAddress } = proto as {
-  SignedDataPackage: { fromObj(o: unknown): unknown }
-  RedstonePayload: { prepare(pkgs: unknown[], meta: string): string }
-  recoverDeserializedSignerAddress(o: unknown): string
-}
+import { buildPayload, recoverPackageSigner, type GatewayPackage } from './redstonePayload.js'
 
 export const REDSTONE_GATEWAY =
   process.env.REDSTONE_GATEWAY_URL || 'https://oracle-gateway-1.a.redstone.finance'
@@ -120,7 +120,7 @@ export async function fetchPayload(
   const res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) })
   if (!res.ok) throw new Error(`redstone gateway ${res.status}`)
 
-  const all = (await res.json()) as Record<string, unknown[]>
+  const all = (await res.json()) as Record<string, GatewayPackage[]>
   const packages = all[symbol]
   if (!packages || packages.length === 0) {
     throw new Error(`RedStone gateway served no packages for ${symbol}`)
@@ -129,10 +129,12 @@ export async function fetchPayload(
   // Recover the signer from the signature rather than trusting the gateway's
   // own signerAddress field: the contract will do exactly that on-chain, so a
   // package we cannot attribute ourselves would only fail later and cost gas.
-  const chosen = selectAuthorisedPackages(packages, (p) => recoverDeserializedSignerAddress(p))
+  const recovered = await Promise.all(
+    (packages as GatewayPackage[]).map(async (p) => ({ pkg: p, signer: await recoverPackageSigner(p) })),
+  )
+  const chosen = selectAuthorisedPackages(recovered, (r) => r.signer).map((r) => r.pkg)
 
-  const payload = RedstonePayload.prepare(chosen.map((p) => SignedDataPackage.fromObj(p)), '')
-  return (payload.startsWith('0x') ? payload : `0x${payload}`) as `0x${string}`
+  return buildPayload(chosen)
 }
 
 /** Latest price for a feed as a plain number, for the off-chain price history. */

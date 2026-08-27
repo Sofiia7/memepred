@@ -14,49 +14,31 @@ import { createPublicClient, createWalletClient, http, encodeFunctionData } from
 import { privateKeyToAccount } from 'viem/accounts'
 import { baseSepolia } from 'viem/chains'
 import { readFileSync } from 'node:fs'
-import proto from '@redstone-finance/protocol'
+import { createPublicClient, createWalletClient, http, encodeFunctionData } from 'viem'
+import { privateKeyToAccount } from 'viem/accounts'
+import { baseSepolia } from 'viem/chains'
+import { readFileSync } from 'node:fs'
+import { fetchPayload, fetchPrice, feedIdToBytes32 } from '../src/lib/redstone.js'
 
-const { SignedDataPackage, RedstonePayload, recoverDeserializedSignerAddress } = proto
-
-const SIGNERS = [
-  '0x8BB8F32Df04c8b654987DAaeD53D6B6091e3B774',
-  '0xdEB22f54738d54976C4c0fe5ce6d408E40d88499',
-  '0x51Ce04Be4b3E32572C4Ec9135221d0691Ba7d202',
-  '0xDD682daEC5A90dD295d14DA4b0bec9281017b5bE',
-  '0x9c5AE89C4Af6aA32cE58588DBaF90d18a855B6de',
-].map((a) => a.toLowerCase())
-
-const RESOLVER = process.env.ORACLE_RESOLVER
-const RPC      = process.env.BASE_RPC_URL || 'https://sepolia.base.org'
-const SYMBOL   = process.argv[2] || 'PEPE'
-
+const RESOLVER = process.env.ORACLE_RESOLVER as `0x${string}`
+const RPC      = process.env.BASE_RPC_URL ?? 'https://sepolia.base.org'
+const SYMBOL   = process.argv[2] ?? 'PEPE'
 if (!RESOLVER) throw new Error('set ORACLE_RESOLVER')
 
 const keeperKey = JSON.parse(readFileSync('../.testwallets/keeper.json', 'utf8'))
-const pk = Object.entries(keeperKey).find(([k]) => /key/i.test(k))[1]
-const account = privateKeyToAccount(pk.startsWith('0x') ? pk : `0x${pk}`)
+const pk = Object.entries(keeperKey).find(([k]) => /key/i.test(k))![1] as string
+const account = privateKeyToAccount((pk.startsWith('0x') ? pk : `0x${pk}`) as `0x${string}`)
 
 const publicClient = createPublicClient({ chain: baseSepolia, transport: http(RPC) })
 const wallet = createWalletClient({ account, chain: baseSepolia, transport: http(RPC) })
 
-const feedId = `0x${Buffer.from(SYMBOL, 'utf8').toString('hex').padEnd(64, '0')}`
+const feedId = feedIdToBytes32(SYMBOL)
 
-// 1. A real payload, from the public gateway, with no credential.
-const res = await fetch(
-  'https://oracle-gateway-1.a.redstone.finance/v2/data-packages/latest/redstone-primary-prod',
-)
-const authorised = (await res.json())[SYMBOL].filter((p) =>
-  SIGNERS.includes(recoverDeserializedSignerAddress(p).toLowerCase()),
-)
-const chosen = authorised.slice(0, 3)
-const raw = RedstonePayload.prepare(chosen.map((p) => SignedDataPackage.fromObj(p)), '')
-const payload = raw.startsWith('0x') ? raw : `0x${raw}`
-// The contract aggregates across signers rather than trusting one, so the
-// number to expect is the median of the three - not the first package's value.
-const values = chosen.map((p) => p.dataPoints[0].value).sort((a, b) => a - b)
-const expected = values[Math.floor(values.length / 2)]
-
-console.log(`${SYMBOL}: gateway median $${expected} of [${values.join(', ')}], payload ${(payload.length - 2) / 2} bytes, ${chosen.length} signers`)
+// 1. A real payload, from the public gateway, with no credential. Same call the
+//    keeper makes, so a break in the real path cannot pass here.
+const payload  = await fetchPayload(SYMBOL)
+const expected = await fetchPrice(SYMBOL)
+console.log(`${SYMBOL}: gateway says $${expected}, payload ${(payload.length - 2) / 2} bytes`)
 
 // 2. Push it on-chain, price appended to the calldata.
 const ABI = [{
