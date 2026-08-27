@@ -7,6 +7,7 @@ import "../src/LiquidityPool.sol";
 import "../src/GenesisNFT.sol";
 import "../src/OrderbookMarket.sol";
 import "./mocks/MockUSDC.sol";
+import "./mocks/MockMarketRegistry.sol";
 import "./mocks/PythUpd.sol";
 import "./mocks/MockPyth.sol";
 
@@ -25,7 +26,7 @@ contract LiquidityPoolTest is Test {
 
     address feeDistrib = makeAddr("feeDistrib");
     address multisig   = makeAddr("multisig");
-    address factory    = makeAddr("factory");
+    address factory;   // a MockMarketRegistry, assigned in setUp
 
     function setUp() public {
         pyth     = new MockPyth();
@@ -47,6 +48,13 @@ contract LiquidityPoolTest is Test {
             bytes32("PEPE/USD"),
             15 minutes
         );
+
+        // The pool now asks its factory whether an address really is a market
+        // before granting it access to pooled funds, so the stand-in factory
+        // has to be able to answer.
+        MockMarketRegistry registry = new MockMarketRegistry();
+        registry.register(address(market));
+        factory = address(registry);
 
         pool.setMarketFactory(factory);
         vm.prank(factory);
@@ -135,7 +143,14 @@ contract LiquidityPoolTest is Test {
     }
 
     function test_AuthorizeMarket_OnlyFactoryOrOwner() public {
+        // Both targets have to be real markets as far as the factory is
+        // concerned, or the registry check fires first and this stops testing
+        // the caller permission it is named after.
         address newMarket = makeAddr("market2");
+        address m2        = makeAddr("market3");
+        MockMarketRegistry(factory).register(newMarket);
+        MockMarketRegistry(factory).register(m2);
+
         // random address blocked
         vm.prank(makeAddr("nobody"));
         vm.expectRevert("only factory or owner");
@@ -146,7 +161,6 @@ contract LiquidityPoolTest is Test {
         assertTrue(pool.isAuthorizedMarket(newMarket));
 
         // factory allowed
-        address m2 = makeAddr("market3");
         vm.prank(factory);
         pool.authorizeMarket(m2);
         assertTrue(pool.isAuthorizedMarket(m2));

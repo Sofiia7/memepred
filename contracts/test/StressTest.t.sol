@@ -72,13 +72,15 @@ contract StressTest is Test {
 
         factory.addFeed(FEED);
 
+        // Set a non-zero fee so the fee path is exercised. Has to happen
+        // before createMarket: the fee is factory state now, and each market
+        // takes its copy at creation.
+        factory.proposeNewFee(50); // 0.5%
+        vm.warp(block.timestamp + 48 hours + 1);
+        factory.applyNewFee();
+
         // Create market as owner (test contract).
         market = OrderbookMarket(factory.createMarket(FEED, DURATION));
-
-        // Set a non-zero fee so fee path is exercised.
-        vm.prank(multisig); market.proposeNewFee(50); // 0.5%
-        vm.warp(block.timestamp + 48 hours + 1);
-        vm.prank(multisig); market.applyNewFee();
 
         // Mint USDC + approvals.
         for (uint256 i = 0; i < traders.length; i++) {

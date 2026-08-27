@@ -10,6 +10,15 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "./GenesisNFT.sol";
 
 /**
+ * @dev The slice of MarketFactory this vault needs. Declared locally rather
+ *      than imported because MarketFactory imports LiquidityPool, and pulling
+ *      the whole contract back the other way would be circular.
+ */
+interface IMarketRegistry {
+    function isMarket(address market) external view returns (bool);
+}
+
+/**
  * @title LiquidityPool
  * @notice Shared LP vault (ERC4626) for all OrderbookMarket instances.
  *
@@ -239,8 +248,22 @@ contract LiquidityPool is ERC4626, ReentrancyGuard, Pausable, Ownable {
         emit MarketFactorySet(_factory);
     }
 
+    /**
+     * @notice Grant a market access to pooled funds.
+     *
+     * @dev The factory registry check is the point. This used to accept any
+     *      non-zero address from the factory or the owner, so the owner could
+     *      authorize their own EOA, call the match/settle entrypoints as if it
+     *      were a market, and walk the pool out - onMatchSettled's LP-lost
+     *      branch expects no funds back. Genesis NFT exists to attract
+     *      third-party deposits, so the people carrying that risk are not the
+     *      operator. The owner keeps deauthorizeMarket; taking capability away
+     *      is not the dangerous direction.
+     */
     function authorizeMarket(address market) external onlyFactoryOrOwner {
         require(market != address(0), "zero market");
+        require(marketFactory != address(0),                   "factory not set");
+        require(IMarketRegistry(marketFactory).isMarket(market), "not a market");
         isAuthorizedMarket[market] = true;
         emit MarketAuthorized(market);
     }

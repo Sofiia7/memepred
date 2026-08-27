@@ -21,7 +21,12 @@ contract MarketFactory is Ownable {
     address public immutable resolver;
     address public immutable feeDistributor;
     address public immutable referralRegistry;
-    address public immutable multisig;
+    /// @notice Protocol admin: pauses markets, owns the fee. NOT immutable.
+    ///         It used to be, on this contract and on every market clone, with
+    ///         no setter anywhere - which made "launch behind an EOA and move
+    ///         to a Safe once there is money worth protecting" impossible, and
+    ///         made a lost key a full protocol redeploy.
+    address public multisig;
     address public immutable liquidityPool;
 
     /// @notice The OrderbookMarket every market is an EIP-1167 clone of.
@@ -33,6 +38,32 @@ contract MarketFactory is Ownable {
 
     // feedId → list of active markets
     mapping(bytes32 => address[]) public activeMarkets;
+
+    /// @notice Markets this factory created. LiquidityPool checks it before
+    ///         granting a market access to pooled funds.
+    mapping(address => bool) public isMarket;
+
+    /// @notice Feeds where trading is stopped. Set by pauseMarketsForFeed and
+    ///         checked by createMarket, so the keeper's next tick cannot undo
+    ///         an emergency stop by rolling a fresh market - which is what
+    ///         happened before, making the stop worth at most a few minutes.
+    mapping(bytes32 => bool) public feedPaused;
+
+    // ── PROTOCOL FEE ───────────────────────────────────────
+    /// @notice Fee applied to markets created from here on, in bps.
+    ///
+    ///         This lived on each market clone, together with a 48h timelock.
+    ///         No clone ever lived that long - the longest market runs 24h and
+    ///         is replaced at duration/2 - so applyNewFee could never be
+    ///         reached on any of them and the fee was permanently stuck at 0.
+    ///         On the factory the timelock is against something permanent, and
+    ///         markets take a snapshot of the fee at creation so an open
+    ///         position always settles on the terms it was opened under.
+    uint256 public feeBps;
+    uint256 public pendingFeeBps;
+    uint256 public feeChangeAvailableAt;
+    uint256 public constant FEE_TIMELOCK = 48 hours;
+    uint256 public constant FEE_MAX      = 100;        // max 1%
 
     uint256[] public allowedDurations;
 
@@ -71,6 +102,11 @@ contract MarketFactory is Ownable {
         uint256 timestamp
     );
     event EmergencyPauserSet(address indexed pauser);
+    event MultisigChanged   (address indexed previous, address indexed current);
+    event FeedPaused        (bytes32 indexed feedId, address indexed by);
+    event FeedUnpaused      (bytes32 indexed feedId);
+    event FeeChangeProposed (uint256 newFeeBps, uint256 availableAt);
+    event FeeChanged        (uint256 newFeeBps);
     event MarketCreatorSet(address indexed creator);
 
     constructor(
@@ -89,6 +125,7 @@ contract MarketFactory is Ownable {
         feeDistributor   = _feeDistributor;
         referralRegistry = _referralRegistry;
         multisig         = _multisig;
+        feeBps           = 0;
         liquidityPool    = _liquidityPool;
 
         // Deploy the clone target once, here. Passing zeroed per-instance
@@ -122,6 +159,10 @@ contract MarketFactory is Ownable {
             "unauthorized"
         );
         require(allowedFeeds[feedId], "feed not whitelisted");
+        // Without this the emergency stop is cosmetic: pauseMarketsForFeed
+        // freezes the markets that exist right now, and the keeper's cron
+        // replaces them minutes later.
+        require(!feedPaused[feedId],  "feed paused");
         require(_isDurationAllowed(duration), "duration not allowed");
 
         bytes32 slot = keccak256(abi.encodePacked(feedId, duration));
@@ -141,9 +182,13 @@ contract MarketFactory is Ownable {
         // Per-instance config moves into initialize() — see the PER-INSTANCE
         // CONFIG note in OrderbookMarket.
         market = Clones.clone(marketImplementation);
-        OrderbookMarket(market).initialize(feedId, duration);
+        // Admin and fee are passed in rather than baked into the clone's code,
+        // so both can change without redeploying. The market keeps whatever it
+        // is given here for its whole (short) life.
+        OrderbookMarket(market).initialize(feedId, duration, multisig, feeBps);
 
         activeMarkets[feedId].push(market);
+        isMarket[market] = true;
 
         // Authorize this market on shared infra (one tx, atomic).
         LiquidityPool   (liquidityPool)   .authorizeMarket(market);
@@ -174,10 +219,53 @@ contract MarketFactory is Ownable {
             msg.sender == owner() || msg.sender == emergencyPauser,
             "not authorized"
         );
+        // Order matters: stop new markets first, then freeze the live ones.
+        // The flag is the part that actually holds, since the loop only ever
+        // covers markets that already exist.
+        feedPaused[feedId] = true;
+        emit FeedPaused(feedId, msg.sender);
+
         address[] storage list = activeMarkets[feedId];
         for (uint256 i = 0; i < list.length; i++) {
             try OrderbookMarket(list[i]).pauseByFactory() {} catch {}
         }
+    }
+
+    /// @notice Resume market creation on a feed. Owner only, deliberately
+    ///         asymmetric with pauseMarketsForFeed: a low-trust hot wallet may
+    ///         stop trading when an oracle misbehaves, but restarting it is a
+    ///         judgement call that belongs to the multisig. Individual markets
+    ///         paused by the sweep above still need their own unpause.
+    function unpauseFeed(bytes32 feedId) external onlyOwner {
+        feedPaused[feedId] = false;
+        emit FeedUnpaused(feedId);
+    }
+
+    /// @notice Move protocol admin, e.g. from the launch EOA to a Safe.
+    ///         Markets created after this answer to the new address; markets
+    ///         already open keep the old one until they expire, which is at
+    ///         most one market duration.
+    function setMultisig(address newMultisig) external onlyOwner {
+        require(newMultisig != address(0), "zero address");
+        emit MultisigChanged(multisig, newMultisig);
+        multisig = newMultisig;
+    }
+
+    /// @notice Start the timelock on a protocol fee change.
+    function proposeNewFee(uint256 newFeeBps) external onlyOwner {
+        require(newFeeBps <= FEE_MAX, "fee too high");
+        pendingFeeBps        = newFeeBps;
+        feeChangeAvailableAt = block.timestamp + FEE_TIMELOCK;
+        emit FeeChangeProposed(newFeeBps, feeChangeAvailableAt);
+    }
+
+    /// @notice Apply a fee change once its timelock has run.
+    function applyNewFee() external onlyOwner {
+        require(feeChangeAvailableAt != 0,               "no proposal");
+        require(block.timestamp >= feeChangeAvailableAt, "timelock");
+        feeBps               = pendingFeeBps;
+        feeChangeAvailableAt = 0;
+        emit FeeChanged(feeBps);
     }
 
     /// @notice Owner-only setter for the low-trust emergency pauser hot wallet.

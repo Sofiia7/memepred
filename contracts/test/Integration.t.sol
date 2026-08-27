@@ -68,15 +68,16 @@ contract IntegrationTest is Test {
 
         factory.addFeed(FEED);
 
+        // Enable a non-zero fee BEFORE creating the market, so the distribute
+        // path is exercised. Order matters now: the fee lives on the factory
+        // and a market snapshots it at creation, which is what keeps an open
+        // position settling on the terms it was opened under.
+        factory.proposeNewFee(100); // 1%
+        vm.warp(block.timestamp + 48 hours + 1);
+        factory.applyNewFee();
+
         // owner-path createMarket (no resolver prank needed)
         market = OrderbookMarket(factory.createMarket(FEED, 15 minutes));
-
-        // Enable a non-zero fee on this market so the distribute path is exercised.
-        vm.startPrank(multisig);
-        market.proposeNewFee(100); // 1%
-        vm.warp(block.timestamp + 48 hours + 1);
-        market.applyNewFee();
-        vm.stopPrank();
 
         // The 48h timelock warp above staled the oracle price set earlier
         // in this function — refresh it so every test starts with a fresh

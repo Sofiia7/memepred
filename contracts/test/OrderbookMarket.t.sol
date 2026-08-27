@@ -7,6 +7,7 @@ import "../src/OrderbookMarket.sol";
 import "../src/LiquidityPool.sol";
 import "../src/GenesisNFT.sol";
 import "./mocks/MockUSDC.sol";
+import "./mocks/MockMarketRegistry.sol";
 import "./mocks/PythUpd.sol";
 import "./mocks/MockPyth.sol";
 
@@ -56,6 +57,11 @@ contract OrderbookMarketTest is Test {
             DURATION
         );
 
+        // authorizeMarket now requires the pool's factory to vouch for the
+        // market; this suite deploys one directly, so stand a registry up.
+        MockMarketRegistry registry = new MockMarketRegistry();
+        registry.register(address(market));
+        pool.setMarketFactory(address(registry));
         pool.authorizeMarket(address(market));
 
         // Fund users
@@ -334,31 +340,20 @@ contract OrderbookMarketTest is Test {
         assertEq(o.payout, matchAmount * 2);
     }
 
-    // ── TIMELOCK TESTS ────────────────────────────────────
-    function test_Timelock_ProposeAndApply() public {
-        vm.prank(multisig);
-        market.proposeNewFee(50); // 0.5%
-        
-        assertEq(market.pendingFeeBps(), 50);
-        
-        // Too early
-        vm.prank(multisig);
-        vm.expectRevert("timelock");
-        market.applyNewFee();
+    // ── FEE ───────────────────────────────────────────────
+    // The propose/apply timelock used to live on the market and was
+    // unreachable there - 48h of timelock on a contract that lives at most
+    // 24h. It is MarketFactory's now; see LaunchBlockers.t.sol. What remains
+    // here is that a market holds the fee it was created with.
 
-        // After 48 hours
-        vm.warp(block.timestamp + 48 hours);
-        
-        vm.prank(multisig);
-        market.applyNewFee();
-        
-        assertEq(market.feeBps(), 50);
+    function test_Fee_DirectDeployStartsAtZero() public view {
+        assertEq(market.feeBps(), 0);
     }
 
-    function test_Timelock_Reverts_MaxFee() public {
-        vm.prank(multisig);
-        vm.expectRevert("fee too high");
-        market.proposeNewFee(101); // max is 100
+    function test_Fee_IsNotChangeableOnAnOpenMarket() public {
+        // No entrypoint exists to move it, deliberately: a position must
+        // settle on the terms it was opened under.
+        assertEq(market.feeBps(), 0);
     }
 
     // ── SLIPPAGE TESTS ────────────────────────────────────

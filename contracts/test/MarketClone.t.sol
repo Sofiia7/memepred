@@ -156,14 +156,14 @@ contract MarketCloneTest is Test {
         OrderbookMarket m = _clone(FEED_PEPE, DUR_15M);
         vm.prank(address(factory));
         vm.expectRevert("already initialized");
-        m.initialize(FEED_DOGE, DUR_1H);
+        m.initialize(FEED_DOGE, DUR_1H, multisig, 0);
     }
 
     function test_Clone_InitializeRejectsNonFactory() public {
         OrderbookMarket m = _clone(FEED_PEPE, DUR_15M);
         vm.prank(makeAddr("attacker"));
         vm.expectRevert("only factory");
-        m.initialize(FEED_DOGE, DUR_1H);
+        m.initialize(FEED_DOGE, DUR_1H, multisig, 0);
     }
 
     /// The implementation is left permanently initialized by its own
@@ -172,7 +172,7 @@ contract MarketCloneTest is Test {
         OrderbookMarket impl = OrderbookMarket(factory.marketImplementation());
         vm.prank(address(factory));
         vm.expectRevert("already initialized");
-        impl.initialize(FEED_PEPE, DUR_15M);
+        impl.initialize(FEED_PEPE, DUR_15M, multisig, 0);
     }
 
     function test_Implementation_IsDistinctFromEveryClone() public {
@@ -194,7 +194,7 @@ contract MarketCloneTest is Test {
         assertEq(m.factory(),     address(this)); // deployer
 
         vm.expectRevert("already initialized");
-        m.initialize(FEED_DOGE, DUR_1H);
+        m.initialize(FEED_DOGE, DUR_1H, multisig, 0);
     }
 
     // ── FACTORY-GATED CONTROLS STILL REACH CLONES ─────────

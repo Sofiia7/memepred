@@ -7,6 +7,7 @@ import "../src/OrderbookMarket.sol";
 import "../src/LiquidityPool.sol";
 import "../src/GenesisNFT.sol";
 import "./mocks/MockUSDC.sol";
+import "./mocks/MockMarketRegistry.sol";
 import "./mocks/PythUpd.sol";
 import "./mocks/MockPyth.sol";
 
@@ -74,6 +75,11 @@ contract OrderbookMarketAccountingTest is Test {
             FEED,
             DURATION
         );
+        // authorizeMarket now requires the pool's factory to vouch for the
+        // market; this suite deploys one directly, so stand a registry up.
+        MockMarketRegistry registry = new MockMarketRegistry();
+        registry.register(address(market));
+        pool.setMarketFactory(address(registry));
         pool.authorizeMarket(address(market));
 
         // Fund users

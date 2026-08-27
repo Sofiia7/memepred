@@ -124,16 +124,19 @@ contract OrderbookMarket is ReentrancyGuard, Pausable {
     // hitting the LP at a favorable/stale price.
     uint256 public constant MAX_TRADER_LP_EXPOSURE = 300e6; // 3x MAX_BET
 
-    // ── TIMELOCK / FEE STATE ───────────────────────────────
-    // Clone-safety: this may only ever be initialized to 0. A non-zero
-    // default here would be applied by the constructor and therefore skipped
-    // by every cloned market (see the STATE note above) — set a non-zero
-    // starting fee in _init() instead, never here.
-    uint256 public feeBps = 0;
-    uint256 public pendingFeeBps;
-    uint256 public feeChangeAvailableAt;
-    uint256 public constant FEE_TIMELOCK = 48 hours;
-    uint256 public constant FEE_MAX      = 100;        // max 1%
+    // ── FEE ────────────────────────────────────────────────
+    /// @notice Protocol fee for this market, in bps. Snapshotted from the
+    ///         factory by _init() and then fixed for this market's life, so a
+    ///         position always settles on the terms it was opened under.
+    ///
+    ///         The propose/apply timelock used to live here. It could never
+    ///         complete: FEE_TIMELOCK is 48h and no market clone survives
+    ///         longer than 24h, so the fee was permanently stuck at zero. It
+    ///         now lives on MarketFactory, which is permanent.
+    ///
+    ///         No inline initializer, deliberately. Inline field initializers
+    ///         compile into the constructor, which a clone never runs.
+    uint256 public feeBps;
 
     // ── IMMUTABLES ─────────────────────────────────────────
     // These are identical for every market instance, so they stay immutable:
@@ -145,7 +148,6 @@ contract OrderbookMarket is ReentrancyGuard, Pausable {
     address public immutable liquidityPool;
     address public immutable feeDistributor;
     address public immutable referralRegistry;
-    address public immutable multisig;
     address public immutable factory;
 
     // ── PER-INSTANCE CONFIG ────────────────────────────────
@@ -155,6 +157,13 @@ contract OrderbookMarket is ReentrancyGuard, Pausable {
     // _init() (from either the constructor or initialize()).
     bytes32 public pythFeedId;
     uint256 public duration;
+
+    /// @notice Protocol admin for this market. Also moved out of immutables:
+    ///         it was frozen into the implementation's code, so every clone
+    ///         shared one address that could never be changed, and moving to a
+    ///         Safe after launch meant redeploying everything. The factory
+    ///         passes its current multisig at creation.
+    address public multisig;
 
     /// @dev Set by _init(). Guards against a clone being re-initialized, and
     ///      is set in the constructor so a directly-deployed instance — which
@@ -204,8 +213,6 @@ contract OrderbookMarket is ReentrancyGuard, Pausable {
     event MatchSettled      (uint256 indexed matchId, bool upWon, uint256 entry, uint256 exit);
     event OrderRefunded     (uint256 indexed orderId, address trader, uint256 amount); // partial when amount < order.amount
     event Claimed           (uint256 indexed orderId, address trader, uint256 payout);
-    event FeeChangeProposed (uint256 newFeeBps, uint256 availableAt);
-    event FeeChanged        (uint256 newFeeBps);
 
     // ── CONSTRUCTOR / INITIALIZER ──────────────────────────
     /**
@@ -232,9 +239,10 @@ contract OrderbookMarket is ReentrancyGuard, Pausable {
         liquidityPool    = _liquidityPool;
         feeDistributor   = _feeDistributor;
         referralRegistry = _referralRegistry;
-        multisig         = _multisig;
         factory          = msg.sender;
-        _init(_pythFeedId, _duration);
+        // Direct deployment configures itself; there is no factory to ask, and
+        // a fee of zero matches what this path has always produced.
+        _init(_pythFeedId, _duration, _multisig, 0);
     }
 
     /**
@@ -246,16 +254,28 @@ contract OrderbookMarket is ReentrancyGuard, Pausable {
      *         (MarketFactory.createMarket), so there is no window in which an
      *         uninitialized clone is reachable by users.
      */
-    function initialize(bytes32 _pythFeedId, uint256 _duration) external {
+    function initialize(
+        bytes32 _pythFeedId,
+        uint256 _duration,
+        address _multisig,
+        uint256 _feeBps
+    ) external {
         require(msg.sender == factory, "only factory");
-        _init(_pythFeedId, _duration);
+        _init(_pythFeedId, _duration, _multisig, _feeBps);
     }
 
-    function _init(bytes32 _pythFeedId, uint256 _duration) internal {
+    function _init(
+        bytes32 _pythFeedId,
+        uint256 _duration,
+        address _multisig,
+        uint256 _feeBps
+    ) internal {
         require(!_initialized, "already initialized");
         _initialized = true;
         pythFeedId   = _pythFeedId;
         duration     = _duration;
+        multisig     = _multisig;
+        feeBps       = _feeBps;
         // Ids start at 1 — 0 is the "no match" sentinel in Order.matchId and
         // the "not queued" sentinel in _queueIndex.
         nextOrderId  = 1;
@@ -863,22 +883,8 @@ contract OrderbookMarket is ReentrancyGuard, Pausable {
     }
 
     // ── ADMIN ──────────────────────────────────────────────
-    function proposeNewFee(uint256 newFeeBps) external {
-        require(msg.sender == multisig, "only multisig");
-        require(newFeeBps <= FEE_MAX,   "fee too high");
-        pendingFeeBps        = newFeeBps;
-        feeChangeAvailableAt = block.timestamp + FEE_TIMELOCK;
-        emit FeeChangeProposed(newFeeBps, feeChangeAvailableAt);
-    }
-
-    function applyNewFee() external {
-        require(msg.sender == multisig,                     "only multisig");
-        require(feeChangeAvailableAt != 0,                  "no proposal");
-        require(block.timestamp >= feeChangeAvailableAt,    "timelock");
-        feeBps               = pendingFeeBps;
-        feeChangeAvailableAt = 0;
-        emit FeeChanged(feeBps);
-    }
+    // The fee timelock used to live here and was unreachable by construction;
+    // it is now MarketFactory.proposeNewFee / applyNewFee. See feeBps above.
 
     function pause()   external { require(msg.sender == multisig, "only multisig"); _pause();   }
     function unpause() external { require(msg.sender == multisig, "only multisig"); _unpause(); }

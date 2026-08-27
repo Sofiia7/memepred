@@ -9,6 +9,7 @@ import "../src/LiquidityPool.sol";
 import "../src/GenesisNFT.sol";
 import "../src/interfaces/IPyth.sol";
 import "./mocks/MockPyth.sol";
+import "./mocks/MockMarketRegistry.sol";
 import "./mocks/MockUSDC.sol";
 import "./mocks/PythUpd.sol";
 
@@ -188,6 +189,11 @@ contract OracleResolverTest is Test {
             FEED,
             5 minutes
         );
+        // authorizeMarket now requires the pool's factory to vouch for the
+        // market; this suite deploys one directly, so stand a registry up.
+        MockMarketRegistry registry = new MockMarketRegistry();
+        registry.register(address(market));
+        pool.setMarketFactory(address(registry));
         pool.authorizeMarket(address(market));
 
         address alice = makeAddr("alice");
@@ -319,6 +325,11 @@ contract OracleResolverTest is Test {
             FEED,
             duration
         );
+        // authorizeMarket now requires the pool's factory to vouch for the
+        // market; this suite deploys one directly, so stand a registry up.
+        MockMarketRegistry registry = new MockMarketRegistry();
+        registry.register(address(market));
+        pool.setMarketFactory(address(registry));
         pool.authorizeMarket(address(market));
 
         address alice = makeAddr("alice");
