@@ -125,14 +125,58 @@ describe('quota', () => {
   // A bet is signed against this price and the contract rejects anything older
   // than MAX_PRICE_AGE (60s), so the cache has to be short enough to stay well
   // inside that.
-  it('refetches once the entry is stale', async () => {
+  it('refetches a bet payload once the entry is stale', async () => {
     vi.useFakeTimers()
 
-    await app.inject({ url: `/updates?ids=${PEPE}` })
+    await app.inject({ url: `/updates?ids=${PEPE}&parsed=false` })
     vi.advanceTimersByTime(3_000)
-    await app.inject({ url: `/updates?ids=${PEPE}` })
+    await app.inject({ url: `/updates?ids=${PEPE}&parsed=false` })
 
     expect(upstream).toHaveBeenCalledTimes(2)
+  })
+
+  /**
+   * Display polling is the entire load. usePythPrice refetches every 10s on
+   * every open page, and the cache is what stops that scaling with visitors -
+   * but only up to its own TTL. At 2s and two feeds this endpoint alone would
+   * make 20 upstream calls per 10s, and Pyth's public tier allows 10.
+   *
+   * There is also nothing to gain from being fresher than the only consumer:
+   * a price the browser asks for every 10s does not benefit from being 2s old.
+   */
+  it('caches a displayed price for as long as the frontend polls', async () => {
+    vi.useFakeTimers()
+
+    await app.inject({ url: `/updates?ids=${PEPE}&parsed=true` })
+    vi.advanceTimersByTime(9_000)
+    await app.inject({ url: `/updates?ids=${PEPE}&parsed=true` })
+
+    expect(upstream).toHaveBeenCalledTimes(1)
+  })
+
+  it('still refreshes a displayed price eventually', async () => {
+    vi.useFakeTimers()
+
+    await app.inject({ url: `/updates?ids=${PEPE}&parsed=true` })
+    vi.advanceTimersByTime(11_000)
+    await app.inject({ url: `/updates?ids=${PEPE}&parsed=true` })
+
+    expect(upstream).toHaveBeenCalledTimes(2)
+  })
+
+  // Two feeds polled by any number of visitors must stay inside Pyth's
+  // 10-per-10s public tier, with room left for the keeper's own traffic.
+  it('keeps steady-state polling within the upstream rate limit', async () => {
+    vi.useFakeTimers()
+
+    // Ten seconds of one visitor polling both feeds at the frontend's rate.
+    for (let t = 0; t < 10_000; t += 1_000) {
+      await app.inject({ url: `/updates?ids=${PEPE}&parsed=true` })
+      await app.inject({ url: `/updates?ids=${DOGE}&parsed=true` })
+      vi.advanceTimersByTime(1_000)
+    }
+
+    expect(upstream.mock.calls.length).toBeLessThanOrEqual(4)
   })
 })
 

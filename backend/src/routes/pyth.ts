@@ -21,14 +21,22 @@ export interface PythRouteOptions {
 }
 
 /**
- * How long an upstream response is reused.
+ * How long an upstream response is reused. The two callers want opposite
+ * things, so they get different answers.
  *
- * usePythPrice polls on every open page, so without this the request rate
- * against Pyth scales with concurrent visitors. Kept far below the contract's
- * MAX_PRICE_AGE (60s) because a bet is signed against whatever comes back here
- * and then has to survive the user's confirmation in their wallet.
+ * A bet is signed against the payload this returns and then has to survive the
+ * user confirming in their wallet, all inside the contract's MAX_PRICE_AGE of
+ * 60s. Short.
+ *
+ * A displayed price is the entire load: usePythPrice refetches every 10s on
+ * every open page, and this cache is what stops that scaling with the number of
+ * visitors - but only up to its own TTL. At 2s across two feeds this endpoint
+ * alone would make 20 upstream calls per 10s and Pyth's public tier allows 10.
+ * There is also nothing to gain from being fresher than the only consumer, so
+ * it matches the frontend's own poll interval.
  */
-const CACHE_TTL_MS = 2_000
+const BET_TTL_MS     = 2_000
+const DISPLAY_TTL_MS = 10_000
 
 const Query = z.object({
   ids:    z.string().regex(/^0x[a-fA-F0-9]{64}$/, 'invalid feed id'),
@@ -60,8 +68,9 @@ export async function pythRoutes(app: FastifyInstance, opts: PythRouteOptions) {
     }
 
     const cacheKey = `${feedId}:${parsed}`
+    const ttl      = parsed === 'true' ? DISPLAY_TTL_MS : BET_TTL_MS
     const hit = cache.get(cacheKey)
-    if (hit && Date.now() - hit.at < CACHE_TTL_MS) {
+    if (hit && Date.now() - hit.at < ttl) {
       return reply.code(hit.status).header('content-type', hit.contentType).send(hit.body)
     }
 
