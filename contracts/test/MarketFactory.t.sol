@@ -187,7 +187,7 @@ contract MarketFactoryTest is RedstoneTest {
         assertEq(ob.feeDistributor(),          factory.feeDistributor());
         assertEq(ob.referralRegistry(),        factory.referralRegistry());
         assertEq(ob.multisig(),                multisig);
-        assertEq(ob.pythFeedId(),              FEED_PEPE);
+        assertEq(ob.feedId(),              FEED_PEPE);
         assertEq(ob.duration(),                15 minutes);
     }
 

@@ -209,7 +209,7 @@ export const ORDERBOOK_MARKET_ABI = [
     }]
   },
   {
-    name: 'pythFeedId',
+    name: 'feedId',
     type: 'function',
     stateMutability: 'view',
     inputs: [],

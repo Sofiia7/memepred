@@ -137,7 +137,7 @@ contract OracleResolver is AccessControl, PrimaryProdDataServiceConsumerBase {
         uint256 matchId
     ) external onlyRole(KEEPER_ROLE) {
         OrderbookMarket m = OrderbookMarket(market);
-        bytes32 feedId = m.pythFeedId();
+        bytes32 feedId = m.feedId();
 
         // TWAP exit price, windowed to this market's own duration.
         uint256 exitTwap = _getTWAP(feedId, _twapWindowFor(m.duration()));
@@ -181,7 +181,7 @@ contract OracleResolver is AccessControl, PrimaryProdDataServiceConsumerBase {
         uint256 maxCount
     ) internal returns (uint256 settled) {
         OrderbookMarket m = OrderbookMarket(market);
-        bytes32 feedId    = m.pythFeedId();
+        bytes32 feedId    = m.feedId();
 
         uint256 window = _twapWindowFor(m.duration());
         uint256[] memory ready = m.getReadySettlements(0, maxCount);

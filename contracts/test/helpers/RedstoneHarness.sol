@@ -41,12 +41,12 @@ contract OrderbookMarketHarness is OrderbookMarket, AuthorisedMockSignersBase {
         address _feeDistributor,
         address _referralRegistry,
         address _multisig,
-        bytes32 _pythFeedId,
+        bytes32 _feedId,
         uint256 _duration
     )
         OrderbookMarket(
             _usdc, _resolver, _liquidityPool, _feeDistributor,
-            _referralRegistry, _multisig, _pythFeedId, _duration
+            _referralRegistry, _multisig, _feedId, _duration
         )
     {}
 

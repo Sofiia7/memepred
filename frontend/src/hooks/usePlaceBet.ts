@@ -3,7 +3,7 @@
  *
  * 4.1: Decodes OrderPlaced from the receipt logs and exposes `orderId`. UI
  *      can redirect to /order/:address/:orderId immediately after confirm.
- * 4.2: Reads `market.pythFeedId()` on-chain instead of using a global
+ * 4.2: Reads `market.feedId()` on-chain instead of using a global
  *      VITE_PYTH_FEED_ID. Per-market feeds are correct for multi-coin.
  */
 import { useState, useCallback, useEffect } from 'react'
@@ -68,11 +68,11 @@ export function usePlaceBet({
 
   const amountWei = parseUnits(amountUsd || '0', 6)
 
-  // ── 4.2: per-market pythFeedId from the market contract ───
+  // ── 4.2: per-market feedId from the market contract ───
   const { data: marketFeedId } = useReadContract({
     address: marketAddress,
     abi: ORDERBOOK_MARKET_ABI,
-    functionName: 'pythFeedId',
+    functionName: 'feedId',
   })
 
   const { data: allowance, refetch: refetchAllowance } = useReadContract({

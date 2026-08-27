@@ -173,7 +173,7 @@ contract OrderbookMarket is ReentrancyGuard, Pausable, PrimaryProdDataServiceCon
     // once markets are clones — a clone shares the implementation's code and
     // therefore its immutables. They move to storage, written once by
     // _init() (from either the constructor or initialize()).
-    bytes32 public pythFeedId;
+    bytes32 public feedId;
     uint256 public duration;
 
     /// @notice Protocol admin for this market. Also moved out of immutables:
@@ -249,7 +249,7 @@ contract OrderbookMarket is ReentrancyGuard, Pausable, PrimaryProdDataServiceCon
         address _feeDistributor,
         address _referralRegistry,
         address _multisig,
-        bytes32 _pythFeedId,
+        bytes32 _feedId,
         uint256 _duration
     ) {
         usdc             = IERC20(_usdc);
@@ -260,7 +260,7 @@ contract OrderbookMarket is ReentrancyGuard, Pausable, PrimaryProdDataServiceCon
         factory          = msg.sender;
         // Direct deployment configures itself; there is no factory to ask, and
         // a fee of zero matches what this path has always produced.
-        _init(_pythFeedId, _duration, _multisig, 0);
+        _init(_feedId, _duration, _multisig, 0);
     }
 
     /**
@@ -273,24 +273,24 @@ contract OrderbookMarket is ReentrancyGuard, Pausable, PrimaryProdDataServiceCon
      *         uninitialized clone is reachable by users.
      */
     function initialize(
-        bytes32 _pythFeedId,
+        bytes32 _feedId,
         uint256 _duration,
         address _multisig,
         uint256 _feeBps
     ) external {
         require(msg.sender == factory, "only factory");
-        _init(_pythFeedId, _duration, _multisig, _feeBps);
+        _init(_feedId, _duration, _multisig, _feeBps);
     }
 
     function _init(
-        bytes32 _pythFeedId,
+        bytes32 _feedId,
         uint256 _duration,
         address _multisig,
         uint256 _feeBps
     ) internal {
         require(!_initialized, "already initialized");
         _initialized = true;
-        pythFeedId   = _pythFeedId;
+        feedId   = _feedId;
         duration     = _duration;
         multisig     = _multisig;
         feeBps       = _feeBps;
@@ -881,7 +881,7 @@ contract OrderbookMarket is ReentrancyGuard, Pausable, PrimaryProdDataServiceCon
     uint256 private constant REDSTONE_DECIMALS_TO_WAD = 1e10; // 1e18 / 1e8
 
     function _getCurrentPrice() internal view returns (uint256) {
-        uint256 price = getOracleNumericValueFromTxMsg(pythFeedId) * REDSTONE_DECIMALS_TO_WAD;
+        uint256 price = getOracleNumericValueFromTxMsg(feedId) * REDSTONE_DECIMALS_TO_WAD;
         require(price > 0, "non-positive price");
         return price;
     }

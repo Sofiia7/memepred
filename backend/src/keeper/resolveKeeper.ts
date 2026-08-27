@@ -36,7 +36,7 @@ const ORACLE_RESOLVER_BATCH_ABI = [
 
 const MARKET_VIEW_ABI = [
   {
-    name: 'pythFeedId',
+    name: 'feedId',
     type: 'function',
     stateMutability: 'view',
     inputs: [],
@@ -130,7 +130,7 @@ export async function settlePendingMarkets() {
       if (initialReady.length === 0) continue
 
       const feedId = await publicClient.readContract({
-        address: market, abi: MARKET_VIEW_ABI, functionName: 'pythFeedId',
+        address: market, abi: MARKET_VIEW_ABI, functionName: 'feedId',
       })
 
       for (let i = 0; i < MAX_LOOPS; i++) {

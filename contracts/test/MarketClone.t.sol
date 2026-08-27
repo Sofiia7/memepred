@@ -125,8 +125,8 @@ contract MarketCloneTest is RedstoneTest {
         OrderbookMarket b = _clone(FEED_DOGE, DUR_1H);
 
         assertTrue(address(a) != address(b));
-        assertEq(a.pythFeedId(), FEED_PEPE);
-        assertEq(b.pythFeedId(), FEED_DOGE);
+        assertEq(a.feedId(), FEED_PEPE);
+        assertEq(b.feedId(), FEED_DOGE);
         assertEq(a.duration(),   DUR_15M);
         assertEq(b.duration(),   DUR_1H);
     }
@@ -184,7 +184,7 @@ contract MarketCloneTest is RedstoneTest {
             address(usdc), resolver, address(pool), treasury,
             address(0), multisig, FEED_PEPE, DUR_15M
         );
-        assertEq(m.pythFeedId(),  FEED_PEPE);
+        assertEq(m.feedId(),  FEED_PEPE);
         assertEq(m.duration(),    DUR_15M);
         assertEq(m.nextOrderId(), 1);
         assertEq(m.factory(),     address(this)); // deployer
