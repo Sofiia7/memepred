@@ -21,6 +21,33 @@ describe('getPendingReferrer', () => {
     localStorage.setItem(STORAGE_KEY, addr)
     expect(getPendingReferrer()).toBe(addr)
   })
+
+  // OrderbookMarket._placeBet has require(referrer != msg.sender), so passing
+  // your own address is a hard revert — and clicking your own share link is the
+  // obvious way to end up in that state.
+  it('drops a self-referral so the bet does not revert', () => {
+    const me = '0x000000000000000000000000000000000000dead'
+    localStorage.setItem(STORAGE_KEY, me)
+    expect(getPendingReferrer(me)).toBe(ZERO_ADDRESS)
+  })
+
+  it('compares addresses case-insensitively', () => {
+    localStorage.setItem(STORAGE_KEY, '0x000000000000000000000000000000000000DEAD')
+    expect(getPendingReferrer('0x000000000000000000000000000000000000dead')).toBe(ZERO_ADDRESS)
+  })
+
+  it('still returns a genuine referrer when it is someone else', () => {
+    const other = '0x000000000000000000000000000000000000beef'
+    localStorage.setItem(STORAGE_KEY, other)
+    expect(getPendingReferrer('0x000000000000000000000000000000000000dead')).toBe(other)
+  })
+
+  it('keeps working when no wallet is connected yet', () => {
+    const other = '0x000000000000000000000000000000000000beef'
+    localStorage.setItem(STORAGE_KEY, other)
+    expect(getPendingReferrer(undefined)).toBe(other)
+    expect(getPendingReferrer(null)).toBe(other)
+  })
 })
 
 describe('captureReferralCode', () => {

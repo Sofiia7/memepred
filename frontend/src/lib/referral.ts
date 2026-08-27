@@ -36,8 +36,20 @@ export function captureReferralCode(): void {
     })
 }
 
-/** The persisted referrer address, if any was captured this session or before. */
-export function getPendingReferrer(): `0x${string}` {
+/**
+ * The persisted referrer address, if any was captured this session or before.
+ *
+ * Pass the connected account so a self-referral can be dropped. The contract
+ * enforces `require(referrer != msg.sender, "self referral")` as a hard revert
+ * in _placeBet, and the stored referrer was never compared to the wallet — so
+ * opening your own share link (the first thing anyone does after generating
+ * one; Portfolio renders it as `/?ref=<yourCode>`) permanently poisoned
+ * localStorage and made every subsequent bet from that browser revert, after
+ * the user had already signed and paid for the USDC approve.
+ */
+export function getPendingReferrer(self?: `0x${string}` | null): `0x${string}` {
   const stored = localStorage.getItem(STORAGE_KEY)
-  return (stored || ZERO_ADDRESS) as `0x${string}`
+  if (!stored) return ZERO_ADDRESS as `0x${string}`
+  if (self && stored.toLowerCase() === self.toLowerCase()) return ZERO_ADDRESS as `0x${string}`
+  return stored as `0x${string}`
 }

@@ -59,12 +59,18 @@ export function usePlaceBet({
   marketAddress,
   direction,
   amountUsd,
-  referrer = getPendingReferrer(),
+  referrer,
   expectedPrice,
   slippageBps = 100,
 }: UsePlaceBetArgs) {
 
   const { address } = useAccount()
+
+  // Resolved here rather than as a default parameter: the stored referrer has
+  // to be compared against the connected wallet, and `address` doesn't exist
+  // until useAccount() has run. Passing your own address as referrer is a hard
+  // revert in the contract.
+  const effectiveReferrer = referrer ?? getPendingReferrer(address)
   const publicClient = usePublicClient()
   const ensureChain = useEnsureChain()
   const [step, setStep] = useState<BetStep>('idle')
@@ -212,7 +218,7 @@ export function usePlaceBet({
         address: marketAddress,
         abi: ORDERBOOK_MARKET_ABI,
         functionName: 'placeBetWithPyth',
-        args: [direction, amountWei, referrer, expectedPrice, BigInt(slippageBps), priceUpdateData],
+        args: [direction, amountWei, effectiveReferrer, expectedPrice, BigInt(slippageBps), priceUpdateData],
         value: pythFeeWei,
       })
 
@@ -221,7 +227,7 @@ export function usePlaceBet({
       setStep('error')
       setError(err?.shortMessage || err?.message || 'Transaction failed')
     }
-  }, [address, amountWei, allowance, direction, marketAddress, referrer, expectedPrice, slippageBps, marketFeedId, approve, refetchAllowance, placeBet, ensureChain, publicClient])
+  }, [address, amountWei, allowance, direction, marketAddress, effectiveReferrer, expectedPrice, slippageBps, marketFeedId, approve, refetchAllowance, placeBet, ensureChain, publicClient])
 
   return {
     execute,
