@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { escalate, isStuckNonceError, NonceEscalation, shouldCancelNonce, CANCEL_AFTER_ESCALATIONS } from './feeEscalator.js'
+import { escalate, isStuckNonceError, isInsufficientFundsError, NonceEscalation, shouldCancelNonce, CANCEL_AFTER_ESCALATIONS } from './feeEscalator.js'
 
 const base = { maxFeePerGas: 7_000_000n, maxPriorityFeePerGas: 1_000_000n }
 
@@ -139,5 +139,31 @@ describe('when to stop bidding and just displace the nonce', () => {
     // At the point it gives up bidding, the 800k transaction was still
     // affordable - the threshold is about diminishing returns, not only money.
     expect(800_000n * fee).toBeLessThan(balance)
+  })
+})
+
+describe('running out of money to bid with', () => {
+  /**
+   * The gap that left production wedged at 0.159 gwei. Once the bid grew past
+   * what the wallet could pay with an 800,000-gas limit attached, the error
+   * changed from "underpriced" to "insufficient funds" - which the escalator
+   * did not count, so the level froze and the affordable 21,000-gas
+   * displacement was never tried again.
+   */
+  it('recognises the exact message Base returned', () => {
+    const err = Object.assign(new Error('Missing or invalid parameters.'), {
+      details: 'insufficient funds for gas * price + value: have 72038606089498 want 127329237600000',
+    })
+    expect(isInsufficientFundsError(err)).toBe(true)
+  })
+
+  it('does not confuse it with a wedged nonce', () => {
+    expect(isStuckNonceError(new Error('insufficient funds for gas * price + value'))).toBe(false)
+    expect(isInsufficientFundsError(new Error('replacement transaction underpriced'))).toBe(false)
+  })
+
+  it('leaves reverts and network errors alone', () => {
+    expect(isInsufficientFundsError(new Error('execution reverted'))).toBe(false)
+    expect(isInsufficientFundsError(new Error('fetch failed'))).toBe(false)
   })
 })

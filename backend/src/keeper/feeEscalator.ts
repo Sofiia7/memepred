@@ -45,6 +45,26 @@ const STEP_DEN = 4n
  */
 const STUCK = /replacement transaction underpriced|already known|transaction underpriced/i
 
+/**
+ * "insufficient funds for gas * price + value". On its own this means top up
+ * the wallet. Arriving *while a nonce is already known to be wedged* it means
+ * something else: the bid needed to displace the stuck transaction has grown
+ * past what the wallet can pay WITH THE REAL TRANSACTION'S GAS LIMIT attached.
+ * That is not a dead end, it is the signal to stop bidding with 800,000 gas
+ * and displace the nonce with 21,000 instead.
+ *
+ * Missing this distinction left production wedged at 0.159 gwei: the escalator
+ * only counted stuck-nonce errors, so once the bid turned unaffordable the
+ * level stopped climbing and the cheap displacement - which the wallet could
+ * easily have afforded - was never attempted again.
+ */
+export function isInsufficientFundsError(err: unknown): boolean {
+  const msg = err instanceof Error
+    ? `${err.message} ${(err as { details?: string }).details ?? ''}`
+    : String(err)
+  return /insufficient funds/i.test(msg)
+}
+
 export function isStuckNonceError(err: unknown): boolean {
   const msg = err instanceof Error
     ? `${err.message} ${(err as { details?: string }).details ?? ''}`

@@ -22,7 +22,7 @@
 import { createPublicClient, createWalletClient, http, nonceManager } from 'viem'
 import { base, baseSepolia } from 'viem/chains'
 import { privateKeyToAccount, type PrivateKeyAccount } from 'viem/accounts'
-import { NonceEscalation, isStuckNonceError, shouldCancelNonce, type Fees } from './feeEscalator.js'
+import { NonceEscalation, isStuckNonceError, isInsufficientFundsError, shouldCancelNonce, type Fees } from './feeEscalator.js'
 
 const chain = process.env.CHAIN_ID === '8453' ? base : baseSepolia
 
@@ -149,6 +149,21 @@ export async function sendKeeperTx(
       return hash
     } catch (err) {
       lastErr = err
+
+      // Out of money to bid WITH THIS TRANSACTION attached, on a nonce already
+      // known to be wedged. Displacing it needs 21,000 gas instead of this
+      // call's several hundred thousand, so the same wallet can still do it.
+      if (isInsufficientFundsError(err) && escalation.level > 0) {
+        const level = escalation.bump(nonce)
+        console.warn(`[keeperWallet] ${label}: cannot afford to outbid nonce ${nonce} with real work, displacing it instead`)
+        if (await displaceNonce(nonce, escalation.next(nonce, base))) {
+          escalation.succeeded()
+          continue
+        }
+        if (level >= MAX_ESCALATIONS * 3) throw err
+        continue
+      }
+
       if (!isStuckNonceError(err)) throw err
       const level = escalation.bump(nonce)
       console.warn(
