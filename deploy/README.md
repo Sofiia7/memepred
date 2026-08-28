@@ -104,8 +104,40 @@ out of its own ETH balance — top it up directly (send ETH to its address):
 
 ## 8. Monitoring (free)
 
-- **UptimeRobot** — pings `https://api.flipthememe.com/health` every 5 min, e-mails
-  when down. Free tier covers 50 monitors.
+**Do not point a monitor at `/health`.** It returns `{status:'ok'}` for as long
+as the Fastify process has a pulse, which is why the August 2026 outage - a dead
+keeper, no settlements, no price pushes - sat behind a green UptimeRobot check
+for 15 days. A monitor aimed at a probe that cannot fail is worse than no
+monitor, because it is believed.
+
+Watch one of these instead:
+
+| URL | goes red when |
+|---|---|
+| `https://api.flipthememe.com/health/deep` | keeper out of gas, watchdog snapshot stale (5 min), USDC invariant drift |
+| `https://flipthememe-watchdog.sofiaseremeteva.workers.dev/` | any of the above, **or** the API or frontend is down, **or** the watchdog itself stopped ticking |
+
+The second is the Cloudflare cron Worker in `workers/watchdog.ts`. It checks all
+three endpoints every 2 minutes from outside the VPS - a watchdog living next to
+the thing it watches dies with it, and its silence looks exactly like good news.
+It pages after two consecutive misses (~4 min), repeats hourly while down, sends
+one green ping a day as a dead-man's switch, and keeps per-day uptime counters
+for soak testing. `GET /` returns the state; the same URL answers 503 when
+production is down, so a single external check covers everything.
+
+Alert channels are whichever secrets are set, and with none set it records state
+but wakes nobody:
+
+```bash
+cd workers
+wrangler secret put ALERT_WEBHOOK_URL  -c wrangler.watchdog.toml   # Discord/Slack
+wrangler secret put TELEGRAM_BOT_TOKEN -c wrangler.watchdog.toml   # or Telegram
+wrangler secret put TELEGRAM_CHAT_ID   -c wrangler.watchdog.toml
+```
+
+`/health` is still the right probe for a container liveness check - it just must
+not be the only thing watching the product.
+
 - **Logs**: `docker compose logs -f --tail=200 backend keeper`.
 - For longer-term log search, optionally pipe to [Axiom](https://axiom.co) free
   tier (500 GB/mo).
