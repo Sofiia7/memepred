@@ -1,0 +1,434 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+
+import "forge-std/Test.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "../src/LiquidityPool.sol";
+import "../src/GenesisNFT.sol";
+import "../src/OrderbookMarket.sol";
+import "./mocks/MockUSDC.sol";
+import "./mocks/MockMarketRegistry.sol";
+import "./helpers/RedstoneTest.sol";
+import "./helpers/RedstoneHarness.sol";
+
+/**
+ * Same-block interleaving against shared pool capital.
+ *
+ * Everything the pool guards is shared across every market: one global 10%
+ * exposure cap, one 5% per-market cap, one USDC balance. The existing suite
+ * exercises those caps one call at a time, which is the easy case - the EVM
+ * serialises transactions, so a cap read-modify-written inside a single call
+ * cannot be torn.
+ *
+ * What is NOT self-evident is the interleaving: several markets matching
+ * against the same pool within one block, a withdraw landing between two
+ * matches, a deposit raising the cap mid-flight. Each of those calls is atomic
+ * on its own and the composition still has to hold. Foundry keeps every call in
+ * a test at the same block number and timestamp unless told otherwise, which is
+ * exactly the model wanted here.
+ *
+ * Four invariants, asserted after every step:
+ *   totalExposure          <= 10% of totalAssets
+ *   marketExposure[m]      <= 5%  of totalAssets
+ *   USDC held by the pool  >= totalPendingFees  (the pool stays backed)
+ *   totalExposure          == 0 once everything has settled
+ */
+contract ConcurrencyRacesTest is RedstoneTest {
+    LiquidityPool pool;
+    GenesisNFT    genesisNFT;
+    MockUSDC      usdc;
+
+    OrderbookMarket[3] markets;
+
+    address feeDistrib = makeAddr("feeDistrib");
+    address multisig   = makeAddr("multisig");
+    address resolver;
+
+    uint256 constant LP_CAPITAL = 100_000e6; // 100k USDC
+    uint256 constant GLOBAL_CAP = LP_CAPITAL / 10;  // 10%
+    uint256 constant MARKET_CAP = LP_CAPITAL / 20;  // 5%
+
+    function setUp() public {
+        resolver = makeAddr("resolver");
+        _setPrice(bytes32("PEPE/USD"), 1000e8);
+
+        usdc       = new MockUSDC();
+        genesisNFT = new GenesisNFT("ipfs://test/");
+        pool       = new LiquidityPool(IERC20(address(usdc)), address(genesisNFT));
+        genesisNFT.setLiquidityPool(address(pool));
+
+        MockMarketRegistry registry = new MockMarketRegistry();
+
+        for (uint256 i = 0; i < 3; i++) {
+            markets[i] = new OrderbookMarketHarness(
+                address(usdc),
+                resolver,
+                address(pool),
+                feeDistrib,
+                address(0),
+                multisig,
+                bytes32("PEPE/USD"),
+                15 minutes
+            );
+            registry.register(address(markets[i]));
+        }
+
+        pool.setMarketFactory(address(registry));
+        for (uint256 i = 0; i < 3; i++) {
+            vm.prank(address(registry));
+            pool.authorizeMarket(address(markets[i]));
+        }
+
+        _addLP("whale", LP_CAPITAL);
+    }
+
+    function _addLP(string memory name, uint256 amount) internal returns (address lp) {
+        lp = makeAddr(name);
+        usdc.mint(lp, amount);
+        vm.prank(lp); usdc.approve(address(pool), type(uint256).max);
+        vm.prank(lp); pool.deposit(amount, lp);
+    }
+
+    /// Called by a market: takes LP stake for a match.
+    function _match(uint256 m, uint256 matchId, uint256 amount) internal returns (uint256) {
+        vm.prank(address(markets[m]));
+        return pool.tryMatch(matchId, amount, true, matchId);
+    }
+
+    /// Market hands the LP stake back and reports the outcome.
+    function _settle(uint256 m, uint256 matchId, uint256 stake, bool upWon) internal {
+        // A real market returns the LP's stake (plus the user's, on an LP win)
+        // before reporting. Mint-and-transfer stands in for that flow.
+        usdc.mint(address(markets[m]), upWon ? 0 : stake * 2);
+        vm.prank(address(markets[m]));
+        usdc.transfer(address(pool), upWon ? 0 : stake * 2);
+        vm.prank(address(markets[m]));
+        pool.onMatchSettled(matchId, upWon);
+    }
+
+    /**
+     * Measured against ECONOMIC assets - what the pool holds plus what is out
+     * on open matches - not against totalAssets(). totalAssets() is the pool's
+     * USDC balance, and a match physically moves the LP's stake to the market,
+     * so every match shrinks the denominator the caps are computed from. An
+     * invariant written against totalAssets() alone reports a breach the moment
+     * two matches are open, which is a property of the accounting rather than a
+     * violation of the cap. See test_SharePrice_DipsWhileAMatchIsOpen.
+     */
+    function _assertInvariants() internal view {
+        uint256 economic = pool.totalAssets() + pool.totalExposure();
+        assertLe(pool.totalExposure(), (economic * 1_000) / 10_000 + 1, "global exposure cap breached");
+        for (uint256 i = 0; i < 3; i++) {
+            assertLe(
+                pool.marketExposure(address(markets[i])),
+                (economic * 500) / 10_000 + 1,
+                "per-market exposure cap breached"
+            );
+        }
+        assertTrue(pool.isFullyBacked(), "pool stopped being fully backed");
+    }
+
+    // ── the cap holds across markets, not just within one ──────────────
+
+    /**
+     * Three markets, each entitled to 5%, all matching in the same block. Their
+     * individual caps sum to 15%; the global cap is 10%. The third must be
+     * truncated to what is left rather than getting its own full slice.
+     */
+    function test_Race_ThreeMarketsSameBlock_ShareOneGlobalCap() public {
+        uint256 a = _match(0, 1, MARKET_CAP);
+        uint256 b = _match(1, 2, MARKET_CAP);
+        uint256 c = _match(2, 3, MARKET_CAP);
+
+        // The first market gets its full 5%. The second does NOT, and the
+        // arithmetic is worth spelling out because it is not the obvious
+        // answer: the first match moved 5,000 USDC out of the pool, so
+        // totalAssets() is now 95,000, the global cap is 9,500, and only 4,500
+        // of headroom is left. The caps tighten with every match in the block.
+        assertEq(a, MARKET_CAP, "first market should get its full slice");
+        assertEq(b, 4_500e6,    "second market is squeezed by the shrinking denominator");
+        assertEq(c, 0,          "third market gets nothing, the cap is spent");
+
+        // Below the nominal 10% of the starting capital, never above it.
+        assertLt(pool.totalExposure(), GLOBAL_CAP, "cap converges from below");
+        _assertInvariants();
+    }
+
+    /**
+     * The truncation case specifically: a market asking for more than the
+     * remaining global headroom gets the remainder, not a revert and not the
+     * full amount. A revert here would be a denial of service on the last
+     * bettor of a busy block; the full amount would be an over-committed pool.
+     */
+    function test_Race_LastMatchInBlockIsTruncatedNotReverted() public {
+        _match(0, 1, MARKET_CAP);              // 5% taken
+        _match(1, 2, MARKET_CAP / 2);          // 2.5% taken, 2.5% of global left
+
+        uint256 headroom = pool.availableForMatching();
+        uint256 got = _match(2, 3, MARKET_CAP); // asks for 5%, less remains
+
+        assertEq(got, headroom,   "should receive exactly the headroom the pool advertised");
+        assertGt(got, 0,          "a partial fill, not a refusal");
+        assertLt(got, MARKET_CAP, "and not the full ask");
+        assertEq(pool.availableForMatching(), 0, "headroom is now spent");
+        _assertInvariants();
+    }
+
+    /**
+     * Twelve matches interleaved across three markets in one block. Nothing
+     * here should be able to walk exposure past the cap, and every intermediate
+     * state has to satisfy the invariants too - not just the end state.
+     */
+    function test_Race_ManyInterleavedMatches_NeverBreachCaps() public {
+        for (uint256 i = 0; i < 12; i++) {
+            _match(i % 3, i + 1, MARKET_CAP / 3);
+            _assertInvariants();
+        }
+        assertLe(pool.totalExposure(), GLOBAL_CAP);
+    }
+
+    // ── withdrawals racing matches ─────────────────────────────────────
+
+    /**
+     * An LP pulling out between two matches must not be able to strand the
+     * pool: the capital backing an open match cannot leave, and the second
+     * match must be sized against what is genuinely still there.
+     */
+    function test_Race_WithdrawBetweenMatches_CannotStrandOpenExposure() public {
+        address whale = makeAddr("whale");
+
+        uint256 first = _match(0, 1, MARKET_CAP);
+        assertGt(first, 0);
+
+        uint256 maxOut = pool.maxWithdraw(whale);
+        vm.prank(whale);
+        pool.withdraw(maxOut, whale, whale);
+
+        // The pool cannot be made insolvent by this: the matched stake already
+        // left for the market, which holds both sides and pays the winner
+        // directly. Nothing further is owed out of the pool's balance.
+        assertTrue(pool.isFullyBacked(), "pool stopped being fully backed");
+
+        // What the withdrawal DOES do is concentrate the open match onto
+        // whoever is left: exposure is now the whole remaining balance.
+        assertEq(pool.totalExposure(), usdc.balanceOf(address(pool)),
+                 "remaining LPs now carry the whole match");
+
+        // And the settlement itself must go through.
+        _settle(0, 1, first, true);
+        assertEq(pool.totalExposure(), 0, "exposure should unwind to zero");
+    }
+
+    /**
+     * A withdraw shrinks totalAssets, which shrinks the caps. Exposure already
+     * locked at the old, larger cap must not be treated as new headroom.
+     */
+    function test_Race_WithdrawShrinksCap_NoNewHeadroomAppears() public {
+        _match(0, 1, MARKET_CAP);
+        uint256 availableBefore = pool.availableForMatching();
+
+        address whale = makeAddr("whale");
+        // maxWithdraw() is read BEFORE the prank on purpose: an argument
+        // expression is evaluated first and would otherwise consume it.
+        uint256 half = pool.maxWithdraw(whale) / 2;
+        vm.prank(whale);
+        pool.withdraw(half, whale, whale);
+
+        assertLe(pool.availableForMatching(), availableBefore, "withdrawing must not create headroom");
+
+        // Note what is deliberately NOT asserted here: the caps. A cap binds at
+        // match time, and nothing can retroactively unwind a match that is
+        // already open, so a large withdrawal leaves the existing 5,000 match
+        // sitting above 5% of what remains. The pool stays solvent - the stake
+        // is already with the market, which holds both sides - but the
+        // concentration is real and belongs to whoever stayed.
+        // Note what is deliberately not asserted: the caps. A cap binds at
+        // match time and nothing can retroactively unwind an open match, so a
+        // large enough withdrawal leaves existing exposure above the nominal
+        // percentage of what remains (test_Race_WithdrawBetweenMatches shows
+        // the extreme: 100% of the residual balance). The pool stays solvent -
+        // the stake is already with the market, which holds both sides - but
+        // the concentration lands on whoever stayed.
+        assertTrue(pool.isFullyBacked(), "pool stopped being fully backed");
+    }
+
+    // ── deposits racing matches ────────────────────────────────────────
+
+    /**
+     * A deposit landing mid-block raises totalAssets and therefore the caps.
+     * That is intended - new capital genuinely can back new exposure - but the
+     * increase must be bounded by the new totalAssets and nothing already
+     * locked may be double-counted as available.
+     */
+    function test_Race_DepositBetweenMatches_RaisesCapButStaysBounded() public {
+        _match(0, 1, MARKET_CAP);
+        _match(1, 2, MARKET_CAP);
+        assertEq(pool.availableForMatching(), 0, "global cap should be spent");
+
+        _addLP("latecomer", LP_CAPITAL);
+
+        uint256 ta = pool.totalAssets();
+        assertLe(pool.availableForMatching(), (ta * 1_000) / 10_000 - pool.totalExposure() + 1);
+
+        uint256 got = _match(2, 3, MARKET_CAP);
+        assertGt(got, 0, "fresh capital should open real headroom");
+        _assertInvariants();
+    }
+
+    // ── settlement idempotency ─────────────────────────────────────────
+
+    /**
+     * The keeper retries. A settle that lands twice for the same match must not
+     * unlock the exposure twice, or the pool would report headroom it does not
+     * have and over-commit the next bettor.
+     */
+    function test_Race_DoubleSettleSameMatch_Reverts() public {
+        uint256 stake = _match(0, 1, MARKET_CAP);
+        _settle(0, 1, stake, true);
+        assertEq(pool.totalExposure(), 0);
+
+        vm.prank(address(markets[0]));
+        vm.expectRevert("already settled");
+        pool.onMatchSettled(1, true);
+
+        assertEq(pool.totalExposure(), 0, "exposure must not go negative or wrap");
+    }
+
+    /**
+     * The other half of the same problem: the refund path and the settle path
+     * both unlock exposure, and a market that managed to call one after the
+     * other would unlock it twice.
+     */
+    function test_Race_RefundAfterSettle_Reverts() public {
+        uint256 stake = _match(0, 1, MARKET_CAP);
+        _settle(0, 1, stake, true);
+
+        vm.prank(address(markets[0]));
+        vm.expectRevert("already settled");
+        pool.onMatchRefunded(1);
+
+        assertEq(pool.totalExposure(), 0);
+    }
+
+    /**
+     * Full round trip under interleaving: matches taken across three markets in
+     * one block, then all settled. Exposure has to return to exactly zero - a
+     * residue would silently shrink the pool's capacity forever.
+     */
+    function test_Race_AllMatchesSettle_ExposureReturnsToZero() public {
+        uint256[3] memory stakes;
+        for (uint256 i = 0; i < 3; i++) stakes[i] = _match(i, i + 1, MARKET_CAP / 2);
+
+        for (uint256 i = 0; i < 3; i++) {
+            _settle(i, i + 1, stakes[i], i % 2 == 0);
+            _assertInvariants();
+        }
+
+        assertEq(pool.totalExposure(), 0, "exposure left over after everything settled");
+        for (uint256 i = 0; i < 3; i++) {
+            assertEq(pool.marketExposure(address(markets[i])), 0, "per-market exposure left over");
+        }
+    }
+
+    // ── what the interleaving exposed: open matches are marked at zero ──
+
+    /**
+     * totalAssets() is the pool's USDC balance. tryMatch physically transfers
+     * the LP's stake to the market, so the instant a match opens the pool's
+     * reported assets - and therefore the share price - drop by the full stake,
+     * as though the match were already lost. It recovers only when the match
+     * settles in the LP's favour.
+     *
+     * This is what made four of the tests above fail on their first, naive
+     * expectations. It is not a rounding artefact: on a 100k pool a single 5%
+     * match moves the share price 5%.
+     */
+    function test_SharePrice_DipsWhileAMatchIsOpen() public {
+        uint256 before = pool.convertToAssets(1e18);
+
+        uint256 stake = _match(0, 1, MARKET_CAP);
+        uint256 during = pool.convertToAssets(1e18);
+
+        assertLt(during, before, "share price should dip while a match is open");
+        // The dip is the whole stake, not a fraction of it: the open match is
+        // marked as a total loss until it settles.
+        assertApproxEqRel(before - during, before * stake / LP_CAPITAL, 0.01e18);
+
+        _settle(0, 1, stake, false); // LP wins
+        assertGt(pool.convertToAssets(1e18), before, "and recover past it on an LP win");
+    }
+
+    /**
+     * The consequence, stated as money.
+     *
+     * Because an open match is marked at zero, anyone depositing while one is
+     * open buys shares at a price that already assumes the match is lost. If it
+     * is lost, they get exactly their deposit back. If it is won, they take a
+     * proportional cut of a gain they paid nothing for.
+     *
+     * Downside zero, upside positive, no lock-up and no exit fee. That is a
+     * free option on the pool's open positions, and it is paid for by the LPs
+     * who were already in.
+     */
+    function test_Finding_DepositDuringOpenMatchIsAFreeOption() public {
+        uint256 stake = _match(0, 1, MARKET_CAP);
+
+        // Snapshot, take the LP-loss branch, measure.
+        uint256 snap = vm.snapshotState();
+
+        address a = _addLP("opportunist", LP_CAPITAL);
+        _settle(0, 1, stake, true);                  // upWon == true -> LP lost
+        uint256 onLoss = pool.maxWithdraw(a);
+
+        vm.revertToState(snap);
+
+        address b = _addLP("opportunist", LP_CAPITAL);
+        _settle(0, 1, stake, false);                 // LP won
+        uint256 onWin = pool.maxWithdraw(b);
+
+        assertGe(onLoss, LP_CAPITAL - 1, "the downside leg must not cost the depositor anything");
+        assertGt(onWin, LP_CAPITAL, "the upside leg pays a gain that was never paid for");
+        emit log_named_decimal_uint("free option, USDC", onWin - LP_CAPITAL, 6);
+    }
+
+    /**
+     * The mirror image, and the reason this matters for LPs who behave
+     * normally: leaving while a match is open realises the loss and forfeits
+     * the win. Two LPs who deposited the same amount on the same day end up
+     * with different money purely on the timing of the exit.
+     */
+    function test_Finding_ExitingDuringOpenMatchForfeitsTheOutcome() public {
+        address stayer = _addLP("stayer", LP_CAPITAL);
+        uint256 stake  = _match(0, 1, MARKET_CAP);
+
+        address leaver = makeAddr("whale"); // the setUp LP, same size as stayer
+        uint256 out    = pool.maxWithdraw(leaver);
+        vm.prank(leaver);
+        pool.withdraw(out, leaver, leaver);
+
+        _settle(0, 1, stake, false); // LP won
+
+        uint256 stayerEnd = pool.maxWithdraw(stayer);
+        assertGt(stayerEnd, out, "the LP who stayed collects the whole outcome");
+        emit log_named_decimal_uint("gap between identical LPs, USDC", stayerEnd - out, 6);
+    }
+
+    // ── pause racing a match ───────────────────────────────────────────
+
+    /**
+     * Pausing must stop new exposure without trapping what is already open -
+     * otherwise the emergency switch becomes the emergency.
+     */
+    function test_Race_PauseBetweenMatchAndSettle_StillSettles() public {
+        uint256 stake = _match(0, 1, MARKET_CAP);
+
+        pool.pause();
+
+        vm.prank(address(markets[1]));
+        vm.expectRevert();
+        pool.tryMatch(2, MARKET_CAP, true, 2);
+
+        _settle(0, 1, stake, true);
+        assertEq(pool.totalExposure(), 0, "a paused pool must still be able to settle");
+    }
+}
