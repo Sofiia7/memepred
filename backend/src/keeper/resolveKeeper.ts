@@ -17,7 +17,7 @@ import { pg } from '../db/pg.js'
 import { CONTRACTS } from '../config.js'
 import { fetchPayload, withPayload, bytes32ToFeedId } from '../lib/redstone.js'
 import { getKeeperWalletClient } from './keeperWallet.js'
-import { gasGuard } from './gasGuardInstance.js'
+import { gasGuard, recordReceipt } from './gasGuardInstance.js'
 
 const chain = process.env.CHAIN_ID === '8453' ? base : baseSepolia
 
@@ -194,7 +194,7 @@ export async function settlePendingMarkets() {
           gas:  1_800_000n,
         })
         const receipt = await publicClient.waitForTransactionReceipt({ hash })
-        await gasGuard.record(receipt.gasUsed, receipt.effectiveGasPrice)
+        await recordReceipt(receipt)
 
         // waitForTransactionReceipt resolves for reverted transactions too —
         // it waits for inclusion, not for success. Without this check the loop

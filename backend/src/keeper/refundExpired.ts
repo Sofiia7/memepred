@@ -3,7 +3,7 @@ import { base, baseSepolia } from 'viem/chains'
 const chain = process.env.CHAIN_ID === '8453' ? base : baseSepolia
 import { pg } from '../db/pg.js'
 import { getKeeperWalletClient } from './keeperWallet.js'
-import { gasGuard } from './gasGuardInstance.js'
+import { gasGuard, recordReceipt } from './gasGuardInstance.js'
 
 const ORDERBOOK_MARKET_ABI = [
   {
@@ -119,7 +119,7 @@ export async function refundExpiredOrders() {
             // Waited on so the spend is billed from the receipt rather than
             // guessed, and so a reverted refund stops being invisible.
             const receipt = await publicClient.waitForTransactionReceipt({ hash })
-            await gasGuard.record(receipt.gasUsed, receipt.effectiveGasPrice)
+            await recordReceipt(receipt)
             if (receipt.status !== 'success') {
               console.error(`  refund tx reverted: ${hash}`)
             } else {

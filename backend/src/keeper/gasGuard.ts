@@ -53,7 +53,7 @@ export interface GasGuard {
   /** Null to proceed; a human-readable reason to skip. */
   check:  (priority: Priority) => Promise<string | null>
   /** Bill an actual receipt against today's budget. */
-  record: (gasUsed: bigint, effectiveGasPrice: bigint) => Promise<void>
+  record: (gasUsed: bigint, effectiveGasPrice: bigint, l1FeeWei?: bigint) => Promise<void>
   state:  () => GasGuardState
 }
 
@@ -118,10 +118,15 @@ export function createGasGuard(deps: GasGuardDeps, cfg: GasGuardConfig): GasGuar
     return why
   }
 
-  async function record(gasUsed: bigint, effectiveGasPrice: bigint): Promise<void> {
+  async function record(gasUsed: bigint, effectiveGasPrice: bigint, l1FeeWei = 0n): Promise<void> {
     // The receipt, not the pinned limit. Unused gas is never charged, and
     // billing the limit would show a budget three times larger than reality.
-    await deps.addSpentWei(utcDay(deps.now()), gasUsed * effectiveGasPrice)
+    //
+    // l1FeeWei is the OP-stack data-availability charge, which does not appear
+    // in gasUsed * effectiveGasPrice at all. It measured 0.03% of a Base
+    // Sepolia market creation on 2026-08-28 - negligible today, and exactly
+    // the kind of quietly-omitted term that makes a budget wrong later.
+    await deps.addSpentWei(utcDay(deps.now()), gasUsed * effectiveGasPrice + l1FeeWei)
   }
 
   return { check, record, state: () => ({ throttled, reason, lastFeeWei }) }

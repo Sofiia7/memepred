@@ -27,7 +27,7 @@ import { base, baseSepolia } from 'viem/chains'
 import { pg } from '../db/pg.js'
 import { CONTRACTS, MARKET_FACTORY_ABI, SUPPORTED_FEED_IDS } from '../config.js'
 import { getKeeperWalletClient } from './keeperWallet.js'
-import { gasGuard } from './gasGuardInstance.js'
+import { gasGuard, recordReceipt } from './gasGuardInstance.js'
 
 const chain = process.env.CHAIN_ID === '8453' ? base : baseSepolia
 const publicClient = createPublicClient({ chain, transport: http(process.env.BASE_RPC_URL) })
@@ -145,7 +145,7 @@ export async function createMissingMarkets() {
           gas:          800_000n,
         })
         const receipt = await publicClient.waitForTransactionReceipt({ hash })
-        await gasGuard.record(receipt.gasUsed, receipt.effectiveGasPrice)
+        await recordReceipt(receipt)
         console.log(`[marketCreator] created market feed=${feedId} dur=${dur}s tx=${hash}`)
       } catch (err) {
         console.error(`[marketCreator] createMarket failed feed=${feedId} dur=${dur}:`, err)

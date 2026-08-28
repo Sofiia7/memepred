@@ -4,7 +4,7 @@ const chain = process.env.CHAIN_ID === '8453' ? base : baseSepolia
 import { FEED_IDS, ORACLE_RESOLVER_ABI, CONTRACTS } from '../config.js'
 import { fetchPayload, withPayload } from '../lib/redstone.js'
 import { getKeeperWalletClient } from './keeperWallet.js'
-import { gasGuard } from './gasGuardInstance.js'
+import { gasGuard, recordReceipt } from './gasGuardInstance.js'
 import { lastUserActivityMs } from '../lib/activity.js'
 import { pg } from '../db/pg.js'
 
@@ -144,7 +144,7 @@ export async function recordPricesOnChain() {
         gas: 500_000n,
       })
       const receipt = await publicClient.waitForTransactionReceipt({ hash })
-      await gasGuard.record(receipt.gasUsed, receipt.effectiveGasPrice)
+      await recordReceipt(receipt)
     } catch (err) {
       console.error(`on-chain recordPrice ${symbol} failed:`, err)
     }

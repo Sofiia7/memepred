@@ -161,3 +161,24 @@ describe('parseDecimalUnits', () => {
     expect(parseDecimalUnits(' 1 ', 18)).toBe(1_000_000_000_000_000_000n)
   })
 })
+
+describe('OP-stack L1 data fee', () => {
+  /**
+   * gasUsed * effectiveGasPrice is the L2 execution cost only. On an OP-stack
+   * chain the data-availability charge is a separate term on the receipt, and
+   * leaving it out means the budget silently measures the wrong thing.
+   */
+  it('bills the L1 fee on top of L2 execution', async () => {
+    const g = guard()
+    await g.record(300_000n, 6_000_000n, 6_000_000_000n)
+
+    expect(spent['2026-08-28']).toBe(1_800_000_000_000n + 6_000_000_000n)
+  })
+
+  it('treats a missing L1 fee as zero rather than poisoning the counter', async () => {
+    const g = guard()
+    await g.record(300_000n, 6_000_000n)
+
+    expect(spent['2026-08-28']).toBe(1_800_000_000_000n)
+  })
+})
