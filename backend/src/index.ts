@@ -2,8 +2,6 @@ import { config } from 'dotenv'
 config()
 
 import Fastify from 'fastify'
-import cors from '@fastify/cors'
-import rateLimit from '@fastify/rate-limit'
 import { marketsRoutes }     from './routes/markets.js'
 import { candlesRoutes }     from './routes/candles.js'
 import { leaderboardRoutes } from './routes/leaderboard.js'
@@ -16,52 +14,23 @@ import { pg }                from './db/pg.js'
 import { runMigrations }     from './db/migrate.js'
 import { redis }             from './db/redis.js'
 import { markUserActivity }  from './lib/activity.js'
-import { makeClientKey }     from './lib/clientKey.js'
+import { registerHttpPlugins, DEFAULT_ORIGINS } from './lib/httpPlugins.js'
 import { fetchPayload, fetchPrice } from './lib/redstone.js'
 import { PORT, FEED_SYMBOLS } from './config.js'
 
 const app = Fastify({ logger: true })
 
-const DEFAULT_ORIGINS = [
-  'https://flipthememe.com',
-  'http://localhost:3000',
-  'http://localhost:5173'
-]
 const allowedOrigins = (process.env.ALLOWED_ORIGINS || '')
   .split(',').map(s => s.trim()).filter(Boolean)
-const corsOrigins = allowedOrigins.length > 0 ? allowedOrigins : DEFAULT_ORIGINS
 
-await app.register(cors, { origin: corsOrigins })
-
-// keyGenerator, not the default req.ip — see lib/clientKey.ts. Without it the
-// whole API shares a single 100/min budget, because behind Caddy every request
-// presents the same peer address.
-await app.register(rateLimit, {
-  max: 100,
-  timeWindow: '1 minute',
-  keyGenerator: makeClientKey(process.env.WORKER_SECRET),
-})
-
-// ── USER-PRESENCE SIGNAL ───────────────────────────────────
-// Stamps "a human is here" so the keeper can drop its on-chain Pyth push
-// from every 30s to a slow heartbeat while nobody is around (see
-// lib/activity.ts and keeper/onchainPriceRecorder.ts).
-//
-// Registered before the routes so it covers all of them. Health and
-// monitoring endpoints are excluded deliberately: an uptime checker polling
-// /health would otherwise keep the product permanently "busy" and quietly
-// undo the entire saving.
-const PRESENCE_IGNORED = new Set([
-  '/health',
-  '/health/deep',
-  '/api/keeper/health',
-  '/api/geo',
-  '/api/geo/config',
-])
-app.addHook('onRequest', async (req) => {
-  if (req.method === 'OPTIONS') return
-  if (PRESENCE_IGNORED.has(req.url.split('?')[0])) return
-  await markUserActivity()
+// CORS, rate limiting and the user-presence hook - see lib/httpPlugins.ts.
+// They live there so `app.inject()` can exercise them without a Postgres and a
+// Redis; this file cannot be imported by a test because it connects and
+// listens at the top level.
+await registerHttpPlugins(app, {
+  corsOrigins:  allowedOrigins.length > 0 ? allowedOrigins : DEFAULT_ORIGINS,
+  workerSecret: process.env.WORKER_SECRET,
+  markActivity: markUserActivity,
 })
 
 await app.register(marketsRoutes,     { prefix: '/api/markets' })
