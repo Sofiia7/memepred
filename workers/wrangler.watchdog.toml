@@ -1,0 +1,23 @@
+# Deployed separately from geo-block.ts on purpose: that Worker is attached to
+# a route on api.flipthememe.com and shares the fate of anything that breaks
+# the zone. The watchdog has to be able to report on a broken zone, so it runs
+# cron-only on workers.dev with no route of its own.
+#
+#   wrangler deploy -c wrangler.watchdog.toml
+name = "flipthememe-watchdog"
+main = "watchdog.ts"
+compatibility_date = "2024-09-01"
+workers_dev = true
+
+[triggers]
+# Every 2 minutes; two consecutive misses page, so an outage surfaces in ~4 min.
+crons = ["*/2 * * * *"]
+
+[[kv_namespaces]]
+binding = "WATCHDOG"
+id = "9216c3cbe9f44ceab3abe3b10d2bc06e"
+
+# Optional alert channels - set whichever you use, the Worker skips the rest:
+#   wrangler secret put TELEGRAM_BOT_TOKEN -c wrangler.watchdog.toml
+#   wrangler secret put TELEGRAM_CHAT_ID   -c wrangler.watchdog.toml
+#   wrangler secret put ALERT_WEBHOOK_URL  -c wrangler.watchdog.toml

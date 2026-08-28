@@ -98,6 +98,13 @@ const BLOCKED = new Set([...OFAC_SANCTIONED, ...RESTRICTED_JURISDICTIONS])
 // data, user data, or accepts any action, it does not belong here.
 const GEO_EXEMPT_PATHS = new Set([
   '/health',
+  // The probe that can actually go red. `/health` answers 200 for as long as
+  // the Fastify process has a pulse, so a monitor watching it stayed green
+  // through a 15-day keeper stall. `/health/deep` returns `{status, reason}`
+  // with a fixed machine word for `reason` and nothing else - no balances, no
+  // addresses, no market or user data - so exempting it discloses nothing the
+  // block exists to withhold. See backend/src/routes/keeperHealth.ts.
+  '/health/deep',
 ])
 
 export default {

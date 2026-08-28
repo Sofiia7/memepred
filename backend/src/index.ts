@@ -53,6 +53,7 @@ await app.register(rateLimit, {
 // undo the entire saving.
 const PRESENCE_IGNORED = new Set([
   '/health',
+  '/health/deep',
   '/api/keeper/health',
   '/api/geo',
   '/api/geo/config',
