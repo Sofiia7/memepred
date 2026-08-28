@@ -32,6 +32,8 @@ import { redis } from '../db/redis.js'
 const STATE_KEY       = 'watchdog:state'
 const INVARIANT_KEY   = 'invariant:critical'
 const STALE_THRESHOLD = 5 * 60_000 // 5 min
+/** Escalations at one nonce before it counts as an outage rather than a retry. */
+const NONCE_WEDGED_LEVEL = 3
 
 interface Snapshot {
   resolverEthWei:    string
@@ -42,6 +44,8 @@ interface Snapshot {
   feedStatus:        Record<string, { failStreak: number; lastPausedAt?: number }>
   gasThrottled?:     boolean
   gasThrottleReason?: string | null
+  stuckNonce?:       number | null
+  escalationLevel?:  number
   lastTick:          number
 }
 
@@ -58,6 +62,7 @@ type Code =
   | 'usdc-invariant-drift'
   | 'watchdog-stale'
   | 'keeper-out-of-gas'
+  | 'nonce-wedged'
   | 'resolver-eth-critical'
 
 /**
@@ -66,7 +71,7 @@ type Code =
  * days earlier and are safe to publish for the same reason `code` is - they
  * name a condition, never a balance or an address.
  */
-type Warn = 'keeper-eth-low' | 'resolver-eth-low' | 'feed-degraded' | 'gas-throttled'
+type Warn = 'keeper-eth-low' | 'resolver-eth-low' | 'feed-degraded' | 'gas-throttled' | 'nonce-escalating'
 
 interface Verdict {
   ok:         boolean
@@ -105,22 +110,28 @@ export async function evaluateKeeperHealth(get: Reader, now: number): Promise<Ve
   // snapshot published by a not-yet-restarted keeper still parses.
   const keeperCrit = snap.keeperEthAlert === 'critical'
 
+  // Escalation clears most wedges within a tick or two; past that, nothing the
+  // keeper writes is landing at all and it needs to read as an outage.
+  const nonceWedged = (snap.escalationLevel ?? 0) >= NONCE_WEDGED_LEVEL
+
   const invariantRaw = await get(INVARIANT_KEY)
   const invariant    = invariantRaw ? JSON.parse(invariantRaw) : null
 
-  if (stale || crit || keeperCrit || invariant) {
+  if (stale || crit || keeperCrit || nonceWedged || invariant) {
     return {
       ok: false,
       code:
         invariant    ? 'usdc-invariant-drift'
-        : stale      ? 'watchdog-stale'
-        : keeperCrit ? 'keeper-out-of-gas'
-        :              'resolver-eth-critical',
+        : stale       ? 'watchdog-stale'
+        : keeperCrit  ? 'keeper-out-of-gas'
+        : nonceWedged ? 'nonce-wedged'
+        :               'resolver-eth-critical',
       reason:
         invariant    ? `usdc invariant drift $${invariant.drift?.toFixed?.(2) ?? '?'}`
-        : stale      ? `watchdog stale ${Math.round(age / 1000)}s`
-        : keeperCrit ? `keeper wallet out of gas (${snap.keeperAddress ?? 'unknown'}) - nothing is being settled`
-        :              'resolver eth critical',
+        : stale       ? `watchdog stale ${Math.round(age / 1000)}s`
+        : keeperCrit  ? `keeper wallet out of gas (${snap.keeperAddress ?? 'unknown'}) - nothing is being settled`
+        : nonceWedged ? `nonce ${snap.stuckNonce} wedged after ${snap.escalationLevel} fee escalations - no writes are landing`
+        :               'resolver eth critical',
       snapshot: snap,
       invariant,
       ageMs:    age,
@@ -132,6 +143,7 @@ export async function evaluateKeeperHealth(get: Reader, now: number): Promise<Ve
   if (snap.resolverEthAlert === 'warn') warn.push('resolver-eth-low')
   if (Object.values(snap.feedStatus ?? {}).some(f => f.failStreak > 0)) warn.push('feed-degraded')
   if (snap.gasThrottled) warn.push('gas-throttled')
+  if ((snap.escalationLevel ?? 0) > 0) warn.push('nonce-escalating')
 
   return { ok: true, warn, snapshot: snap, ageMs: age }
 }

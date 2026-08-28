@@ -16,7 +16,7 @@ import { base, baseSepolia } from 'viem/chains'
 import { pg } from '../db/pg.js'
 import { CONTRACTS } from '../config.js'
 import { fetchPayload, withPayload, bytes32ToFeedId } from '../lib/redstone.js'
-import { getKeeperWalletClient } from './keeperWallet.js'
+import { getKeeperWalletClient, sendKeeperTx } from './keeperWallet.js'
 import { gasGuard, recordReceipt } from './gasGuardInstance.js'
 
 const chain = process.env.CHAIN_ID === '8453' ? base : baseSepolia
@@ -188,11 +188,12 @@ export async function settlePendingMarkets() {
         // here for the warning it logs and for the spend accounting below.
         await gasGuard.check('critical')
 
-        const hash = await wallet.sendTransaction({
+        const hash = await sendKeeperTx(fees => wallet.sendTransaction({
           to:   CONTRACTS.ORACLE_RESOLVER as Address,
           data: settleCallData,
           gas:  1_800_000n,
-        })
+          ...fees,
+        }), 'settle')
         const receipt = await publicClient.waitForTransactionReceipt({ hash })
         await recordReceipt(receipt)
 

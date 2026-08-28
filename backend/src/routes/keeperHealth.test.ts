@@ -168,3 +168,44 @@ describe('gas throttle', () => {
     await app.close()
   })
 })
+
+/**
+ * A transaction that occupies a nonce and never mines blocks every later write
+ * from the same wallet: no settlements, no price pushes, no rollovers - while
+ * the process, the database and the API all stay perfectly healthy. It happened
+ * on 2026-08-28 and looked, from outside, like nothing at all.
+ */
+describe('wedged nonce', () => {
+  it('is only a warning while escalation is still working on it', async () => {
+    const app = await build({ 'watchdog:state': snapshot({ stuckNonce: 3980, escalationLevel: 1 }) })
+    const res = await app.inject({ url: '/health/deep' })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json().warn).toContain('nonce-escalating')
+    await app.close()
+  })
+
+  it('goes red once escalation has stopped helping', async () => {
+    const app = await build({ 'watchdog:state': snapshot({ stuckNonce: 3980, escalationLevel: 3 }) })
+    const res = await app.inject({ url: '/health/deep' })
+
+    expect(res.statusCode).toBe(503)
+    expect(res.json().reason).toBe('nonce-wedged')
+    await app.close()
+  })
+
+  it('names the nonce on the operator-facing route but not the public one', async () => {
+    const app = await build({ 'watchdog:state': snapshot({ stuckNonce: 3980, escalationLevel: 5 }) })
+
+    expect((await app.inject({ url: '/api/keeper/health' })).json().reason).toContain('3980')
+    expect((await app.inject({ url: '/health/deep' })).body).not.toContain('3980')
+    await app.close()
+  })
+
+  it('an old snapshot without the field is not treated as wedged', async () => {
+    const app = await build({ 'watchdog:state': snapshot() })
+
+    expect((await app.inject({ url: '/health/deep' })).statusCode).toBe(200)
+    await app.close()
+  })
+})

@@ -38,10 +38,12 @@ async function start() {
   await loop('resolveKeeper',        settlePendingMarkets,   60_000)
   await loop('refundExpired',        refundExpiredOrders,    5 * 60_000)
   await loop('oracleWatchdog',       oracleWatchdogTick,     90_000)
-  await loop('marketCreator',        createMissingMarkets,   5 * 60_000)
+  // 30s, not 5 min: while idle this tick creates nothing, and when a visitor
+  // arrives it is how fast the 5m and 15m markets come back onto the board.
+  await loop('marketCreator',        createMissingMarkets,   Number(process.env.CREATE_INTERVAL_MS ?? 30_000))
   await loop('invariantMonitor',     invariantTick,          60_000)
 
-  console.log('Keeper running: priceOffchain/30s, priceOnchain/30s, snapshots/60s, indexer/45s, resolver/60s, refund/5m, watchdog/90s, createMarkets/5m, invariant/60s')
+  console.log('Keeper running: priceOffchain/30s, priceOnchain/30s, snapshots/60s, indexer/45s, resolver/60s, refund/5m, watchdog/90s, createMarkets/30s, invariant/60s')
 }
 
 start().catch((err) => {

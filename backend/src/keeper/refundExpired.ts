@@ -2,7 +2,7 @@ import { createPublicClient, http, type Address } from 'viem'
 import { base, baseSepolia } from 'viem/chains'
 const chain = process.env.CHAIN_ID === '8453' ? base : baseSepolia
 import { pg } from '../db/pg.js'
-import { getKeeperWalletClient } from './keeperWallet.js'
+import { getKeeperWalletClient, sendKeeperTx } from './keeperWallet.js'
 import { gasGuard, recordReceipt } from './gasGuardInstance.js'
 
 const ORDERBOOK_MARKET_ABI = [
@@ -110,12 +110,13 @@ export async function refundExpiredOrders() {
             // failed to match. Gas price is not a reason to hold onto it.
             await gasGuard.check('critical')
 
-            const hash = await walletClient.writeContract({
+            const hash = await sendKeeperTx(fees => walletClient.writeContract({
               address:      marketAddress,
               abi:          ORDERBOOK_MARKET_ABI,
               functionName: 'refundExpired',
-              args:         [orderId]
-            })
+              args:         [orderId],
+              ...fees,
+            }), 'refundExpired')
             // Waited on so the spend is billed from the receipt rather than
             // guessed, and so a reverted refund stops being invisible.
             const receipt = await publicClient.waitForTransactionReceipt({ hash })

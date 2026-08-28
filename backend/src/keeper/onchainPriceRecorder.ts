@@ -3,7 +3,7 @@ import { base, baseSepolia } from 'viem/chains'
 const chain = process.env.CHAIN_ID === '8453' ? base : baseSepolia
 import { FEED_IDS, ORACLE_RESOLVER_ABI, CONTRACTS } from '../config.js'
 import { fetchPayload, withPayload } from '../lib/redstone.js'
-import { getKeeperWalletClient } from './keeperWallet.js'
+import { getKeeperWalletClient, sendKeeperTx } from './keeperWallet.js'
 import { gasGuard, recordReceipt } from './gasGuardInstance.js'
 import { lastUserActivityMs } from '../lib/activity.js'
 import { pg } from '../db/pg.js'
@@ -131,7 +131,7 @@ export async function recordPricesOnChain() {
       // nonpayable, no `value` argument. Pin gas because Pyth's price-feed
       // update reverts in gas-estimation when the publishTime is already
       // on-chain, which viem can't detect.
-      const hash = await wallet.sendTransaction({
+      const hash = await sendKeeperTx(fees => wallet.sendTransaction({
         to:   CONTRACTS.ORACLE_RESOLVER as Address,
         data: withPayload(
           encodeFunctionData({
@@ -142,7 +142,8 @@ export async function recordPricesOnChain() {
           payload,
         ),
         gas: 500_000n,
-      })
+        ...fees,
+      }), `recordPrice:${symbol}`)
       const receipt = await publicClient.waitForTransactionReceipt({ hash })
       await recordReceipt(receipt)
     } catch (err) {

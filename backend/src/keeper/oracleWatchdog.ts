@@ -30,7 +30,7 @@ import { CONTRACTS, SUPPORTED_FEED_IDS } from '../config.js'
 import { fetchPayload, bytes32ToFeedId } from '../lib/redstone.js'
 import { nextFailStreak, STALE_FAIL_LIMIT, type FeedPing } from './feedStreak.js'
 import { redis } from '../db/redis.js'
-import { getKeeperWalletClient } from './keeperWallet.js'
+import { getKeeperWalletClient, escalationState } from './keeperWallet.js'
 import { gasGuard } from './gasGuardInstance.js'
 
 const REDIS_KEY = 'watchdog:state'
@@ -122,6 +122,11 @@ export const watchdogState = {
   // reaches the health probe instead of becoming its own quiet outage.
   gasThrottled:    false,
   gasThrottleReason: null as string | null,
+  // A nonce nothing can get past means no settlements, no price pushes and no
+  // rollovers, while every process involved looks perfectly alive. Published
+  // so it reads as an outage rather than as silence.
+  stuckNonce:      null as number | null,
+  escalationLevel: 0,
   lastTick:        0,
 }
 
@@ -131,6 +136,10 @@ export async function oracleWatchdogTick() {
   const gas = gasGuard.state()
   watchdogState.gasThrottled      = gas.throttled
   watchdogState.gasThrottleReason = gas.reason
+
+  const esc = escalationState()
+  watchdogState.stuckNonce      = esc.stuckNonce
+  watchdogState.escalationLevel = esc.level
 
   await Promise.allSettled([
     checkResolverEthBalance(),
@@ -152,6 +161,8 @@ export async function oracleWatchdogTick() {
         feedStatus:        watchdogState.feedStatus,
         gasThrottled:      watchdogState.gasThrottled,
         gasThrottleReason: watchdogState.gasThrottleReason,
+        stuckNonce:        watchdogState.stuckNonce,
+        escalationLevel:   watchdogState.escalationLevel,
         lastTick:          watchdogState.lastTick,
       }),
     )

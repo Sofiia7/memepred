@@ -26,8 +26,10 @@ import {
 import { base, baseSepolia } from 'viem/chains'
 import { pg } from '../db/pg.js'
 import { CONTRACTS, MARKET_FACTORY_ABI, SUPPORTED_FEED_IDS } from '../config.js'
-import { getKeeperWalletClient } from './keeperWallet.js'
+import { getKeeperWalletClient, sendKeeperTx } from './keeperWallet.js'
 import { gasGuard, recordReceipt } from './gasGuardInstance.js'
+import { durationsToMaintain, isUserPresent } from './idleMatrix.js'
+import { lastUserActivityMs } from '../lib/activity.js'
 
 const chain = process.env.CHAIN_ID === '8453' ? base : baseSepolia
 const publicClient = createPublicClient({ chain, transport: http(process.env.BASE_RPC_URL) })
@@ -38,6 +40,29 @@ const DURATIONS_SEC = (process.env.MARKET_DURATIONS_SEC || '300,900,3600,14400,8
 /** Don't create a fresh market if one for the same (feed, dur) closes more
  *  than this far in the future. Default: half the duration. */
 const CREATE_LEAD_RATIO = Number(process.env.CREATE_LEAD_RATIO ?? '0.5')
+
+/**
+ * While nobody is around, only durations at or above this are kept alive - see
+ * idleMatrix.ts for the arithmetic. 3600 drops the 5m and 15m markets, which
+ * together are 93% of all market creation and were running around the clock at
+ * zero users.
+ */
+const IDLE_MIN_DURATION_SEC = Number(process.env.IDLE_MIN_DURATION_SEC ?? '3600')
+/** Matches PRICE_ACTIVITY_WINDOW_MS in onchainPriceRecorder on purpose: the
+ *  two backoffs should agree about whether a human is here. */
+const ACTIVITY_WINDOW_MS = Number(process.env.PRICE_ACTIVITY_WINDOW_MS ?? String(15 * 60_000))
+
+/**
+ * How often to do the full check while nobody is here. The keeper loop ticks
+ * every 30s so the short markets reappear quickly once a visitor arrives, but
+ * running the full check that often while idle would put the factory read and
+ * the open-markets query on a 10x cadence for no benefit - and the public
+ * Base RPC is not free of opinions about that.
+ */
+const IDLE_CHECK_INTERVAL_MS = Number(process.env.MARKET_IDLE_CHECK_MS ?? String(5 * 60_000))
+
+let lastMatrix = ''
+let lastFullCheckAt = 0
 
 interface OpenMarketRow {
   market_address: string
@@ -74,6 +99,14 @@ export async function createMissingMarkets() {
   if (!CONTRACTS.MARKET_FACTORY || CONTRACTS.MARKET_FACTORY === '0x') return
   const wallet = getKeeperWalletClient()
   if (!wallet) return
+
+  // Presence is one Redis read and it decides both how often to look and what
+  // to maintain, so it comes before anything that touches the chain.
+  const now      = Date.now()
+  const activity = await lastUserActivityMs()
+  const present  = isUserPresent(activity, now, ACTIVITY_WINDOW_MS)
+  if (!present && now - lastFullCheckAt < IDLE_CHECK_INTERVAL_MS) return
+  lastFullCheckAt = now
 
   let feeds: readonly `0x${string}`[]
   try {
@@ -116,10 +149,29 @@ export async function createMissingMarkets() {
   if (await gasGuard.check('routine')) return
 
   const open = await openMarkets()
-  const now  = Date.now()
+
+  // Don't pay to roll 5-minute markets at 4am for nobody. The long durations
+  // stay up so the board is never empty; the short ones come back within one
+  // tick of the first request that stamps the activity key.
+  const durations = durationsToMaintain(
+    DURATIONS_SEC,
+    activity,
+    now,
+    { idleMinDurationSec: IDLE_MIN_DURATION_SEC, activityWindowMs: ACTIVITY_WINDOW_MS },
+  )
+  const matrix = durations.join(',')
+  if (matrix !== lastMatrix) {
+    console.log(
+      durations.length === DURATIONS_SEC.length
+        ? `[marketCreator] user present - maintaining all durations (${matrix})`
+        : `[marketCreator] idle - maintaining ${matrix}, dropping ${
+            DURATIONS_SEC.filter(d => !durations.includes(d)).join(',')}`,
+    )
+    lastMatrix = matrix
+  }
 
   for (const feedId of feeds) {
-    for (const dur of DURATIONS_SEC) {
+    for (const dur of durations) {
       // Lookup an existing OPEN market for (feed, dur) that closes far enough out.
       const leadMs = dur * 1000 * CREATE_LEAD_RATIO
       const fresh = open.find((m) =>
@@ -130,11 +182,12 @@ export async function createMissingMarkets() {
       if (fresh) continue
 
       try {
-        const hash = await wallet.writeContract({
+        const hash = await sendKeeperTx(fees => wallet.writeContract({
           address:      CONTRACTS.MARKET_FACTORY,
           abi:          MARKET_FACTORY_ABI,
           functionName: 'createMarket',
           args:         [feedId, BigInt(dur)],
+          ...fees,
           // Sprint 5.6: was 5,000,000, sized for the old path where every
           // market was a full OrderbookMarket deployment. Markets are now
           // EIP-1167 clones and this call measures ~330k (see
@@ -143,7 +196,7 @@ export async function createMissingMarkets() {
           // a future change that accidentally reintroduces a real deployment
           // fails loudly here instead of quietly costing 10x per market.
           gas:          800_000n,
-        })
+        }), 'createMarket')
         const receipt = await publicClient.waitForTransactionReceipt({ hash })
         await recordReceipt(receipt)
         console.log(`[marketCreator] created market feed=${feedId} dur=${dur}s tx=${hash}`)
