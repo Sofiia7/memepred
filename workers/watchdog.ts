@@ -72,6 +72,17 @@ interface Result {
   warn:   string[]
 }
 
+/**
+ * One UTC day of tallies. This is what turns the watchdog into a soak report:
+ * "it looked fine when I checked" is not an uptime number, and a 48-hour soak
+ * that nobody was counting during proves nothing afterwards.
+ */
+interface DayStat {
+  day:      string
+  checks:   number
+  failures: number
+}
+
 interface State {
   status:           'ok' | 'down'
   since:            number
@@ -82,12 +93,16 @@ interface State {
   lastCheckAt:      number
   detail:           string
   results:          Result[]
+  /** Most recent 7 UTC days, newest last. */
+  days:             DayStat[]
+  /** Longest unbroken outage ever observed, in ms. */
+  longestDownMs:    number
 }
 
 const EMPTY: State = {
   status: 'ok', since: 0, fails: 0, lastAlertAt: 0,
   lastHeartbeatDay: '', lastWarnDay: '', lastCheckAt: 0,
-  detail: 'never run', results: [],
+  detail: 'never run', results: [], days: [], longestDownMs: 0,
 }
 
 async function runCheck(c: Check): Promise<Result> {
@@ -184,11 +199,27 @@ async function tick(env: Env, now: number): Promise<State> {
   const detail = down ? broken.map(r => `${r.name}: ${r.detail}`).join('; ') : 'all green'
   const warns  = [...new Set(results.flatMap(r => r.warn))]
 
+  // Tally before anything else can return early.
+  const today = utcDay(now)
+  const days  = [...(prev.days ?? [])]
+  if (!days.length || days[days.length - 1].day !== today) {
+    days.push({ day: today, checks: 0, failures: 0 })
+  }
+  const cur = days[days.length - 1]
+  cur.checks   += 1
+  cur.failures += down ? 1 : 0
+  while (days.length > 7) days.shift()
+
   const next: State = {
     ...prev,
     lastCheckAt: now,
     detail,
     results,
+    days,
+    longestDownMs: Math.max(
+      prev.longestDownMs ?? 0,
+      down && prev.status === 'down' ? now - prev.since : 0,
+    ),
     fails:  down ? prev.fails + 1 : 0,
     status: down ? prev.status : 'ok',
     since:  prev.status === 'ok' && down ? now : prev.since,
@@ -283,8 +314,21 @@ export default {
     // A state nobody has refreshed in 10 minutes means the cron stopped. Report
     // that as down: a stale green is the lie this Worker exists to prevent.
     const stale = Date.now() - state.lastCheckAt > 10 * 60_000
+
+    const days    = state.days ?? []
+    const checks  = days.reduce((n, d) => n + d.checks, 0)
+    const failed  = days.reduce((n, d) => n + d.failures, 0)
+    const soak = {
+      windowDays:    days.length,
+      checks,
+      failures:      failed,
+      uptimePct:     checks ? Number((100 * (checks - failed) / checks).toFixed(4)) : null,
+      longestDownMs: state.longestDownMs ?? 0,
+      perDay:        days,
+    }
+
     return Response.json(
-      { ...state, stale },
+      { ...state, stale, soak },
       {
         status:  state.status === 'down' || stale ? 503 : 200,
         headers: { 'cache-control': 'no-store' },
