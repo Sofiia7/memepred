@@ -3,6 +3,7 @@ import { base, baseSepolia } from 'viem/chains'
 const chain = process.env.CHAIN_ID === '8453' ? base : baseSepolia
 import { pg } from '../db/pg.js'
 import { getKeeperWalletClient } from './keeperWallet.js'
+import { gasGuard } from './gasGuardInstance.js'
 
 const ORDERBOOK_MARKET_ABI = [
   {
@@ -105,13 +106,25 @@ export async function refundExpiredOrders() {
             now > BigInt(order.placedAt) + matchTimeout
           ) {
             console.log(`Refunding expired order #${orderId} on ${marketAddress}`)
+            // Critical: this is returning a user's own stake after their order
+            // failed to match. Gas price is not a reason to hold onto it.
+            await gasGuard.check('critical')
+
             const hash = await walletClient.writeContract({
               address:      marketAddress,
               abi:          ORDERBOOK_MARKET_ABI,
               functionName: 'refundExpired',
               args:         [orderId]
             })
-            console.log(`  tx: ${hash}`)
+            // Waited on so the spend is billed from the receipt rather than
+            // guessed, and so a reverted refund stops being invisible.
+            const receipt = await publicClient.waitForTransactionReceipt({ hash })
+            await gasGuard.record(receipt.gasUsed, receipt.effectiveGasPrice)
+            if (receipt.status !== 'success') {
+              console.error(`  refund tx reverted: ${hash}`)
+            } else {
+              console.log(`  tx: ${hash}`)
+            }
           }
         } catch (err) {
           // Order might not exist or already refunded

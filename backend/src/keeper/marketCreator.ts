@@ -27,6 +27,7 @@ import { base, baseSepolia } from 'viem/chains'
 import { pg } from '../db/pg.js'
 import { CONTRACTS, MARKET_FACTORY_ABI, SUPPORTED_FEED_IDS } from '../config.js'
 import { getKeeperWalletClient } from './keeperWallet.js'
+import { gasGuard } from './gasGuardInstance.js'
 
 const chain = process.env.CHAIN_ID === '8453' ? base : baseSepolia
 const publicClient = createPublicClient({ chain, transport: http(process.env.BASE_RPC_URL) })
@@ -110,6 +111,10 @@ export async function createMissingMarkets() {
   if (supported.length === 0) return
   feeds = supported
 
+  // Rolling a market forward early is routine: the existing market stays open
+  // and tradeable, so a skipped tick costs lead time, not availability.
+  if (await gasGuard.check('routine')) return
+
   const open = await openMarkets()
   const now  = Date.now()
 
@@ -139,7 +144,8 @@ export async function createMissingMarkets() {
           // fails loudly here instead of quietly costing 10x per market.
           gas:          800_000n,
         })
-        await publicClient.waitForTransactionReceipt({ hash })
+        const receipt = await publicClient.waitForTransactionReceipt({ hash })
+        await gasGuard.record(receipt.gasUsed, receipt.effectiveGasPrice)
         console.log(`[marketCreator] created market feed=${feedId} dur=${dur}s tx=${hash}`)
       } catch (err) {
         console.error(`[marketCreator] createMarket failed feed=${feedId} dur=${dur}:`, err)

@@ -17,6 +17,7 @@ import { pg } from '../db/pg.js'
 import { CONTRACTS } from '../config.js'
 import { fetchPayload, withPayload, bytes32ToFeedId } from '../lib/redstone.js'
 import { getKeeperWalletClient } from './keeperWallet.js'
+import { gasGuard } from './gasGuardInstance.js'
 
 const chain = process.env.CHAIN_ID === '8453' ? base : baseSepolia
 
@@ -181,12 +182,19 @@ export async function settlePendingMarkets() {
           break
         }
 
+        // Critical: never blocked by the fee ceiling or the daily budget.
+        // Somebody's stake is sitting in a market that already resolved, and
+        // no gas price makes leaving it there the cheaper option. The call is
+        // here for the warning it logs and for the spend accounting below.
+        await gasGuard.check('critical')
+
         const hash = await wallet.sendTransaction({
           to:   CONTRACTS.ORACLE_RESOLVER as Address,
           data: settleCallData,
           gas:  1_800_000n,
         })
         const receipt = await publicClient.waitForTransactionReceipt({ hash })
+        await gasGuard.record(receipt.gasUsed, receipt.effectiveGasPrice)
 
         // waitForTransactionReceipt resolves for reverted transactions too —
         // it waits for inclusion, not for success. Without this check the loop

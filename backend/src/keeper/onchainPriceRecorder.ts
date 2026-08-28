@@ -4,6 +4,7 @@ const chain = process.env.CHAIN_ID === '8453' ? base : baseSepolia
 import { FEED_IDS, ORACLE_RESOLVER_ABI, CONTRACTS } from '../config.js'
 import { fetchPayload, withPayload } from '../lib/redstone.js'
 import { getKeeperWalletClient } from './keeperWallet.js'
+import { gasGuard } from './gasGuardInstance.js'
 import { lastUserActivityMs } from '../lib/activity.js'
 import { pg } from '../db/pg.js'
 
@@ -112,6 +113,11 @@ export async function recordPricesOnChain() {
       console.log(`[onchainPriceRecorder] idle — heartbeat push after ${Math.round(sinceLast / 1000)}s`)
     }
   }
+  // Checked once per tick rather than per feed: if gas is above the ceiling
+  // it is above it for every feed, and a price push is the definition of
+  // routine work - the next tick is 30 seconds away.
+  if (await gasGuard.check('routine')) return
+
   lastPushAt = Date.now()
 
   for (const [symbol, feedId] of Object.entries(FEED_IDS)) {
@@ -137,7 +143,8 @@ export async function recordPricesOnChain() {
         ),
         gas: 500_000n,
       })
-      await publicClient.waitForTransactionReceipt({ hash })
+      const receipt = await publicClient.waitForTransactionReceipt({ hash })
+      await gasGuard.record(receipt.gasUsed, receipt.effectiveGasPrice)
     } catch (err) {
       console.error(`on-chain recordPrice ${symbol} failed:`, err)
     }
