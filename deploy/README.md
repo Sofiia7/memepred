@@ -135,6 +135,17 @@ wrangler secret put TELEGRAM_BOT_TOKEN -c wrangler.watchdog.toml   # or Telegram
 wrangler secret put TELEGRAM_CHAT_ID   -c wrangler.watchdog.toml
 ```
 
+Once a channel is set, prove it delivers. An alert path nobody has ever seen
+fire is not a monitor, it is a belief about a monitor:
+
+```bash
+wrangler secret put TEST_KEY -c wrangler.watchdog.toml
+curl "https://flipthememe-watchdog.sofiaseremeteva.workers.dev/test-alert?key=<TEST_KEY>"
+# -> {"sent":["telegram"],"channels":1}
+```
+
+The route 404s when `TEST_KEY` is unset, so it cannot be used to spam a phone.
+
 `/health` is still the right probe for a container liveness check - it just must
 not be the only thing watching the product.
 
