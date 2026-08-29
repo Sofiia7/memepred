@@ -376,19 +376,25 @@ async function pvp() {
 
   let orderA: bigint
   let orderB: bigint
+  let placedAt: bigint | undefined
   if (resume) {
     orderA = BigInt(process.env.ORDER_A as string)
     orderB = BigInt(process.env.ORDER_B as string)
     console.log(`\nresuming: A #${orderA}, B #${orderB} - nothing new was placed`)
   } else {
-    orderA = await placeBetAs(A, market.address, symbol, 0, amount)
-    orderB = await placeBetAs(B, market.address, symbol, 1, amount)
+    const a = await placeBetAs(A, market.address, symbol, 0, amount)
+    const b = await placeBetAs(B, market.address, symbol, 1, amount)
+    orderA = a.id
+    orderB = b.id
+    // Matching happens inside B's transaction, so B's block is the earliest
+    // one at which both orders read as filled.
+    placedAt = b.block > a.block ? b.block : a.block
   }
 
   // -- the match ------------------------------------------------
   const STATUS = ['PENDING', 'MATCHED', 'SETTLED', 'REFUNDED', 'CLAIMED']
-  const oA = await pub.readContract({ address: market.address, abi: MARKET_ABI, functionName: 'getOrder', args: [orderA] })
-  const oB = await pub.readContract({ address: market.address, abi: MARKET_ABI, functionName: 'getOrder', args: [orderB] })
+  const oA = await getOrderAt(market.address, orderA, placedAt)
+  const oB = await getOrderAt(market.address, orderB, placedAt)
   console.log(`\nafter placement`)
   console.log(`  A #${orderA}  ${STATUS[oA.status]}  filled ${usd(oA.filledAmount)}/${usd(oA.amount)}`)
   console.log(`  B #${orderB}  ${STATUS[oB.status]}  filled ${usd(oB.filledAmount)}/${usd(oB.amount)}`)
@@ -408,8 +414,8 @@ async function pvp() {
   const deadline = Date.now() + 20 * 60_000
   let settled = false
   while (Date.now() < deadline) {
-    const a = await pub.readContract({ address: market.address, abi: MARKET_ABI, functionName: 'getOrder', args: [orderA] })
-    const b = await pub.readContract({ address: market.address, abi: MARKET_ABI, functionName: 'getOrder', args: [orderB] })
+    const a = await getOrderAt(market.address, orderA)
+    const b = await getOrderAt(market.address, orderB)
     if (a.pendingSettlements === 0n && b.pendingSettlements === 0n && a.status >= 2 && b.status >= 2) {
       console.log(`\nsettled`)
       console.log(`  A #${orderA}  ${STATUS[a.status]}  payout ${usd(a.payout)}`)
@@ -425,7 +431,7 @@ async function pvp() {
   let settledAt = 0n
   for (const s of [A, B]) {
     const id = s.name === 'A' ? orderA : orderB
-    const o = await pub.readContract({ address: market.address, abi: MARKET_ABI, functionName: 'getOrder', args: [id] })
+    const o = await getOrderAt(market.address, id)
     if (o.payout > 0n && o.status !== 4) {
       console.log(`\n${s.name} claiming ${usd(o.payout)}...`)
       const h = await s.wallet.writeContract({ address: market.address, abi: MARKET_ABI, functionName: 'claim', args: [id] })
@@ -473,8 +479,33 @@ async function usdcBalanceAt(who: Address, blockNumber?: bigint): Promise<bigint
   throw new Error('unreachable')
 }
 
+/**
+ * An order read at a specific block, retried.
+ *
+ * The third place the same load-balanced RPC bit: reading getOrder immediately
+ * after a placeBet receipt returned an order with amount 0, and the script
+ * concluded that PvP matching had failed when both orders had in fact filled
+ * each other completely. Anything read straight after a receipt has to name the
+ * block, or a replica that is behind will answer with a plausible lie.
+ */
+async function getOrderAt(market: Address, id: bigint, blockNumber?: bigint) {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    try {
+      return await pub.readContract({
+        address: market, abi: MARKET_ABI, functionName: 'getOrder', args: [id], blockNumber,
+      })
+    } catch (err) {
+      if (attempt === 9) throw err
+      await new Promise(r => setTimeout(r, 1_500))
+    }
+  }
+  throw new Error('unreachable')
+}
+
 /** One bet from one signer, approving first if the allowance is short. */
-async function placeBetAs(s: Signer, market: Address, symbol: string, dir: 0 | 1, amount: bigint): Promise<bigint> {
+async function placeBetAs(
+  s: Signer, market: Address, symbol: string, dir: 0 | 1, amount: bigint,
+): Promise<{ id: bigint; block: bigint }> {
   const allowance = await pub.readContract({
     address: USDC, abi: ERC20, functionName: 'allowance', args: [s.address, market],
   })
@@ -505,7 +536,7 @@ async function placeBetAs(s: Signer, market: Address, symbol: string, dir: 0 | 1
 
   const orderId = orderIdFromReceipt(r, market)
   console.log(`  ${s.name} bet ${usd(amount)} ${dir === 0 ? 'UP' : 'DOWN'} at $${price}  order #${orderId}  ${hash}`)
-  return orderId
+  return { id: orderId, block: r.blockNumber }
 }
 
 /** keccak256("OrderPlaced(uint256,address,uint8,uint256)") - orderId is topic 1. */
