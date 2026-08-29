@@ -452,7 +452,23 @@ async function pvp() {
   console.log(`\n-- ledger -------------------------------------`)
   console.log(`  A  ${usd(beforeA)} -> ${usd(afterA)}   (${dA >= 0n ? '+' : ''}${usd(dA)})`)
   console.log(`  B  ${usd(beforeB)} -> ${usd(afterB)}   (${dB >= 0n ? '+' : ''}${usd(dB)})`)
-  console.log(`  net across both: ${usd(dA + dB)}  (negative is the protocol fee)`)
+  if (resume) {
+    // On a resumed run the opening balances were read after the stakes had
+    // already left, so a net across the two wallets would read as pure profit.
+    // Say so rather than printing a number that flatters the result.
+    console.log(`  (opening balances are from the resume point, after both stakes)`)
+  } else {
+    console.log(`  net across both: ${usd(dA + dB)}`)
+  }
+
+  // The fee, taken from the orders rather than inferred from balances: the
+  // winner's gross is the whole matched pool, so whatever is missing from the
+  // payout is what the protocol kept. Independent of when anything was measured.
+  const finalA = await getOrderAt(market.address, orderA)
+  const finalB = await getOrderAt(market.address, orderB)
+  const gross  = (finalA.filledAmount + finalB.filledAmount)
+  const paid   = finalA.payout + finalB.payout
+  console.log(`  matched pool ${usd(gross)}, paid out ${usd(paid)}, protocol fee ${usd(gross - paid)}`)
   console.log(`\nFull cycle complete: placed, matched, settled, paid out.`)
 }
 
