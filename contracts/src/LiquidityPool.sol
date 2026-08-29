@@ -6,6 +6,7 @@ import "@openzeppelin/contracts/token/ERC20/extensions/ERC4626.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
+import "@openzeppelin/contracts/utils/math/Math.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "./GenesisNFT.sol";
 
@@ -43,6 +44,7 @@ interface IMarketRegistry {
  */
 contract LiquidityPool is ERC4626, ReentrancyGuard, Pausable, Ownable {
     using SafeERC20 for IERC20;
+    using Math for uint256;
 
     // ── CONSTANTS ──────────────────────────────────────────
     uint256 public constant MIN_DEPOSIT                 = 50e6;  // 50 USDC
@@ -149,6 +151,61 @@ contract LiquidityPool is ERC4626, ReentrancyGuard, Pausable, Ownable {
         // claimed against whatever balance remains.
         uint256 bal = IERC20(asset()).balanceOf(address(this)) + totalExposure;
         return bal > totalPendingFees ? bal - totalPendingFees : 0;
+    }
+
+    /**
+     * @dev What a withdrawal is priced against: cash on hand, less pending
+     *      fees. Open matches are deliberately NOT counted here, even though
+     *      totalAssets() counts them.
+     *
+     * The asymmetry is the whole point, and it closes the second half of the
+     * timing problem.
+     *
+     * Valuing an open match at its stake is honest in expectation, but it stops
+     * being honest the moment the underlying price moves: near settlement the
+     * outcome can be all but decided while the mark still says "cost". An LP
+     * watching a bet go against the pool could withdraw at that unmoved mark
+     * and hand the loss to whoever stayed. Marking the position to market would
+     * fix it in theory and is the wrong tool in practice - totalAssets() is
+     * read by every ERC4626 operation, so it would put an oracle read and a
+     * probability model in the path of every deposit, and hand an attacker a
+     * price to manipulate.
+     *
+     * The structural answer needs no oracle: an LP who leaves takes their share
+     * of the CASH and leaves their share of the open bets behind. Then leaving
+     * is never better than staying - it is exactly equal when the pool loses
+     * the bet, and worse when it wins - so there is nothing to time. The
+     * forfeited share accrues to the LPs who stayed and carried the risk.
+     *
+     * Deposits still price against totalAssets(), which includes exposure, so
+     * arriving mid-match is neither a discount nor a premium. Depositing and
+     * immediately withdrawing is a strict loss, which is what makes the pair of
+     * rules stable rather than a new edge in the other direction.
+     */
+    function _withdrawableAssets() internal view returns (uint256) {
+        uint256 cash = IERC20(asset()).balanceOf(address(this));
+        return cash > totalPendingFees ? cash - totalPendingFees : 0;
+    }
+
+    /// @dev Mirrors OZ's _convertToAssets against the cash-only base. The +1 /
+    ///      +10**offset terms are the inherited virtual-share protection and
+    ///      have to be kept identical, or the two directions stop agreeing.
+    function previewRedeem(uint256 shares) public view override returns (uint256) {
+        return shares.mulDiv(
+            _withdrawableAssets() + 1,
+            totalSupply() + 10 ** _decimalsOffset(),
+            Math.Rounding.Floor
+        );
+    }
+
+    /// @dev Mirrors OZ's _convertToShares against the cash-only base, rounding
+    ///      up so the vault never gives away a wei to rounding.
+    function previewWithdraw(uint256 assets) public view override returns (uint256) {
+        return assets.mulDiv(
+            totalSupply() + 10 ** _decimalsOffset(),
+            _withdrawableAssets() + 1,
+            Math.Rounding.Ceil
+        );
     }
 
     /// @notice True iff the vault holds enough USDC to back every accrued

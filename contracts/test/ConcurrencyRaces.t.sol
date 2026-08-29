@@ -405,12 +405,74 @@ contract ConcurrencyRacesTest is RedstoneTest {
     }
 
     /**
-     * The mirror image, and the reason this matters for LPs who behave
-     * normally: leaving while a match is open realises the loss and forfeits
-     * the win. Two LPs who deposited the same amount on the same day end up
-     * with different money purely on the timing of the exit.
+     * The half of the timing problem that survived the first fix, and the test
+     * that decides whether it is actually gone.
+     *
+     * Counting an open match at its stake is honest in expectation and stops
+     * being honest once the underlying moves: near settlement the outcome can
+     * be all but decided while the mark still says "cost". An LP who can see a
+     * bet going against the pool would then withdraw at that unmoved mark and
+     * leave the loss with whoever stayed.
+     *
+     * A withdrawal is now priced against cash only, so the leaver takes their
+     * share of the money and leaves their share of the open bets behind. The
+     * property that closes the game is this one: when the pool goes on to lose,
+     * leaving first pays exactly what staying would have paid. There is nothing
+     * to gain by timing it, so there is nothing to time.
      */
-    function test_Finding_ExitingDuringOpenMatchForfeitsTheOutcome() public {
+    function test_ExitingBeforeALoss_GainsNothingOverStaying() public {
+        address stayer = _addLP("stayer", LP_CAPITAL);
+        address leaver = makeAddr("whale");       // the setUp LP, same size
+        uint256 stake  = _match(0, 1, MARKET_CAP);
+
+        uint256 snap = vm.snapshotState();
+
+        // Branch 1: the leaver sees the loss coming and gets out first.
+        uint256 out = pool.maxWithdraw(leaver);
+        vm.prank(leaver);
+        pool.withdraw(out, leaver, leaver);
+        _settle(0, 1, stake, true);               // upWon -> LP side lost
+        uint256 dodged = out + pool.maxWithdraw(leaver);
+
+        vm.revertToState(snap);
+
+        // Branch 2: the same LP sits through it.
+        _settle(0, 1, stake, true);
+        uint256 stayed = pool.maxWithdraw(leaver);
+
+        assertLe(dodged, stayed, "leaving early must not beat sitting through the loss");
+        emit log_named_decimal_uint("dodged, USDC", dodged, 6);
+        emit log_named_decimal_uint("stayed, USDC", stayed, 6);
+
+        // And the LP who stayed put is not made to carry it alone.
+        assertGt(pool.maxWithdraw(stayer), 0);
+    }
+
+    /**
+     * The rule has to be stable in the other direction too, or it is just a new
+     * edge wearing different clothes: deposits price against totalAssets()
+     * (which counts open exposure) while withdrawals price against cash. Going
+     * in and straight back out during a match therefore costs money rather than
+     * making it, which is what stops the pair of rules from being gameable.
+     */
+    function test_DepositAndImmediateExitDuringOpenMatch_IsALoss() public {
+        _match(0, 1, MARKET_CAP);
+
+        address tourist = _addLP("tourist", LP_CAPITAL);
+        uint256 back    = pool.maxWithdraw(tourist);
+
+        assertLt(back, LP_CAPITAL, "a round trip through an open match is not free");
+    }
+
+    /**
+     * The mirror image, and the reason this matters for LPs who behave
+     * normally: leaving while a match is open forfeits the win. Two LPs who
+     * deposited the same amount on the same day end up with different money
+     * purely on the timing of the exit - which is now the intended rule rather
+     * than a defect, because it is the same rule that removes the incentive to
+     * time an exit at all.
+     */
+    function test_ExitingDuringOpenMatchForfeitsTheOutcome() public {
         address stayer = _addLP("stayer", LP_CAPITAL);
         uint256 stake  = _match(0, 1, MARKET_CAP);
 
