@@ -8,9 +8,16 @@
  *
  *   cd backend
  *   npx tsx scripts/live-cycle.mts                  # preflight only, signs nothing
+ *   PHASE=pvp   npx tsx scripts/live-cycle.mts      # the whole cycle, two wallets
  *   PHASE=fund  npx tsx scripts/live-cycle.mts      # deposit into the LP pool
  *   PHASE=bet   npx tsx scripts/live-cycle.mts      # place one real bet
  *   PHASE=watch npx tsx scripts/live-cycle.mts      # follow it to payout
+ *
+ * PHASE=pvp is the one that needs nothing but two funded wallets. `placeBet`
+ * matches against the PvP queue before it ever looks at the pool, so two
+ * opposite bets on the same market fill each other and the whole loop -
+ * placement, match, settlement, payout - runs with an empty LP pool and
+ * 2 x BET_AMOUNT of USDC. The LP path needs MIN_DEPOSIT (50 USDC) on top.
  *
  * Preflight is the default and it signs nothing: it reports every balance and
  * every precondition, and names what is missing with the amount. Run it first.
@@ -26,6 +33,7 @@
 import { config } from 'dotenv'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
+import { readFileSync } from 'node:fs'
 // The .env lives at the repo root, not in backend/ - dotenv's default lookup
 // is relative to cwd and finds nothing when this is run from backend/.
 config({ path: resolve(dirname(fileURLToPath(import.meta.url)), '../../.env') })
@@ -46,6 +54,9 @@ const API     = process.env.API_URL ?? 'https://api.flipthememe.com'
 
 const LP_AMOUNT  = BigInt(Math.round(Number(process.env.LP_AMOUNT  ?? '100') * 1e6))
 const BET_AMOUNT = BigInt(Math.round(Number(process.env.BET_AMOUNT ?? '5')   * 1e6))
+// Two USDC a side: above MIN_BET so the fee arithmetic is visible in the
+// ledger, small enough that a 10-USDC-a-day faucet funds several runs.
+const PVP_AMOUNT = BigInt(Math.round(Number(process.env.PVP_AMOUNT ?? '2')   * 1e6))
 const DIRECTION  = (process.env.DIRECTION ?? 'UP').toUpperCase() === 'DOWN' ? 1 : 0
 const PHASE      = process.env.PHASE ?? ''
 
@@ -90,6 +101,41 @@ function signer() {
   return wallet
 }
 
+/**
+ * A named signer. PHASE=pvp needs two of them at once, so the acting account
+ * cannot stay module-level the way the single-wallet phases assume.
+ */
+function makeSigner(name: string, pk: string) {
+  const acct = privateKeyToAccount(pk as `0x${string}`)
+  return {
+    name,
+    address: acct.address,
+    wallet:  createWalletClient({ account: acct, chain: CHAIN, transport: http(RPC) }),
+  }
+}
+type Signer = ReturnType<typeof makeSigner>
+
+/**
+ * The two test wallets, read from .testwallets/wallets.env unless overridden.
+ * That file is gitignored and holds throwaway Sepolia keys; nothing here ever
+ * touches an account that matters.
+ */
+function pvpSigners(): [Signer, Signer] {
+  const a = process.env.KEY_A
+  const b = process.env.KEY_B
+  if (a && b) return [makeSigner('A', a), makeSigner('B', b)]
+
+  const path = resolve(dirname(fileURLToPath(import.meta.url)), '../../.testwallets/wallets.env')
+  const text = readFileSync(path, 'utf8')
+  const pick = (n: number) => {
+    const m = text.match(new RegExp(`^wallet${n}_private_key=(0x[0-9a-fA-F]+)`, 'm'))
+    if (!m) throw new Error(`wallet${n}_private_key not found in ${path}`)
+    return m[1]
+  }
+  // 1 and 3 are the pair that hold both USDC and gas; 2 has no ETH.
+  return [makeSigner('A', pick(1)), makeSigner('B', pick(3))]
+}
+
 const usd = (v: bigint) => `${formatUnits(v, 6)} USDC`
 const eth = (v: bigint) => `${formatUnits(v, 18)} ETH`
 
@@ -101,7 +147,7 @@ const eth = (v: bigint) => `${formatUnits(v, 18)} ETH`
  * this script picks the same market a visitor would see - if the indexer is
  * behind, that shows up here rather than being routed around.
  */
-async function pickMarket(): Promise<{ address: Address; closeTime: bigint } | null> {
+async function pickMarket(minLeadSec = 60): Promise<{ address: Address; closeTime: bigint } | null> {
   if (process.env.MARKET) {
     const address = process.env.MARKET as Address
     const closeTime = await pub.readContract({ address, abi: MARKET_ABI, functionName: 'closeTime' })
@@ -112,7 +158,7 @@ async function pickMarket(): Promise<{ address: Address; closeTime: bigint } | n
   const rows = (await res.json()) as { address: string; status: string; closeTime: number }[]
   const now = Math.floor(Date.now() / 1000)
   const usable = rows
-    .filter(m => m.status === 'OPEN' && m.closeTime > now + 60)
+    .filter(m => m.status === 'OPEN' && m.closeTime > now + minLeadSec)
     .sort((a, b) => a.closeTime - b.closeTime)
   const m = usable[0]
   return m ? { address: m.address as Address, closeTime: BigInt(m.closeTime) } : null
@@ -278,9 +324,180 @@ async function watch() {
   console.log('\nGave up after 90 minutes. The keeper settles on a 60s loop; check its logs.')
 }
 
+
+/**
+ * The whole loop on two wallets, with an empty LP pool.
+ *
+ * Places equal and opposite bets on the same market so they fill each other in
+ * the PvP queue, waits out the close, waits for the keeper to settle, and
+ * claims the winner's payout. Every balance is read before and after, because
+ * the point of this script is not that the calls succeeded - it is that the
+ * USDC actually moved and the arithmetic is the arithmetic we intended.
+ */
+async function pvp() {
+  const [A, B] = pvpSigners()
+  const amount = PVP_AMOUNT
+  // Resume a run whose bets already landed. Placement is the only irreversible
+  // half; re-running it to watch a settlement would burn USDC to learn nothing.
+  const resume = process.env.ORDER_A && process.env.ORDER_B && process.env.MARKET
+
+  // Four transactions have to land before close: approve+bet, twice. At Base
+  // Sepolia block times that is well under a minute, but a market closing in
+  // 90 seconds leaves no room for a retry.
+  const market = await pickMarket(150)
+  if (!market) throw new Error('no open market closing more than 150s out')
+
+  const feedId = await pub.readContract({ address: market.address, abi: MARKET_ABI, functionName: 'feedId' })
+  const symbol = bytes32ToFeedId(feedId)
+  const closesIn = Number(market.closeTime) - Math.floor(Date.now() / 1000)
+
+  console.log(`\n-- PvP cycle ----------------------------------`)
+  console.log(`market   ${market.address}`)
+  console.log(`feed     ${symbol}`)
+  console.log(`closes   in ${Math.round(closesIn / 60)} min`)
+  console.log(`stake    ${usd(amount)} each way`)
+  console.log(`A (UP)   ${A.address}`)
+  console.log(`B (DOWN) ${B.address}`)
+
+  const beforeA = await pub.readContract({ address: USDC, abi: ERC20, functionName: 'balanceOf', args: [A.address] })
+  const beforeB = await pub.readContract({ address: USDC, abi: ERC20, functionName: 'balanceOf', args: [B.address] })
+  console.log(`\nbalances before   A ${usd(beforeA)}   B ${usd(beforeB)}`)
+
+  if (beforeA < amount) throw new Error(`A has ${usd(beforeA)}, needs ${usd(amount)}`)
+  if (beforeB < amount) throw new Error(`B has ${usd(beforeB)}, needs ${usd(amount)}`)
+
+  let orderA: bigint
+  let orderB: bigint
+  if (resume) {
+    orderA = BigInt(process.env.ORDER_A as string)
+    orderB = BigInt(process.env.ORDER_B as string)
+    console.log(`\nresuming: A #${orderA}, B #${orderB} - nothing new was placed`)
+  } else {
+    orderA = await placeBetAs(A, market.address, symbol, 0, amount)
+    orderB = await placeBetAs(B, market.address, symbol, 1, amount)
+  }
+
+  // -- the match ------------------------------------------------
+  const STATUS = ['PENDING', 'MATCHED', 'SETTLED', 'REFUNDED', 'CLAIMED']
+  const oA = await pub.readContract({ address: market.address, abi: MARKET_ABI, functionName: 'getOrder', args: [orderA] })
+  const oB = await pub.readContract({ address: market.address, abi: MARKET_ABI, functionName: 'getOrder', args: [orderB] })
+  console.log(`\nafter placement`)
+  console.log(`  A #${orderA}  ${STATUS[oA.status]}  filled ${usd(oA.filledAmount)}/${usd(oA.amount)}`)
+  console.log(`  B #${orderB}  ${STATUS[oB.status]}  filled ${usd(oB.filledAmount)}/${usd(oB.amount)}`)
+  if (oA.filledAmount === 0n || oB.filledAmount === 0n) {
+    throw new Error('the two orders did not fill each other - PvP matching did not happen')
+  }
+  console.log(`  matched: ${usd(oA.filledAmount)} each way`)
+
+  // -- close, then settlement -----------------------------------
+  const waitFor = Number(market.closeTime) * 1000 - Date.now() + 5_000
+  if (waitFor > 0) {
+    console.log(`\nwaiting ${Math.round(waitFor / 1000)}s for the market to close...`)
+    await new Promise(r => setTimeout(r, waitFor))
+  }
+
+  console.log('waiting for the keeper to settle (60s loop)...')
+  const deadline = Date.now() + 20 * 60_000
+  let settled = false
+  while (Date.now() < deadline) {
+    const a = await pub.readContract({ address: market.address, abi: MARKET_ABI, functionName: 'getOrder', args: [orderA] })
+    const b = await pub.readContract({ address: market.address, abi: MARKET_ABI, functionName: 'getOrder', args: [orderB] })
+    if (a.pendingSettlements === 0n && b.pendingSettlements === 0n && a.status >= 2 && b.status >= 2) {
+      console.log(`\nsettled`)
+      console.log(`  A #${orderA}  ${STATUS[a.status]}  payout ${usd(a.payout)}`)
+      console.log(`  B #${orderB}  ${STATUS[b.status]}  payout ${usd(b.payout)}`)
+      settled = true
+      break
+    }
+    await new Promise(r => setTimeout(r, 15_000))
+  }
+  if (!settled) throw new Error('not settled within 20 min - check the keeper logs')
+
+  // -- payout ---------------------------------------------------
+  for (const s of [A, B]) {
+    const id = s.name === 'A' ? orderA : orderB
+    const o = await pub.readContract({ address: market.address, abi: MARKET_ABI, functionName: 'getOrder', args: [id] })
+    if (o.payout > 0n && o.status !== 4) {
+      console.log(`\n${s.name} claiming ${usd(o.payout)}...`)
+      const h = await s.wallet.writeContract({ address: market.address, abi: MARKET_ABI, functionName: 'claim', args: [id] })
+      const r = await pub.waitForTransactionReceipt({ hash: h })
+      if (r.status !== 'success') throw new Error(`claim reverted: ${h}`)
+      console.log(`  claim ${h}`)
+    }
+  }
+
+  const afterA = await pub.readContract({ address: USDC, abi: ERC20, functionName: 'balanceOf', args: [A.address] })
+  const afterB = await pub.readContract({ address: USDC, abi: ERC20, functionName: 'balanceOf', args: [B.address] })
+  const dA = afterA - beforeA
+  const dB = afterB - beforeB
+
+  console.log(`\n-- ledger -------------------------------------`)
+  console.log(`  A  ${usd(beforeA)} -> ${usd(afterA)}   (${dA >= 0n ? '+' : ''}${usd(dA)})`)
+  console.log(`  B  ${usd(beforeB)} -> ${usd(afterB)}   (${dB >= 0n ? '+' : ''}${usd(dB)})`)
+  console.log(`  net across both: ${usd(dA + dB)}  (negative is the protocol fee)`)
+  console.log(`\nFull cycle complete: placed, matched, settled, paid out.`)
+}
+
+/** One bet from one signer, approving first if the allowance is short. */
+async function placeBetAs(s: Signer, market: Address, symbol: string, dir: 0 | 1, amount: bigint): Promise<bigint> {
+  const allowance = await pub.readContract({
+    address: USDC, abi: ERC20, functionName: 'allowance', args: [s.address, market],
+  })
+  if (allowance < amount) {
+    const h = await s.wallet.writeContract({ address: USDC, abi: ERC20, functionName: 'approve', args: [market, amount] })
+    await pub.waitForTransactionReceipt({ hash: h })
+    console.log(`  ${s.name} approve ${h}`)
+  }
+
+  // Freshly fetched per bet: the payload carries a signed timestamp and the
+  // market rejects one that has gone stale, so reusing A's payload for B is a
+  // race against the freshness window.
+  const [payload, price] = await Promise.all([fetchPayload(symbol), fetchPrice(symbol)])
+  const expectedPrice = BigInt(Math.round(price * 1e8)) * 10n ** 10n
+
+  const data = withPayload(
+    encodeFunctionData({
+      abi: MARKET_ABI,
+      functionName: 'placeBet',
+      args: [dir, amount, '0x0000000000000000000000000000000000000000', expectedPrice, 100n],
+    }),
+    payload,
+  )
+
+  const hash = await s.wallet.sendTransaction({ to: market, data, gas: 1_200_000n })
+  const r = await pub.waitForTransactionReceipt({ hash })
+  if (r.status !== 'success') throw new Error(`${s.name} placeBet reverted: ${hash}`)
+
+  const orderId = orderIdFromReceipt(r, market)
+  console.log(`  ${s.name} bet ${usd(amount)} ${dir === 0 ? 'UP' : 'DOWN'} at $${price}  order #${orderId}  ${hash}`)
+  return orderId
+}
+
+/** keccak256("OrderPlaced(uint256,address,uint8,uint256)") - orderId is topic 1. */
+const ORDER_PLACED_TOPIC = '0x2889ad19f411ddebebecb8b577f9b378f8136f7068eb59b277edd8fe158172c8'
+
+/**
+ * The order id, taken from the receipt the transaction already returned.
+ *
+ * The obvious shortcut - read nextOrderId afterwards and subtract one - is a
+ * race, and it lost: Base's public RPC is load-balanced, the follow-up
+ * eth_call landed on a replica one block behind, and both orders came back
+ * numbered one too low. The receipt is not subject to that; it is the record
+ * of the block that actually executed.
+ */
+function orderIdFromReceipt(receipt: { logs: readonly { address: string; topics: readonly string[] }[] }, market: Address): bigint {
+  for (const log of receipt.logs) {
+    if (log.address.toLowerCase() !== market.toLowerCase()) continue
+    if (log.topics[0]?.toLowerCase() !== ORDER_PLACED_TOPIC) continue
+    return BigInt(log.topics[1] as string)
+  }
+  throw new Error('placeBet succeeded but emitted no OrderPlaced - cannot identify the order')
+}
+
 const { market } = await preflight()
 void market
 
+if (PHASE === 'pvp')   await pvp()
 if (PHASE === 'fund')  await fund()
 if (PHASE === 'bet')   await bet()
 if (PHASE === 'watch') await watch()

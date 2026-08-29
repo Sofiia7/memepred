@@ -35,6 +35,8 @@ export interface Env {
   ALERT_WEBHOOK_URL?:  string
   ALERT_EMAIL_TO?:     string
   ALERT_EMAIL_FROM?:   string
+  /** Shared secret for GET /test-alert. Without it that route is disabled. */
+  TEST_KEY?:           string
   EMAIL?:              { send(msg: unknown): Promise<unknown> }
 }
 
@@ -303,6 +305,28 @@ export default {
    */
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url)
+
+    /**
+     * Fire one alert on demand, to prove the channel works.
+     *
+     * An alert path that has never actually delivered is not a monitor, it is
+     * a belief about a monitor - and this project has already paid for the
+     * difference once. Guarded by a shared secret so the URL cannot be used to
+     * spam somebody's phone, and disabled entirely when TEST_KEY is unset.
+     */
+    if (url.pathname === '/test-alert') {
+      if (!env.TEST_KEY || url.searchParams.get('key') !== env.TEST_KEY) {
+        return new Response('not found', { status: 404 })
+      }
+      const sent = await notify(
+        env,
+        'FlipTheMeme watchdog - test alert',
+        'This is a test, production is not down.\n\n' +
+        'It was sent to prove the alert path works end to end. A real alert ' +
+        'looks like this one and names which check failed.',
+      )
+      return Response.json({ sent, channels: sent.length })
+    }
 
     // Manual run, for verifying the wiring without waiting for the cron.
     if (url.pathname === '/check') {
