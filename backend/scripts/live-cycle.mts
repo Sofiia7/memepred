@@ -367,8 +367,8 @@ async function pvp() {
   console.log(`A (UP)   ${A.address}`)
   console.log(`B (DOWN) ${B.address}`)
 
-  const beforeA = await pub.readContract({ address: USDC, abi: ERC20, functionName: 'balanceOf', args: [A.address] })
-  const beforeB = await pub.readContract({ address: USDC, abi: ERC20, functionName: 'balanceOf', args: [B.address] })
+  const beforeA = await usdcBalanceAt(A.address)
+  const beforeB = await usdcBalanceAt(B.address)
   console.log(`\nbalances before   A ${usd(beforeA)}   B ${usd(beforeB)}`)
 
   if (beforeA < amount) throw new Error(`A has ${usd(beforeA)}, needs ${usd(amount)}`)
@@ -422,6 +422,7 @@ async function pvp() {
   if (!settled) throw new Error('not settled within 20 min - check the keeper logs')
 
   // -- payout ---------------------------------------------------
+  let settledAt = 0n
   for (const s of [A, B]) {
     const id = s.name === 'A' ? orderA : orderB
     const o = await pub.readContract({ address: market.address, abi: MARKET_ABI, functionName: 'getOrder', args: [id] })
@@ -430,12 +431,15 @@ async function pvp() {
       const h = await s.wallet.writeContract({ address: market.address, abi: MARKET_ABI, functionName: 'claim', args: [id] })
       const r = await pub.waitForTransactionReceipt({ hash: h })
       if (r.status !== 'success') throw new Error(`claim reverted: ${h}`)
-      console.log(`  claim ${h}`)
+      if (r.blockNumber > settledAt) settledAt = r.blockNumber
+      console.log(`  claim ${h}  block ${r.blockNumber}`)
     }
   }
 
-  const afterA = await pub.readContract({ address: USDC, abi: ERC20, functionName: 'balanceOf', args: [A.address] })
-  const afterB = await pub.readContract({ address: USDC, abi: ERC20, functionName: 'balanceOf', args: [B.address] })
+  // Read the closing balances at the block the last claim landed in, so the
+  // ledger cannot be written from a replica that has not seen it yet.
+  const afterA = await usdcBalanceAt(A.address, settledAt || undefined)
+  const afterB = await usdcBalanceAt(B.address, settledAt || undefined)
   const dA = afterA - beforeA
   const dB = afterB - beforeB
 
@@ -444,6 +448,29 @@ async function pvp() {
   console.log(`  B  ${usd(beforeB)} -> ${usd(afterB)}   (${dB >= 0n ? '+' : ''}${usd(dB)})`)
   console.log(`  net across both: ${usd(dA + dB)}  (negative is the protocol fee)`)
   console.log(`\nFull cycle complete: placed, matched, settled, paid out.`)
+}
+
+/**
+ * A USDC balance read at a specific block.
+ *
+ * The same load-balanced RPC that mis-numbered the orders will happily serve a
+ * plain balanceOf from a replica a block or two behind, and the first full run
+ * of this script reported a completed payout as "+0 USDC" because of it. Asking
+ * for an explicit block turns that silence into a retryable error: a replica
+ * that does not have the block says so instead of guessing.
+ */
+async function usdcBalanceAt(who: Address, blockNumber?: bigint): Promise<bigint> {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    try {
+      return await pub.readContract({
+        address: USDC, abi: ERC20, functionName: 'balanceOf', args: [who], blockNumber,
+      })
+    } catch (err) {
+      if (attempt === 9) throw err
+      await new Promise(r => setTimeout(r, 1_500))
+    }
+  }
+  throw new Error('unreachable')
 }
 
 /** One bet from one signer, approving first if the allowance is short. */
