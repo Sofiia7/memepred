@@ -125,6 +125,14 @@ one green ping a day as a dead-man's switch, and keeps per-day uptime counters
 for soak testing. `GET /` returns the state; the same URL answers 503 when
 production is down, so a single external check covers everything.
 
+It checks every 2 minutes but persists state at most every 10, because Workers
+KV's free tier is four budgets and the binding one is writes: 100,000 reads a
+day against 1,000 writes. A put per tick was 720 writes/day - 72% of the cap for
+one small key - and produced a "50% of your KV limit" e-mail on 2026-08-29 with
+reads at 0.6%. Failures, recoveries, alerts and day boundaries still persist
+immediately; only quiet green ticks are batched, so detection is unchanged and
+a bad day costs ~144 writes instead of 720.
+
 Alert channels are whichever secrets are set, and with none set it records state
 but wakes nobody:
 

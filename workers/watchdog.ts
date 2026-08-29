@@ -49,6 +49,25 @@ const REALERT_MS = 60 * 60_000
 /** Per-request ceiling. A hung origin must not stall the whole run. */
 const TIMEOUT_MS = 10_000
 
+/** How often the cron fires. Used to infer how many quiet checks a gap covers. */
+const CRON_MS = 2 * 60_000
+
+/**
+ * How long a quiet, all-green run may go without persisting state.
+ *
+ * Workers KV's free tier is not one budget but four, and the binding one is
+ * writes: 100,000 reads a day against only 1,000 writes. A put on every tick
+ * of a 2-minute cron is 720 writes a day - 72% of the daily cap burned by one
+ * key holding one small object, which is how this account got a "50% of your
+ * KV limit" e-mail on 2026-08-29 with reads sitting at 0.6%.
+ *
+ * The fix is to write less, not to check less. Detection stays at two minutes;
+ * only the bookkeeping is rate-limited, and anything that actually matters -
+ * a failure, a recovery, an alert, a day rolling over - writes immediately.
+ * Quiet green runs cost ~144 writes a day instead of 720.
+ */
+const QUIET_WRITE_MS = 10 * 60_000
+
 interface Check {
   name: string
   url:  string
@@ -93,6 +112,8 @@ interface State {
   lastHeartbeatDay: string
   lastWarnDay:      string
   lastCheckAt:      number
+  /** When state was last persisted, which is not every check - see QUIET_WRITE_MS. */
+  lastWriteAt:      number
   detail:           string
   results:          Result[]
   /** Most recent 7 UTC days, newest last. */
@@ -103,7 +124,7 @@ interface State {
 
 const EMPTY: State = {
   status: 'ok', since: 0, fails: 0, lastAlertAt: 0,
-  lastHeartbeatDay: '', lastWarnDay: '', lastCheckAt: 0,
+  lastHeartbeatDay: '', lastWarnDay: '', lastCheckAt: 0, lastWriteAt: 0,
   detail: 'never run', results: [], days: [], longestDownMs: 0,
 }
 
@@ -202,14 +223,28 @@ async function tick(env: Env, now: number): Promise<State> {
   const warns  = [...new Set(results.flatMap(r => r.warn))]
 
   // Tally before anything else can return early.
+  //
+  // Quiet checks are counted from elapsed time rather than one-per-tick,
+  // because a quiet tick may not persist at all. Failing ticks always persist,
+  // so failures are still counted exactly - which is the half of the ratio a
+  // soak number depends on being right.
   const today = utcDay(now)
   const days  = [...(prev.days ?? [])]
   if (!days.length || days[days.length - 1].day !== today) {
     days.push({ day: today, checks: 0, failures: 0 })
   }
-  const cur = days[days.length - 1]
-  cur.checks   += 1
-  cur.failures += down ? 1 : 0
+  const cur     = days[days.length - 1]
+  const gap     = prev.lastWriteAt ? now - prev.lastWriteAt : CRON_MS
+  const ran     = Math.max(1, Math.round(gap / CRON_MS))
+  const wasDown = prev.status === 'down'
+  cur.checks += ran
+  // A gap between writes is homogeneous, because every status change writes
+  // immediately: if it was down at both ends, every tick in between was a
+  // failure. Counting 1 per write instead would report a total outage as an
+  // 80% uptime, which is worse than not measuring at all.
+  cur.failures += down
+    ? (wasDown ? ran : 1)
+    : (wasDown ? Math.max(0, ran - 1) : 0)
   while (days.length > 7) days.shift()
 
   const next: State = {
@@ -290,7 +325,26 @@ async function tick(env: Env, now: number): Promise<State> {
     next.lastHeartbeatDay = utcDay(now)
   }
 
-  await env.WATCHDOG.put(STATE_KEY, JSON.stringify(next))
+  // Persist when something happened, or when the last write has aged out.
+  // Everything listed here is a state a later run has to be able to read back:
+  // skipping any of them would lose an outage, an alert, or a day boundary.
+  const mustWrite =
+    // The pre-alert failure counter has to survive to reach the threshold - a
+    // dropped increment here means fails never reaches 2 and nobody is ever
+    // paged. Past that, a sustained outage rides the quiet interval like
+    // anything else, so a bad day costs ~144 writes rather than 720.
+    (down && next.fails < FAILS_BEFORE_ALERT)     ||
+    prev.status !== next.status                   ||   // up/down transition
+    prev.lastAlertAt !== next.lastAlertAt         ||   // an alert went out
+    prev.lastWarnDay !== next.lastWarnDay         ||
+    prev.lastHeartbeatDay !== next.lastHeartbeatDay ||
+    utcDay(prev.lastWriteAt || now) !== today     ||   // day rolled over
+    now - (prev.lastWriteAt || 0) >= QUIET_WRITE_MS
+
+  if (mustWrite) {
+    next.lastWriteAt = now
+    await env.WATCHDOG.put(STATE_KEY, JSON.stringify(next))
+  }
   return next
 }
 
@@ -335,9 +389,11 @@ export default {
     }
 
     const state: State = JSON.parse((await env.WATCHDOG.get(STATE_KEY)) ?? 'null') ?? EMPTY
-    // A state nobody has refreshed in 10 minutes means the cron stopped. Report
+    // A state nobody has refreshed in a while means the cron stopped. Report
     // that as down: a stale green is the lie this Worker exists to prevent.
-    const stale = Date.now() - state.lastCheckAt > 10 * 60_000
+    // The window has to clear QUIET_WRITE_MS with room, or a healthy watchdog
+    // that simply had nothing to say would report itself dead.
+    const stale = Date.now() - (state.lastWriteAt || state.lastCheckAt) > QUIET_WRITE_MS + 10 * 60_000
 
     const days    = state.days ?? []
     const checks  = days.reduce((n, d) => n + d.checks, 0)
