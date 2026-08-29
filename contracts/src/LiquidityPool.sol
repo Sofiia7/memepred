@@ -130,11 +130,24 @@ contract LiquidityPool is ERC4626, ReentrancyGuard, Pausable, Ownable {
     /// @dev totalAssets excludes pending fees so the fee stream is isolated
     ///      from share-price growth.
     function totalAssets() public view override returns (uint256) {
+        // Open matches are counted at the stake the pool put up. That money has
+        // left the balance (tryMatch transfers it to the market) but it is not
+        // lost: it is staked on an outcome that returns twice the stake or
+        // nothing, which is worth exactly the stake in expectation.
+        //
+        // Leaving it out marked the share price down by the whole stake for as
+        // long as a match was open and snapped it back on settlement. That gap
+        // is a discount anyone can buy: a deposit made while a match is live
+        // bought in cheap and was holding shares when the price recovered,
+        // moving the outcome of a bet onto somebody who arrived after the risk
+        // was taken. See
+        // test_DepositDuringOpenMatch_DoesNotTakeTheWinFromTheLpsWhoCarriedIt.
+        //
         // Clamp on underflow: if the vault took losses big enough that balance
         // dropped below totalPendingFees, share-price falls to 0 instead of
         // reverting every view call. Pending fees become a socialised loss
         // claimed against whatever balance remains.
-        uint256 bal = IERC20(asset()).balanceOf(address(this));
+        uint256 bal = IERC20(asset()).balanceOf(address(this)) + totalExposure;
         return bal > totalPendingFees ? bal - totalPendingFees : 0;
     }
 
@@ -160,10 +173,16 @@ contract LiquidityPool is ERC4626, ReentrancyGuard, Pausable, Ownable {
     }
 
     /// @dev Withdraws are constrained by locked exposure across all markets.
+    ///      Measured from the cash actually on hand, not from totalAssets():
+    ///      totalAssets() now counts open exposure as an asset, so subtracting
+    ///      totalExposure from it would leave exactly the balance and quietly
+    ///      stop holding back anything at all. The reserved amount is identical
+    ///      to what this always withheld - balance minus fees minus exposure.
     function maxWithdraw(address owner_) public view override returns (uint256) {
         uint256 ownerAssets = previewRedeem(balanceOf(owner_));
-        uint256 ta          = totalAssets();
-        uint256 free        = ta > totalExposure ? ta - totalExposure : 0;
+        uint256 cash        = IERC20(asset()).balanceOf(address(this));
+        uint256 reserved    = totalPendingFees + totalExposure;
+        uint256 free        = cash > reserved ? cash - reserved : 0;
         return ownerAssets < free ? ownerAssets : free;
     }
 

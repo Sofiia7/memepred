@@ -148,15 +148,23 @@ const eth = (v: bigint) => `${formatUnits(v, 18)} ETH`
  * behind, that shows up here rather than being routed around.
  */
 async function pickMarket(minLeadSec = 60): Promise<{ address: Address; closeTime: bigint } | null> {
-  if (process.env.MARKET) {
-    const address = process.env.MARKET as Address
-    const closeTime = await pub.readContract({ address, abi: MARKET_ABI, functionName: 'closeTime' })
-    return { address, closeTime }
-  }
   const res = await fetch(`${API}/api/markets`)
   if (!res.ok) throw new Error(`GET ${API}/api/markets -> ${res.status}`)
   const rows = (await res.json()) as { address: string; status: string; closeTime: number }[]
   const now = Math.floor(Date.now() / 1000)
+
+  // An explicit MARKET is still looked up here rather than on-chain. The
+  // market contract has no closeTime() - it stores `duration`, and when a
+  // round actually ends is the indexer's knowledge, not the clone's. The
+  // first version of this asked the contract and got a bare `execution
+  // reverted`, because that branch had never been run.
+  if (process.env.MARKET) {
+    const want = (process.env.MARKET as string).toLowerCase()
+    const row = rows.find(m => m.address.toLowerCase() === want)
+    if (!row) throw new Error(`market ${process.env.MARKET} is not in ${API}/api/markets`)
+    return { address: row.address as Address, closeTime: BigInt(row.closeTime) }
+  }
+
   const usable = rows
     .filter(m => m.status === 'OPEN' && m.closeTime > now + minLeadSec)
     .sort((a, b) => a.closeTime - b.closeTime)

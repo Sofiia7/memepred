@@ -62,6 +62,55 @@ contract LiquidityPoolTest is RedstoneTest {
         vm.prank(lp); pool.deposit(amount, lp);
     }
 
+    // ─── OPEN-MATCH SHARE PRICE ───────────────────────────
+    // The pool hands USDC to the market the moment a match opens (tryMatch ->
+    // safeTransfer) so the balance drops while the bet is live. totalAssets()
+    // adds totalExposure back, because the stake is not gone - it is staked on
+    // something worth its own size in expectation.
+    //
+    // Before that addition the share price fell by the whole stake on every
+    // match and snapped back on settlement, and the tests below are the reason
+    // it does not any more.
+
+    /// user UP means the pool takes the DOWN side.
+    function _openMatch(uint256 id, uint256 amount) internal returns (uint256 taken) {
+        vm.prank(address(market));
+        taken = pool.tryMatch(id, amount, true, id);
+    }
+
+    /// The market returns both stakes, then reports that the pool won.
+    function _settlePoolWins(uint256 id, uint256 amount) internal {
+        usdc.mint(address(market), amount);          // the user's side
+        vm.prank(address(market));
+        usdc.transfer(address(pool), 2 * amount);    // plus the LP stake it holds
+        vm.prank(address(market));
+        pool.onMatchSettled(id, false);              // UP lost, so the DOWN pool won
+    }
+
+    function test_OpenMatch_DoesNotMoveTheSharePrice() public {
+        _addLP("lp1", 1000e6);
+        assertEq(pool.totalAssets(), 1000e6, "quiet pool");
+
+        // 5% per-market cap binds before the 10% global one, and there is only
+        // one market here.
+        assertEq(_openMatch(1, 100e6), 50e6, "capped at 5% of totalAssets");
+
+        assertEq(pool.totalExposure(), 50e6, "exposure is tracked");
+        assertEq(
+            IERC20(address(usdc)).balanceOf(address(pool)), 950e6,
+            "and the cash really did leave"
+        );
+        assertEq(pool.totalAssets(), 1000e6, "but the price does not move for it");
+    }
+
+    /// The cash behind an open match still cannot walk out of the door.
+    function test_OpenMatch_StillReservesTheStakeAgainstWithdrawals() public {
+        address lp1 = _addLP("lp1", 1000e6);
+        _openMatch(1, 100e6);
+
+        assertEq(pool.maxWithdraw(lp1), 900e6, "balance 950 less the 50 at risk");
+    }
+
     // ─── DEPOSIT & GENESIS ────────────────────────────────
     function test_Deposit_MintsShares() public {
         address lp = _addLP("lp1", 100e6);

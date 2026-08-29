@@ -109,14 +109,17 @@ contract ConcurrencyRacesTest is RedstoneTest {
     /**
      * Measured against ECONOMIC assets - what the pool holds plus what is out
      * on open matches - not against totalAssets(). totalAssets() is the pool's
-     * USDC balance, and a match physically moves the LP's stake to the market,
-     * so every match shrinks the denominator the caps are computed from. An
-     * invariant written against totalAssets() alone reports a breach the moment
-     * two matches are open, which is a property of the accounting rather than a
-     * violation of the cap. See test_SharePrice_DipsWhileAMatchIsOpen.
+     * USDC balance plus open exposure, because a match physically moves the
+     * LP's stake to the market and the stake is not lost while it is out
+     * there. totalAssets() now returns exactly that, so the caps are computed
+     * against a denominator that does not move when a match opens. It used to
+     * return the bare balance, and an invariant written against it reported a
+     * breach the moment two matches were open - a property of the accounting
+     * rather than a violation of the cap. See
+     * test_SharePrice_HoldsWhileAMatchIsOpen.
      */
     function _assertInvariants() internal view {
-        uint256 economic = pool.totalAssets() + pool.totalExposure();
+        uint256 economic = pool.totalAssets();
         assertLe(pool.totalExposure(), (economic * 1_000) / 10_000 + 1, "global exposure cap breached");
         for (uint256 i = 0; i < 3; i++) {
             assertLe(
@@ -140,17 +143,23 @@ contract ConcurrencyRacesTest is RedstoneTest {
         uint256 b = _match(1, 2, MARKET_CAP);
         uint256 c = _match(2, 3, MARKET_CAP);
 
-        // The first market gets its full 5%. The second does NOT, and the
-        // arithmetic is worth spelling out because it is not the obvious
-        // answer: the first match moved 5,000 USDC out of the pool, so
-        // totalAssets() is now 95,000, the global cap is 9,500, and only 4,500
-        // of headroom is left. The caps tighten with every match in the block.
-        assertEq(a, MARKET_CAP, "first market should get its full slice");
-        assertEq(b, 4_500e6,    "second market is squeezed by the shrinking denominator");
-        assertEq(c, 0,          "third market gets nothing, the cap is spent");
+        // Two markets get their full 5% each and the third gets nothing,
+        // because two 5% slices are the whole 10% global cap.
+        //
+        // This used to read 5,000 / 4,500 / 0. The second slice was smaller
+        // because the first match had moved 5,000 USDC out of the pool and
+        // totalAssets() counted only what was left, so the denominator shrank
+        // with every match in the block and the cap converged from below.
+        // totalAssets() now counts an open stake as the asset it is, so the
+        // cap means what it says: at most 10% of the pool's economic value is
+        // at risk at once. The old margin was an accident of the accounting,
+        // not a designed safety buffer.
+        assertEq(a, MARKET_CAP, "first market gets its full slice");
+        assertEq(b, MARKET_CAP, "so does the second");
+        assertEq(c, 0,          "third gets nothing, the cap is spent");
 
-        // Below the nominal 10% of the starting capital, never above it.
-        assertLt(pool.totalExposure(), GLOBAL_CAP, "cap converges from below");
+        // Exactly the nominal 10% of capital, never above it.
+        assertEq(pool.totalExposure(), GLOBAL_CAP, "cap is reached, not breached");
         _assertInvariants();
     }
 
@@ -330,47 +339,47 @@ contract ConcurrencyRacesTest is RedstoneTest {
         }
     }
 
-    // ── what the interleaving exposed: open matches are marked at zero ──
+    // ── what the interleaving exposed: open matches were marked at zero ──
 
     /**
-     * totalAssets() is the pool's USDC balance. tryMatch physically transfers
-     * the LP's stake to the market, so the instant a match opens the pool's
-     * reported assets - and therefore the share price - drop by the full stake,
-     * as though the match were already lost. It recovers only when the match
-     * settles in the LP's favour.
+     * tryMatch physically transfers the LP's stake to the market, so the pool's
+     * USDC balance drops the instant a match opens. totalAssets() adds
+     * totalExposure back, so the share price does not move: the stake is out of
+     * the balance but not lost, and a bet paying twice the stake or nothing is
+     * worth the stake in expectation.
      *
-     * This is what made four of the tests above fail on their first, naive
-     * expectations. It is not a rounding artefact: on a 100k pool a single 5%
-     * match moves the share price 5%.
+     * It used to move, by the full stake - a 5% match knocked 5% off the share
+     * price of a 100k pool and put it back on settlement. That is what made
+     * four of the tests above fail on their first, naive expectations, and the
+     * two tests below are what it cost in money.
      */
-    function test_SharePrice_DipsWhileAMatchIsOpen() public {
+    function test_SharePrice_HoldsWhileAMatchIsOpen() public {
         uint256 before = pool.convertToAssets(1e18);
 
         uint256 stake = _match(0, 1, MARKET_CAP);
-        uint256 during = pool.convertToAssets(1e18);
 
-        assertLt(during, before, "share price should dip while a match is open");
-        // The dip is the whole stake, not a fraction of it: the open match is
-        // marked as a total loss until it settles.
-        assertApproxEqRel(before - during, before * stake / LP_CAPITAL, 0.01e18);
+        assertEq(pool.convertToAssets(1e18), before, "an open match is not a loss");
+        assertEq(pool.totalExposure(), stake, "even though the cash has left");
 
         _settle(0, 1, stake, false); // LP wins
-        assertGt(pool.convertToAssets(1e18), before, "and recover past it on an LP win");
+        assertGt(pool.convertToAssets(1e18), before, "the win is what moves it");
     }
 
     /**
-     * The consequence, stated as money.
+     * The consequence, stated as money, and the regression this guards.
      *
-     * Because an open match is marked at zero, anyone depositing while one is
-     * open buys shares at a price that already assumes the match is lost. If it
-     * is lost, they get exactly their deposit back. If it is won, they take a
-     * proportional cut of a gain they paid nothing for.
+     * While an open match was marked at zero, anyone depositing during one
+     * bought shares at a price that already assumed the match was lost. If it
+     * was lost they got their deposit back untouched; if it was won they took a
+     * cut of a gain they had paid nothing for. Downside zero, upside positive,
+     * no lock-up, no exit fee - a free option on the pool's open positions,
+     * paid for by the LPs who were already in.
      *
-     * Downside zero, upside positive, no lock-up and no exit fee. That is a
-     * free option on the pool's open positions, and it is paid for by the LPs
-     * who were already in.
+     * Now both legs move. A depositor who arrives during a match shares the
+     * loss as well as the win, which is the definition of having bought in at a
+     * fair price rather than a discount.
      */
-    function test_Finding_DepositDuringOpenMatchIsAFreeOption() public {
+    function test_DepositDuringOpenMatch_IsAFairBetNotAFreeOption() public {
         uint256 stake = _match(0, 1, MARKET_CAP);
 
         // Snapshot, take the LP-loss branch, measure.
@@ -386,9 +395,13 @@ contract ConcurrencyRacesTest is RedstoneTest {
         _settle(0, 1, stake, false);                 // LP won
         uint256 onWin = pool.maxWithdraw(b);
 
-        assertGe(onLoss, LP_CAPITAL - 1, "the downside leg must not cost the depositor anything");
-        assertGt(onWin, LP_CAPITAL, "the upside leg pays a gain that was never paid for");
-        emit log_named_decimal_uint("free option, USDC", onWin - LP_CAPITAL, 6);
+        assertLt(onLoss, LP_CAPITAL, "the downside leg now costs the depositor too");
+        assertGt(onWin,  LP_CAPITAL, "and the upside leg still pays");
+
+        // Symmetric to within the 1% fee carved out of an LP win.
+        assertApproxEqRel(LP_CAPITAL - onLoss, onWin - LP_CAPITAL, 0.02e18, "a fair bet, not an option");
+        emit log_named_decimal_uint("downside taken, USDC", LP_CAPITAL - onLoss, 6);
+        emit log_named_decimal_uint("upside taken,   USDC", onWin - LP_CAPITAL, 6);
     }
 
     /**
