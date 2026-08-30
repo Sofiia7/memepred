@@ -6,7 +6,8 @@
 #   docker compose up -d
 #   docker compose logs -f
 #
-# Backups: see ./scripts/backup-db.sh (cron-friendly).
+# Backups run inside the stack (see the db-backup service). scripts/backup-db.sh
+# is still there for a manual dump from the host.
 
 # Docker's json-file driver is unbounded by default. The keeper logs the whole
 # viem error object — Pyth calldata included, ~10 kB — on every failed tx, so a
@@ -109,6 +110,45 @@ services:
       BADGE_MINTER_KEY:          ${BADGE_MINTER_KEY}
       INDEXER_START_BLOCK:       ${INDEXER_START_BLOCK}
       CHAIN_ID:                  ${CHAIN_ID:-84532}
+
+  # Hourly pg_dump, as part of the stack rather than as a line in somebody's
+  # crontab. The script in ./scripts existed for months and was never
+  # scheduled - the only cron on this host backed up a different project - so
+  # the orders and matches history had no copy at all. A backup that depends on
+  # remembering to install it is not a backup.
+  #
+  # Dumps over the network to the postgres service rather than shelling out
+  # through `docker compose exec`, so this needs no access to the docker
+  # socket. Same major version as the server, or pg_dump refuses.
+  db-backup:
+    logging: *default-logging
+    image: postgres:16-alpine
+    restart: unless-stopped
+    depends_on:
+      postgres: { condition: service_healthy }
+    environment:
+      PGHOST:     postgres
+      PGUSER:     ${POSTGRES_USER:-memepred}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB:-memepred}
+    volumes:
+      - ./backups:/backups
+    # Written to .part and moved into place only on success, so a dump that
+    # dies halfway can never be mistaken for a good one by the pruner or by
+    # whoever is restoring at 3am. Kept 30 days.
+    command: >
+      sh -c 'while true; do
+        ts=$$(date -u +%Y%m%d-%H%M%S);
+        if pg_dump | gzip > "/backups/flipthememe-$$ts.sql.gz.part"; then
+          mv "/backups/flipthememe-$$ts.sql.gz.part" "/backups/flipthememe-$$ts.sql.gz";
+          echo "backup ok: flipthememe-$$ts.sql.gz";
+        else
+          echo "backup FAILED at $$ts"; rm -f "/backups/flipthememe-$$ts.sql.gz.part";
+        fi;
+        find /backups -name "flipthememe-*.sql.gz" -mmin +43200 -delete;
+        find /backups -name "*.sql.gz.part"        -mmin +180   -delete;
+        sleep 3600;
+      done'
 
   caddy:
     logging: *default-logging

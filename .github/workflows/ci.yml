@@ -192,6 +192,33 @@ jobs:
         run: pnpm exec graph build
 
   # ─────────────────────────────────────────────────────────────
+  # 4b. WORKERS — the edge geo-block and the off-box watchdog.
+  #     Nothing checked these at all until now, while the three most
+  #     recent commits on this branch were all watchdog bugfixes and the
+  #     watchdog is the only thing that notices production dying.
+  # ─────────────────────────────────────────────────────────────
+  workers:
+    name: workers (typecheck)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with: { version: '${{ env.PNPM_VERSION }}' }
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: pnpm
+
+      - name: pnpm install
+        run: pnpm install --frozen-lockfile
+
+      - name: typecheck
+        working-directory: workers
+        run: pnpm run typecheck
+
+  # ─────────────────────────────────────────────────────────────
   # 5. DEPENDENCY AUDIT — informational only (not in ci-passed's
   #    `needs`). A new transitive-dep advisory shouldn't silently block
   #    an unrelated hotfix merge; review findings manually instead.
@@ -225,7 +252,7 @@ jobs:
   ci-passed:
     name: ci-passed
     if: always()
-    needs: [contracts, backend, frontend, subgraph]
+    needs: [contracts, backend, frontend, subgraph, workers]
     runs-on: ubuntu-latest
     steps:
       - name: assert all green
@@ -233,7 +260,7 @@ jobs:
           if [ "${{ needs.contracts.result }}" != "success" ] \
           || [ "${{ needs.backend.result   }}" != "success" ] \
           || [ "${{ needs.frontend.result  }}" != "success" ] \
-          || [ "${{ needs.subgraph.result  }}" != "success" ]; then
+          || [ "${{ needs.subgraph.result  }}" != "success" ]           || [ "${{ needs.workers.result   }}" != "success" ]; then
             echo "one or more jobs failed"
             exit 1
           fi

@@ -427,8 +427,22 @@ export default {
       return Response.json({ sent, channels: sent.length })
     }
 
-    // Manual run, for verifying the wiring without waiting for the cron.
+    /**
+     * Manual run, for verifying the wiring without waiting for the cron.
+     *
+     * Behind the same key as /test-alert. A tick writes to KV, the free tier
+     * allows 1,000 writes a day, and this Worker is the only thing spending
+     * them - Cloudflare already e-mailed once about hitting half the budget on
+     * cron alone. Anyone who learned this URL could loop it, exhaust the day's
+     * writes, and leave the watchdog unable to record state: the alarm system
+     * silenced from outside, which is a worse outcome than the inconvenience
+     * of needing a key to run it by hand. GET / still reports state to anyone,
+     * and costs nothing.
+     */
     if (url.pathname === '/check') {
+      if (!env.TEST_KEY || url.searchParams.get('key') !== env.TEST_KEY) {
+        return new Response('not found', { status: 404 })
+      }
       const state = await tick(env, Date.now())
       return Response.json(state, { status: state.status === 'down' ? 503 : 200 })
     }
