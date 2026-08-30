@@ -102,6 +102,28 @@ interface DayStat {
   day:      string
   checks:   number
   failures: number
+  /**
+   * KV writes actually performed today, counted rather than inferred.
+   *
+   * The free tier allows 1,000 a day and this Worker is the only thing
+   * spending them. Nobody was counting when a put-per-tick quietly reached 72%
+   * of that cap, and the first anyone knew was an e-mail from Cloudflare - so
+   * the number that matters now gets measured instead of reasoned about.
+   */
+  writes:   number
+  /**
+   * Wall-clock time this day that nobody actually checked, in ms.
+   *
+   * Counting quiet checks from elapsed time has one failure mode and it is a
+   * bad one: if the cron stops, the next write credits the whole silent gap as
+   * successful checks and the soak number becomes fiction. Anything longer than
+   * one quiet interval plus a tick is therefore not counted as checks at all -
+   * it is recorded here, where it reads as a hole in the coverage rather than
+   * as uptime.
+   */
+  unobservedMs: number
+  /** How many times coverage was lost, so one long gap reads differently from many. */
+  gaps:     number
 }
 
 interface State {
@@ -231,12 +253,23 @@ async function tick(env: Env, now: number): Promise<State> {
   const today = utcDay(now)
   const days  = [...(prev.days ?? [])]
   if (!days.length || days[days.length - 1].day !== today) {
-    days.push({ day: today, checks: 0, failures: 0 })
+    days.push({ day: today, checks: 0, failures: 0, writes: 0, unobservedMs: 0, gaps: 0 })
   }
   const cur     = days[days.length - 1]
   const gap     = prev.lastWriteAt ? now - prev.lastWriteAt : CRON_MS
-  const ran     = Math.max(1, Math.round(gap / CRON_MS))
   const wasDown = prev.status === 'down'
+
+  // The most ticks a healthy gap can contain: one quiet interval, plus the tick
+  // that crosses it. More than that means the cron did not run, and those
+  // minutes were not watched by anything - so they are not checks.
+  const MAX_GAP_TICKS = Math.round((QUIET_WRITE_MS + CRON_MS) / CRON_MS)
+  const raw = Math.max(1, Math.round(gap / CRON_MS))
+  const ran = Math.min(raw, MAX_GAP_TICKS)
+  if (raw > MAX_GAP_TICKS) {
+    cur.unobservedMs = (cur.unobservedMs ?? 0) + (gap - MAX_GAP_TICKS * CRON_MS)
+    cur.gaps         = (cur.gaps ?? 0) + 1
+    console.warn(`[watchdog] ${Math.round(gap / 60_000)} min gap since last write - cron missed runs, not counting them as checks`)
+  }
   cur.checks += ran
   // A gap between writes is homogeneous, because every status change writes
   // immediately: if it was down at both ends, every tick in between was a
@@ -343,6 +376,9 @@ async function tick(env: Env, now: number): Promise<State> {
 
   if (mustWrite) {
     next.lastWriteAt = now
+    // Counted before the put so the stored value includes itself; a record
+    // written before this field existed resumes from 0 rather than NaN.
+    cur.writes = (cur.writes ?? 0) + 1
     await env.WATCHDOG.put(STATE_KEY, JSON.stringify(next))
   }
   return next
@@ -404,11 +440,27 @@ export default {
       failures:      failed,
       uptimePct:     checks ? Number((100 * (checks - failed) / checks).toFixed(4)) : null,
       longestDownMs: state.longestDownMs ?? 0,
+      // Time nobody watched. Uptime above is measured over observed minutes
+      // only, so this is the number that says how much the percentage is
+      // actually about.
+      unobservedMs:  days.reduce((n, d) => n + (d.unobservedMs ?? 0), 0),
+      coverageGaps:  days.reduce((n, d) => n + (d.gaps ?? 0), 0),
       perDay:        days,
     }
 
+    // lastCheckAt is only as fresh as the last write, because quiet checks do
+    // not persist. Said out loud here so "the timestamp stopped moving" is not
+    // mistaken for "the cron died" - `stale` is the field that answers that.
+    const todayStat = days[days.length - 1]
+    const kv = {
+      writesToday: todayStat?.writes ?? 0,
+      dailyLimit:  1000,
+      percentUsed: Math.round(((todayStat?.writes ?? 0) / 1000) * 100),
+      note: 'checks run every 2 min; state persists at most every 10 (QUIET_WRITE_MS)',
+    }
+
     return Response.json(
-      { ...state, stale, soak },
+      { ...state, stale, soak, kv },
       {
         status:  state.status === 'down' || stale ? 503 : 200,
         headers: { 'cache-control': 'no-store' },
