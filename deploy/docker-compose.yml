@@ -15,6 +15,10 @@
 # have filled the disk (and taken down the other project sharing this VPS)
 # in about a month. Cap every service; 20 MB x 5 files is far more history
 # than anyone reads, and bounds the whole stack at ~500 MB.
+# Memory ceilings on every service. This VPS is shared with an unrelated site,
+# and nothing here was bounded: a keeper leak or a Postgres runaway would take
+# the neighbour down with it. Sized against measured idle use with room to
+# spare, not tuned - the point is that a ceiling exists.
 x-logging: &default-logging
   driver: json-file
   options:
@@ -23,6 +27,7 @@ x-logging: &default-logging
 
 services:
   postgres:
+    mem_limit: 1g
     logging: *default-logging
     image: timescale/timescaledb:latest-pg16
     restart: unless-stopped
@@ -42,6 +47,7 @@ services:
       - "127.0.0.1:5432:5432"
 
   redis:
+    mem_limit: 256m
     logging: *default-logging
     image: redis:7-alpine
     restart: unless-stopped
@@ -52,6 +58,7 @@ services:
       - "127.0.0.1:6379:6379"
 
   backend:
+    mem_limit: 768m
     logging: *default-logging
     build:
       context:    ../backend
@@ -83,6 +90,7 @@ services:
       - "127.0.0.1:3001:3001"
 
   keeper:
+    mem_limit: 768m
     logging: *default-logging
     build:
       context:    ../backend
@@ -121,6 +129,7 @@ services:
   # through `docker compose exec`, so this needs no access to the docker
   # socket. Same major version as the server, or pg_dump refuses.
   db-backup:
+    mem_limit: 256m
     logging: *default-logging
     image: postgres:16-alpine
     restart: unless-stopped
@@ -151,6 +160,7 @@ services:
       done'
 
   caddy:
+    mem_limit: 128m
     logging: *default-logging
     image: caddy:2-alpine
     restart: unless-stopped

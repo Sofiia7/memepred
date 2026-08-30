@@ -18,6 +18,7 @@ export function GenesisPage() {
   const [withdrawAmount, setWithdrawAmount] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [isWithdrawing, setIsWithdrawing] = useState(false)
+  const [isClaiming, setIsClaiming] = useState(false)
   const [actionError, setActionError] = useState<string>()
 
   const { data: stats, refetch: refetchStats } = useReadContract({
@@ -147,6 +148,12 @@ export function GenesisPage() {
 
   async function handleClaimFees() {
     setActionError(undefined)
+    // Guarded like deposit and withdraw already are. Without it a second click
+    // while the wallet prompt is open sends a second claim, and the second one
+    // reverts on "nothing to claim" after the first lands - a confusing error
+    // for a user who did nothing wrong, and a wasted fee.
+    if (isClaiming) return
+    setIsClaiming(true)
     try {
       const chainCheck = await ensureChain()
       if (!chainCheck.ok) { setActionError(chainCheck.error); return }
@@ -158,6 +165,8 @@ export function GenesisPage() {
       refetchAll()
     } catch (err: any) {
       setActionError(err?.shortMessage || err?.message || 'Claim fees failed')
+    } finally {
+      setIsClaiming(false)
     }
   }
 
@@ -217,9 +226,14 @@ export function GenesisPage() {
             </div>
           </div>
           {myPending > 0 && (
-            <button className="cta" style={{ marginBottom: 8 }} onClick={handleClaimFees}>
-              <span className="basesq" />
-              CLAIM ${myPending.toFixed(2)}
+            <button
+              className={'cta' + (isClaiming ? ' disabled' : '')}
+              style={{ marginBottom: 8 }}
+              disabled={isClaiming}
+              onClick={handleClaimFees}
+            >
+              {isClaiming ? <span className="spinner" /> : <span className="basesq" />}
+              {isClaiming ? 'CLAIMING…' : `CLAIM $${myPending.toFixed(2)}`}
             </button>
           )}
 
