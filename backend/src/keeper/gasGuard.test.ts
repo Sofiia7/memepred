@@ -15,8 +15,11 @@ beforeEach(() => {
   clock = NOON
   deps = {
     getMaxFeePerGas: async () => fee,
-    getSpentWei:     async (day) => spent[day] ?? 0n,
-    addSpentWei:     async (day, wei) => { spent[day] = (spent[day] ?? 0n) + wei },
+    getSpentWei:     async (day, priority) => spent[`${day}:${priority}`] ?? 0n,
+    addSpentWei:     async (day, priority, wei) => {
+      const k = `${day}:${priority}`
+      spent[k] = (spent[k] ?? 0n) + wei
+    },
     now:             () => clock,
   }
 })
@@ -54,19 +57,19 @@ describe('fee ceiling', () => {
 
 describe('daily budget', () => {
   it('skips routine work once the day is spent', async () => {
-    spent['2026-08-28'] = cfg.dailyBudgetWei
+    spent['2026-08-28:routine'] = cfg.dailyBudgetWei
 
     expect(await guard().check('routine')).toMatch(/daily gas budget/)
   })
 
   it('still settles after the budget is gone', async () => {
-    spent['2026-08-28'] = cfg.dailyBudgetWei * 10n
+    spent['2026-08-28:routine'] = cfg.dailyBudgetWei * 10n
 
     expect(await guard().check('critical')).toBeNull()
   })
 
   it('resets at UTC midnight rather than 24h after the first spend', async () => {
-    spent['2026-08-28'] = cfg.dailyBudgetWei
+    spent['2026-08-28:routine'] = cfg.dailyBudgetWei
     const g = guard()
     expect(await g.check('routine')).not.toBeNull()
 
@@ -77,17 +80,55 @@ describe('daily budget', () => {
   it('bills actual spend, not the pinned gas limit', async () => {
     const g = guard()
     // 300k gas actually burned at 0.006 gwei, against a 500k pinned limit.
-    await g.record(300_000n, 6_000_000n)
+    await g.record(300_000n, 6_000_000n, 0n, 'routine')
 
-    expect(spent['2026-08-28']).toBe(1_800_000_000_000n)
+    expect(spent['2026-08-28:routine']).toBe(1_800_000_000_000n)
   })
 
   it('accumulates across transactions within the same day', async () => {
     const g = guard()
-    await g.record(300_000n, 6_000_000n)
-    await g.record(200_000n, 6_000_000n)
+    await g.record(300_000n, 6_000_000n, 0n, 'routine')
+    await g.record(200_000n, 6_000_000n, 0n, 'routine')
 
-    expect(spent['2026-08-28']).toBe(3_000_000_000_000n)
+    expect(spent['2026-08-28:routine']).toBe(3_000_000_000_000n)
+  })
+})
+
+/**
+ * The budget exists to stop a gas spike draining the wallet on discretionary
+ * work. It was doing something else as well: critical sends were billed into
+ * the same counter that gates routine sends, so a heavy settlement day spent
+ * the routine allowance and stopped on-chain price recording for the rest of
+ * the UTC day.
+ *
+ * That is a loop. recordPrice is what fills the TWAP history, the TWAP is what
+ * OracleResolver settles against, and a thin history is what makes settlement
+ * revert in simulation. The cost control could therefore cause the settlement
+ * outage it is forbidden from causing - and it would surface only as a warn.
+ */
+describe('critical spend and the routine budget', () => {
+  it('keeps pushing prices after a day of heavy settlement', async () => {
+    const g = guard()
+    // 400M gas at 0.006 gwei = 2.4e15 wei, past a 2e15 budget, all of it
+    // settlements and refunds - work that is never blocked by design.
+    await g.record(400_000_000n, 6_000_000n, 0n, 'critical')
+
+    expect(await g.check('routine')).toBeNull()
+  })
+
+  it('still stops routine work once routine work has spent the day', async () => {
+    const g = guard()
+    await g.record(400_000_000n, 6_000_000n, 0n, 'routine')
+
+    expect(await g.check('routine')).toMatch(/daily gas budget/)
+  })
+
+  it('never blocks critical work whatever either counter says', async () => {
+    const g = guard()
+    await g.record(400_000_000n, 6_000_000n, 0n, 'routine')
+    await g.record(400_000_000n, 6_000_000n, 0n, 'critical')
+
+    expect(await g.check('critical')).toBeNull()
   })
 })
 
@@ -170,15 +211,15 @@ describe('OP-stack L1 data fee', () => {
    */
   it('bills the L1 fee on top of L2 execution', async () => {
     const g = guard()
-    await g.record(300_000n, 6_000_000n, 6_000_000_000n)
+    await g.record(300_000n, 6_000_000n, 6_000_000_000n, 'routine')
 
-    expect(spent['2026-08-28']).toBe(1_800_000_000_000n + 6_000_000_000n)
+    expect(spent['2026-08-28:routine']).toBe(1_800_000_000_000n + 6_000_000_000n)
   })
 
   it('treats a missing L1 fee as zero rather than poisoning the counter', async () => {
     const g = guard()
-    await g.record(300_000n, 6_000_000n)
+    await g.record(300_000n, 6_000_000n, 0n, 'routine')
 
-    expect(spent['2026-08-28']).toBe(1_800_000_000_000n)
+    expect(spent['2026-08-28:routine']).toBe(1_800_000_000_000n)
   })
 })

@@ -12,14 +12,22 @@
  * Two limits, one rule about who they apply to:
  *
  *   fee ceiling    a per-transaction cap on maxFeePerGas
- *   daily budget   a cap on total ETH burned per UTC day
+ *   daily budget   a cap on ETH burned per UTC day on routine work
  *
  * Both apply to ROUTINE work only - price heartbeats, market rollovers. A
  * price push that waits for cheaper gas costs freshness. A settlement that
  * waits leaves somebody's money locked in a market that already resolved, and
  * a cost control that can strand user funds is not a cost control, it is an
- * outage with a budget attached. CRITICAL work is never blocked; it is logged
- * loudly and billed against the same counter so the number stays honest.
+ * outage with a budget attached. CRITICAL work is never blocked, only logged.
+ *
+ * The two kinds of spend are counted separately, and that is the point rather
+ * than bookkeeping tidiness. They shared a counter once, so a heavy settlement
+ * day spent the routine allowance and stopped on-chain price recording for the
+ * rest of the UTC day - and recordPrice is what fills the TWAP history that
+ * OracleResolver settles against, so a thin history makes settlement revert in
+ * simulation. The budget could therefore cause exactly the settlement outage it
+ * is forbidden from causing. Unbounded critical spend is bounded by the wallet
+ * balance instead, which the watchdog reports days before it runs out.
  *
  * The guard fails open. If the RPC will not quote a fee, work proceeds: the
  * pinned per-transaction gas limits already bound the damage, and a guard that
@@ -32,8 +40,9 @@ export type Priority = 'critical' | 'routine'
 export interface GasGuardDeps {
   /** Current maxFeePerGas the chain would charge, in wei. */
   getMaxFeePerGas: () => Promise<bigint>
-  getSpentWei:     (day: string) => Promise<bigint>
-  addSpentWei:     (day: string, wei: bigint) => Promise<void>
+  /** Spend on one kind of work for one UTC day. Kinds are counted apart. */
+  getSpentWei:     (day: string, priority: Priority) => Promise<bigint>
+  addSpentWei:     (day: string, priority: Priority, wei: bigint) => Promise<void>
   now:             () => number
 }
 
@@ -52,8 +61,18 @@ export interface GasGuardState {
 export interface GasGuard {
   /** Null to proceed; a human-readable reason to skip. */
   check:  (priority: Priority) => Promise<string | null>
-  /** Bill an actual receipt against today's budget. */
-  record: (gasUsed: bigint, effectiveGasPrice: bigint, l1FeeWei?: bigint) => Promise<void>
+  /**
+   * Bill an actual receipt against today's spend for that kind of work.
+   * `priority` is required: a default here would quietly mis-bill settlements
+   * into the allowance that gates price recording, which is the bug this
+   * parameter exists to prevent.
+   */
+  record: (
+    gasUsed: bigint,
+    effectiveGasPrice: bigint,
+    l1FeeWei: bigint,
+    priority: Priority,
+  ) => Promise<void>
   state:  () => GasGuardState
 }
 
@@ -95,7 +114,9 @@ export function createGasGuard(deps: GasGuardDeps, cfg: GasGuardConfig): GasGuar
 
     const overCeiling = fee > cfg.maxFeeWei
     const day    = utcDay(deps.now())
-    const spent  = await deps.getSpentWei(day)
+    // Routine spend only. Settlements are never blocked, so counting them here
+    // would only ever serve to block price pushes.
+    const spent  = await deps.getSpentWei(day, 'routine')
     const overBudget = spent >= cfg.dailyBudgetWei
 
     const why = overCeiling
@@ -118,7 +139,12 @@ export function createGasGuard(deps: GasGuardDeps, cfg: GasGuardConfig): GasGuar
     return why
   }
 
-  async function record(gasUsed: bigint, effectiveGasPrice: bigint, l1FeeWei = 0n): Promise<void> {
+  async function record(
+    gasUsed: bigint,
+    effectiveGasPrice: bigint,
+    l1FeeWei: bigint,
+    priority: Priority,
+  ): Promise<void> {
     // The receipt, not the pinned limit. Unused gas is never charged, and
     // billing the limit would show a budget three times larger than reality.
     //
@@ -126,7 +152,7 @@ export function createGasGuard(deps: GasGuardDeps, cfg: GasGuardConfig): GasGuar
     // in gasUsed * effectiveGasPrice at all. It measured 0.03% of a Base
     // Sepolia market creation on 2026-08-28 - negligible today, and exactly
     // the kind of quietly-omitted term that makes a budget wrong later.
-    await deps.addSpentWei(utcDay(deps.now()), gasUsed * effectiveGasPrice + l1FeeWei)
+    await deps.addSpentWei(utcDay(deps.now()), priority, gasUsed * effectiveGasPrice + l1FeeWei)
   }
 
   return { check, record, state: () => ({ throttled, reason, lastFeeWei }) }

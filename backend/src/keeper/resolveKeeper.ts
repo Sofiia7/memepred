@@ -195,7 +195,7 @@ export async function settlePendingMarkets() {
           ...fees,
         }), 'settle')
         const receipt = await publicClient.waitForTransactionReceipt({ hash })
-        await recordReceipt(receipt)
+        await recordReceipt(receipt, 'critical')
 
         // waitForTransactionReceipt resolves for reverted transactions too —
         // it waits for inclusion, not for success. Without this check the loop

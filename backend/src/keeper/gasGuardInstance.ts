@@ -34,7 +34,7 @@
 import { createPublicClient, http } from 'viem'
 import { base, baseSepolia } from 'viem/chains'
 import { redis } from '../db/redis.js'
-import { createGasGuard, parseDecimalUnits } from './gasGuard.js'
+import { createGasGuard, parseDecimalUnits, type Priority } from './gasGuard.js'
 
 const isMainnet = process.env.CHAIN_ID === '8453'
 const chain = isMainnet ? base : baseSepolia
@@ -55,9 +55,13 @@ export const gasGuard = createGasGuard(
       const fees = await publicClient.estimateFeesPerGas()
       return fees.maxFeePerGas
     },
-    getSpentWei: async (day) => BigInt((await redis.get(`gas:spent:${day}`)) ?? '0'),
-    addSpentWei: async (day, wei) => {
-      const key = `gas:spent:${day}`
+    // Keyed by kind of work as well as by day. Settlements sharing a counter
+    // with price pushes is what let a heavy settlement day stop price
+    // recording, and price recording is what settlement reads.
+    getSpentWei: async (day, priority) =>
+      BigInt((await redis.get(`gas:spent:${day}:${priority}`)) ?? '0'),
+    addSpentWei: async (day, priority, wei) => {
+      const key = `gas:spent:${day}:${priority}`
       const next = BigInt((await redis.get(key)) ?? '0') + wei
       await redis.setEx(key, GAS_SPENT_KEY_TTL_SEC, next.toString())
     },
@@ -77,6 +81,7 @@ export const gasGuard = createGasGuard(
  */
 export async function recordReceipt(
   receipt: { gasUsed: bigint; effectiveGasPrice: bigint; l1Fee?: bigint | null },
+  priority: Priority,
 ): Promise<void> {
-  await gasGuard.record(receipt.gasUsed, receipt.effectiveGasPrice, receipt.l1Fee ?? 0n)
+  await gasGuard.record(receipt.gasUsed, receipt.effectiveGasPrice, receipt.l1Fee ?? 0n, priority)
 }

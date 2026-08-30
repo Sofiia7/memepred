@@ -146,7 +146,7 @@ export async function refundExpiredOrders() {
             // Waited on so the spend is billed from the receipt rather than
             // guessed, and so a reverted refund stops being invisible.
             const receipt = await publicClient.waitForTransactionReceipt({ hash })
-            await recordReceipt(receipt)
+            await recordReceipt(receipt, 'critical')
             if (receipt.status !== 'success') {
               console.error(`  refund tx reverted: ${hash}`)
             } else {

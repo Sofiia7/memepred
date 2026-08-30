@@ -145,7 +145,7 @@ export async function recordPricesOnChain() {
         ...fees,
       }), `recordPrice:${symbol}`)
       const receipt = await publicClient.waitForTransactionReceipt({ hash })
-      await recordReceipt(receipt)
+      await recordReceipt(receipt, 'routine')
     } catch (err) {
       console.error(`on-chain recordPrice ${symbol} failed:`, err)
     }

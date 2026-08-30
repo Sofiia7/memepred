@@ -198,7 +198,7 @@ export async function createMissingMarkets() {
           gas:          800_000n,
         }), 'createMarket')
         const receipt = await publicClient.waitForTransactionReceipt({ hash })
-        await recordReceipt(receipt)
+        await recordReceipt(receipt, 'routine')
         console.log(`[marketCreator] created market feed=${feedId} dur=${dur}s tx=${hash}`)
       } catch (err) {
         console.error(`[marketCreator] createMarket failed feed=${feedId} dur=${dur}:`, err)
