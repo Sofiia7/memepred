@@ -55,6 +55,15 @@ await app.register(oracleRoutes, {
 
 app.get('/health', async () => ({ status: 'ok', ts: Date.now() }))
 
+// Proof that the edge and the origin still agree on WORKER_SECRET.
+//
+// The other two probes are edge-exempt so monitors can always reach them, which
+// means a secret that drifted apart would 403 every product route while both
+// monitors stayed green. This one is the mirror image: exempt from the country
+// block at the edge, but subject to proof-of-edge here, so it answers only when
+// the pairing works. It carries a status word and nothing else.
+app.get('/health/edge', async () => ({ status: 'ok' }))
+
 // ── GEO API (Worker-only) ──────────────────────────────────
 // Cloudflare Worker fronts the API; the worker injects X-Country and
 // proves authenticity with WORKER_SECRET. Direct calls without the secret

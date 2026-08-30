@@ -105,6 +105,12 @@ const GEO_EXEMPT_PATHS = new Set([
   // addresses, no market or user data - so exempting it discloses nothing the
   // block exists to withhold. See backend/src/routes/keeperHealth.ts.
   '/health/deep',
+  // Proof that this Worker and the origin still agree on WORKER_SECRET. Exempt
+  // from the country block so a monitor can reach it from anywhere - it is
+  // forwarded like any other path, so it still gets the secret attached, and
+  // the origin answers 200 only if that secret is the one it expects. It
+  // carries a status word and nothing else.
+  '/health/edge',
 ])
 
 export default {

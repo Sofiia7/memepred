@@ -17,12 +17,100 @@ async function build(over: Partial<Parameters<typeof registerHttpPlugins>[1]> = 
   })
   app.get('/health', async () => ({ status: 'ok' }))
   app.get('/health/deep', async () => ({ status: 'ok' }))
+  app.get('/health/edge', async () => ({ status: 'ok' }))
   app.get('/api/markets', async () => ([]))
   await app.ready()
   return app
 }
 
 beforeEach(() => { markActivity = vi.fn(async () => {}) })
+
+/**
+ * The origin is reachable directly - its IP resolves and Caddy answers for the
+ * hostname - so "the frontend never hits this directly in prod" was an
+ * aspiration, not a control. Geo-blocking lived only at the Cloudflare edge,
+ * which meant anyone who found the IP got the full API from a blocked country:
+ * markets, profile, and the signed oracle payload needed to place a bet.
+ *
+ * The origin does not re-implement the country list. The edge already refuses
+ * blocked countries before forwarding, so a request arriving with a valid
+ * worker secret has passed that check by construction. What the origin has to
+ * establish is only that the request came through the edge at all.
+ */
+describe('edge enforcement', () => {
+  it('refuses a request that did not come through the edge', async () => {
+    const app = await build()
+    const res = await app.inject({ url: '/api/markets' })
+
+    expect(res.statusCode).toBe(403)
+    await app.close()
+  })
+
+  it('serves a request the edge vouched for', async () => {
+    const app = await build()
+    const res = await app.inject({
+      url: '/api/markets',
+      headers: { 'x-worker-secret': SECRET, 'x-country': 'RS' },
+    })
+
+    expect(res.statusCode).toBe(200)
+    await app.close()
+  })
+
+  it('refuses a forged secret', async () => {
+    const app = await build()
+    const res = await app.inject({
+      url: '/api/markets',
+      headers: { 'x-worker-secret': 'not-the-secret' },
+    })
+
+    expect(res.statusCode).toBe(403)
+    await app.close()
+  })
+
+  /**
+   * Monitors reach these from outside the edge on purpose, and both are
+   * deliberately world-readable - a fixed machine word, no balances, no
+   * addresses. Requiring the edge here would blind the only external check
+   * that production is alive.
+   */
+  it.each(['/health', '/health/deep'])('leaves %s reachable without the edge', async (url) => {
+    const app = await build()
+
+    expect((await app.inject({ url })).statusCode).toBe(200)
+    await app.close()
+  })
+
+  it('does not enforce when no secret is configured, for local development', async () => {
+    const app = await build({ workerSecret: undefined })
+    const res = await app.inject({ url: '/api/markets' })
+
+    expect(res.statusCode).toBe(200)
+    await app.close()
+  })
+
+  /**
+   * The probe that makes the secret pairing observable.
+   *
+   * Both existing monitor targets are edge-exempt, so if the Worker's secret
+   * and the origin's ever drift apart, every product route would answer 403
+   * while the watchdog stayed green - a fresh version of the outage the deep
+   * probe exists to prevent. /health/edge is deliberately the other way round:
+   * geo-exempt at the edge so a monitor anywhere can reach it, and NOT
+   * edge-exempt here, so it can only answer when the pairing works. It carries
+   * nothing but a status word.
+   */
+  it('gates /health/edge on the edge, unlike the other probes', async () => {
+    const app = await build()
+
+    expect((await app.inject({ url: '/health/edge' })).statusCode).toBe(403)
+    expect((await app.inject({
+      url: '/health/edge',
+      headers: { 'x-worker-secret': SECRET },
+    })).statusCode).toBe(200)
+    await app.close()
+  })
+})
 
 describe('CORS', () => {
   it('allows the production origin', async () => {
@@ -45,7 +133,11 @@ describe('CORS', () => {
 describe('rate limiting', () => {
   it('cuts a client off past the limit', async () => {
     const app = await build()
-    const hit = () => app.inject({ url: '/api/markets', remoteAddress: '203.0.113.9' })
+    const hit = () => app.inject({
+      url: '/api/markets',
+      remoteAddress: '203.0.113.9',
+      headers: { 'x-worker-secret': SECRET },
+    })
 
     for (let i = 0; i < 3; i++) expect((await hit()).statusCode).toBe(200)
     expect((await hit()).statusCode).toBe(429)
@@ -75,18 +167,19 @@ describe('rate limiting', () => {
   /**
    * The origin answers on its own IP, so an unauthenticated CF-Connecting-IP
    * would let anyone mint a fresh bucket per request and skip rate limiting
-   * entirely.
+   * entirely. Proof-of-edge now refuses that request before the limiter ever
+   * keys it, which is the stronger version of the same guarantee; the keying
+   * rule itself is covered directly in clientKey.test.ts.
    */
-  it('ignores a spoofed client IP that does not carry the worker secret', async () => {
+  it('refuses a spoofed client IP outright rather than keying on it', async () => {
     const app = await build()
-    const hit = (ip: string) => app.inject({
+    const res = await app.inject({
       url: '/api/markets',
       remoteAddress: '10.0.0.1',
-      headers: { 'cf-connecting-ip': ip },
+      headers: { 'cf-connecting-ip': '198.51.100.99' },
     })
 
-    for (let i = 0; i < 3; i++) await hit('198.51.100.1')
-    expect((await hit('198.51.100.99')).statusCode).toBe(429)
+    expect(res.statusCode).toBe(403)
     await app.close()
   })
 })
@@ -94,7 +187,7 @@ describe('rate limiting', () => {
 describe('user-presence hook', () => {
   it('counts a real product request as somebody being here', async () => {
     const app = await build()
-    await app.inject({ url: '/api/markets' })
+    await app.inject({ url: '/api/markets', headers: { 'x-worker-secret': SECRET } })
 
     expect(markActivity).toHaveBeenCalledTimes(1)
     await app.close()

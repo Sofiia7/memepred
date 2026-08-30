@@ -82,6 +82,11 @@ const CHECKS: Check[] = [
   // in the alert body, which is the difference between restarting a container
   // and topping up a wallet.
   { name: 'api',      url: 'https://api.flipthememe.com/health',      hard: true },
+  // The edge-to-origin secret pairing. Both probes above are edge-exempt, so a
+  // secret that drifted would leave them green while every product route
+  // answered 403 - the API would be down for every real user and no monitor
+  // would say so.
+  { name: 'edge',     url: 'https://api.flipthememe.com/health/edge', hard: true },
   { name: 'frontend', url: 'https://flipthememe.com/',                hard: true },
 ]
 

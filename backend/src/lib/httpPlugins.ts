@@ -34,6 +34,21 @@ export const PRESENCE_IGNORED = new Set([
   '/api/geo/config',
 ])
 
+/**
+ * Paths served to callers that did not come through the Cloudflare Worker.
+ *
+ * Only the two probes an external monitor has to be able to reach. Both are
+ * already geo-exempt at the edge and deliberately world-readable - a fixed
+ * machine word, no balances, no addresses, no user or market data - so serving
+ * them from the bare origin discloses nothing the block exists to withhold.
+ * Requiring the edge here would blind the only outside check that production
+ * is alive.
+ */
+export const EDGE_EXEMPT_PATHS = new Set([
+  '/health',
+  '/health/deep',
+])
+
 export interface HttpPluginOpts {
   corsOrigins:   string[]
   workerSecret?: string
@@ -52,6 +67,36 @@ export async function registerHttpPlugins(app: FastifyInstance, opts: HttpPlugin
     timeWindow:   '1 minute',
     keyGenerator: makeClientKey(opts.workerSecret),
   })
+
+  // ── PROOF OF EDGE ────────────────────────────────────────
+  // The country block lives in the Cloudflare Worker, and the Worker refuses
+  // blocked countries before it forwards anything. That is only a control if
+  // the origin cannot be addressed around it - and it can: the IP resolves and
+  // Caddy answers for the hostname, which is how the full API, including the
+  // signed payload needed to place a bet, was reachable from a blocked country
+  // by anyone who found it.
+  //
+  // The origin deliberately does not re-implement the country list. A request
+  // carrying the shared secret has already passed the edge's check by
+  // construction; a request without it did not come through the edge at all,
+  // and that is the only question the origin has to answer.
+  if (opts.workerSecret) {
+    const secret = opts.workerSecret
+    app.addHook('onRequest', async (req, reply) => {
+      if (req.method === 'OPTIONS') return
+      if (EDGE_EXEMPT_PATHS.has(req.url.split('?')[0])) return
+      if (req.headers['x-worker-secret'] !== secret) {
+        return reply.code(403).send({ error: 'direct_origin_access' })
+      }
+    })
+  } else {
+    // Local development, where there is no Worker in front. Loud because the
+    // same condition in production would silently remove the geo control.
+    app.log.warn(
+      'WORKER_SECRET is not set: serving the API without proof-of-edge. ' +
+      'In production this disables geo-blocking entirely.',
+    )
+  }
 
   app.addHook('onRequest', async (req) => {
     if (req.method === 'OPTIONS') return
