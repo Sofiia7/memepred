@@ -11,8 +11,6 @@ type OrderStatusType = 'pending' | 'matched' | 'settled' | 'claimed' | 'refunded
  */
 export function useOrderStatus(marketAddress: Address, orderId: bigint) {
   const [status, setStatus] = useState<OrderStatusType>('pending')
-  const [matchedAt, setMatchedAt] = useState<number>()
-  const [settleAt,  setSettleAt]  = useState<number>()
   const [payout,    setPayout]    = useState<bigint>()
   const [isLpMatch, setIsLpMatch] = useState(false)
 
@@ -24,6 +22,21 @@ export function useOrderStatus(marketAddress: Address, orderId: bigint) {
     args:         [orderId],
     query:        { enabled: orderId > 0n }
   })
+
+  // The match this order belongs to, for its settleAt. Read rather than held:
+  // settleAt used to be useState with no setter anywhere, so it was undefined
+  // forever and the 24h "recover my stake" button could never appear. Derived
+  // values have no setter to forget.
+  const matchId = order?.matchId ?? 0n
+  const { data: match } = useReadContract({
+    address:      marketAddress,
+    abi:          ORDERBOOK_MARKET_ABI,
+    functionName: 'getMatch',
+    args:         [matchId],
+    query:        { enabled: matchId > 0n }
+  })
+
+  const settleAt = match ? Number(match.settleAt) : undefined
 
   // Sync status from order data
   useEffect(() => {
@@ -89,21 +102,9 @@ export function useOrderStatus(marketAddress: Address, orderId: bigint) {
     }
   })
 
-  // Countdown timer to refund if pending
-  const [secondsLeft, setSecondsLeft] = useState(300) // 5 min
-
-  useEffect(() => {
-    if (status !== 'pending') return
-    const interval = setInterval(() => {
-      setSecondsLeft(s => Math.max(0, s - 1))
-    }, 1000)
-    return () => clearInterval(interval)
-  }, [status])
-
   return {
     status,
-    secondsLeft,   // until auto-refund if pending
-    matchedAt,
+    /** Match deadline, so callers can tell an overdue match from a lost one. */
     settleAt,
     payout,
     isLpMatch,

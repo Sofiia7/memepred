@@ -46,7 +46,7 @@ export function OrderStatusCard({
   onEmergencyRefund,
   txPending,
 }: Props) {
-  const { status, secondsLeft, isLpMatch, settleAt, matchId, refetch } =
+  const { status, isLpMatch, settleAt, matchId } =
     useOrderStatus(marketAddress, orderId)
 
   // Re-read order details (full struct, including filled & unmatchedRefunded).
