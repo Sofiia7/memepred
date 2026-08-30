@@ -55,10 +55,25 @@ export function ReferPage() {
           Earn on every friend you invite
         </div>
         <h3 className="gh-title">
-          Get <em>40%</em> of the protocol fee from every bet your friends place.
+          Get <em>40%</em> of the protocol fee your friends' bets generate.
         </h3>
         <div className="gh-sub">
-          Share your link. Once someone bets using it, they're yours forever - you earn a cut of their fees for as long as they trade on FlipTheMeme.
+          Share your link. Once someone bets using it, they're yours forever - you
+          earn on their bets for as long as they trade on FlipTheMeme.
+        </div>
+        {/*
+          Said plainly because it is currently the whole story: the protocol fee
+          is 0% today, so a referral earns nothing yet. The 1% charged when you
+          beat the LP pool is not the protocol fee - it goes to the pool and
+          never reaches a referrer. Promising "40% of every bet" while the real
+          number is zero is the kind of thing this project has already decided
+          not to do about the audit and the cap.
+        */}
+        <div className="gh-sub" style={{ marginTop: 8, opacity: 0.75 }}>
+          Worth knowing: the protocol fee is <b>0% right now</b>, so referrals
+          currently earn nothing. Peer-matched bets carry no protocol fee at all.
+          Your link keeps working, and starts paying if and when a fee is
+          switched on - the live rate is always in the contract.
         </div>
       </div>
 

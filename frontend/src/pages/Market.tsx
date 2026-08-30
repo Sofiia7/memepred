@@ -29,9 +29,13 @@ export function Market() {
   const closeTime = market?.closeTime ?? 0
 
   const { upDepth, downDepth, probUp } = useOdds(marketAddress)
-  const { display: livePrice, raw: pythRaw } = usePythPrice(feedId)
+  const { display: livePrice, raw: pythRaw, stale: priceStale } = usePythPrice(feedId)
   const { data: candles } = useCandles(feedId ?? '', tf)
   const { data: probHistory } = useProbHistory(marketAddress)
+  // Above the early return, not inside the JSX below it. Called after the
+  // return, this is a hook whose presence depends on a prop - the Rules-of-
+  // Hooks violation that white-screened MarketCard and Order once each.
+  const nowSec = useNow(1000)
 
   if (!marketAddress) return <div className="empty-state">Invalid market</div>
   const meta = symbolMeta(symbol)
@@ -46,7 +50,7 @@ export function Market() {
         ← BACK
       </button>
 
-      <ScreenTitle title={`${symbol} / USD`} live liveLabel={countdownFrom(closeTime, useNow(1000))} liveColor="var(--up)" />
+      <ScreenTitle title={`${symbol} / USD`} live liveLabel={countdownFrom(closeTime, nowSec)} liveColor="var(--up)" />
 
       <div className="market" style={{ marginBottom: 12 }}>
         <div className="coin">
@@ -59,7 +63,12 @@ export function Market() {
           </div>
           <div className="coin-r">
             <div className="coin-price">${formatPrice(livePrice)}</div>
-            <div className="coin-chg"><Chev dir="up" /> live</div>
+            {/* A frozen price labelled "live" is a claim the app cannot
+                support: a failing fetch deliberately keeps the last value on
+                screen, which is right, but it has to say so. */}
+            <div className="coin-chg" style={priceStale ? { opacity: 0.6 } : undefined}>
+              {priceStale ? 'last known' : <><Chev dir="up" /> live</>}
+            </div>
           </div>
         </div>
       </div>

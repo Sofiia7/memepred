@@ -25,6 +25,13 @@ export const MAX_BET_USD = 100
 // number to know when to offer that.
 export const SETTLE_GRACE_SEC = 24 * 60 * 60
 
+// Mirrors OrderbookMarket.LP_TAKER_FEE_BPS (1%). Charged on the whole matched
+// pool when the LP pool took the other side and the user won - so a winning
+// LP-matched bet pays 1.98x the stake, not 2x. A peer match pays the full 2x.
+// The user cannot tell which they will get before placing the bet, which is why
+// the payout preview shows both ends rather than the flattering one.
+export const LP_TAKER_FEE_BPS = 100
+
 // ── ABIs ───────────────────────────────────────────────────
 
 // Legacy PvPMarket ABI (kept for backward compatibility)

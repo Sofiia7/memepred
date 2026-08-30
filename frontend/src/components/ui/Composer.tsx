@@ -5,7 +5,7 @@ import { usePlaceBet } from '../../hooks/usePlaceBet'
 import { usePythPrice } from '../../hooks/usePythPrice'
 import { useConnectWallet } from '../../hooks/useConnectWallet'
 import { formatDuration } from '../../lib/symbols'
-import { MIN_BET_USD, MAX_BET_USD } from '../../lib/contracts'
+import { MIN_BET_USD, MAX_BET_USD, LP_TAKER_FEE_BPS } from '../../lib/contracts'
 import { Chev } from './icons'
 import type { PickedBet } from './MarketCard'
 
@@ -43,14 +43,20 @@ export function Composer({ picked, onClear }: { picked: PickedBet | null; onClea
     return () => clearTimeout(t)
   }, [bet.isConfirmed, bet.orderId, picked, navigate, onClear])
 
-  // Real payout is always 2x the matched stake (winner takes the matched
-  // loser's stake), minus whichever fee applies - never a function of the
-  // queue-depth "lean" shown on the UP/DOWN buttons. Showing odds-implied
-  // payout here previously misled users into expecting e.g. 3.3x on a 30%
-  // lean and getting 2x instead.
-  const payout2x = useMemo(() => {
+  // Payout is a function of the matched stake, never of the queue-depth "lean"
+  // shown on the UP/DOWN buttons - an odds-implied preview here once had users
+  // expecting 3.3x on a 30% lean and getting 2x.
+  //
+  // Both ends, because the user cannot tell in advance which they will get.
+  // A peer match pays the full 2x; if the LP pool took the other side, the 1%
+  // taker fee comes off the winning pool and it pays 1.98x. Showing the 2x
+  // alone overstated an LP-matched win by up to $2 at the 100 USDC cap, right
+  // above a fee line that already said the 1% existed.
+  const payout = useMemo(() => {
     if (!stake) return null
-    return (stake * 2).toFixed(2)
+    const gross = stake * 2
+    const net   = gross * (1 - LP_TAKER_FEE_BPS / 10_000)
+    return { low: net.toFixed(2), high: gross.toFixed(2) }
   }, [stake])
 
   if (!picked) {
@@ -122,7 +128,7 @@ export function Composer({ picked, onClear }: { picked: PickedBet | null; onClea
 
       <div className="payout">
         <span>Fee: 0% peer match · 1% if matched by LP pool (win only)</span>
-        <span>PAYOUT IF WON · <b>${payout2x ?? '-'}</b></span>
+        <span>PAYOUT IF WON · <b>{payout ? `$${payout.low}-$${payout.high}` : '-'}</b></span>
       </div>
     </div>
   )

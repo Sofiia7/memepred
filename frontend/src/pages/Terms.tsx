@@ -39,7 +39,7 @@ export function TermsPage() {
       </div>
 
       <h3 className="terms-h">Terms of Service</h3>
-      <div className="terms-meta">Last updated: 2026-07-25</div>
+      <div className="terms-meta">Last updated: 2026-08-30</div>
 
       <Section n="1" title="Who runs this">
         FlipTheMeme is built and operated by an individual developer, not a
@@ -55,7 +55,7 @@ export function TermsPage() {
         meme coin over a fixed window (5 min to 24h). Winners split the
         losing side's stake, minus whatever fee applies (see the live
         contract - currently 0% for peer matches, 1% only when you beat the
-        LP pool). Settlement is automatic, driven by the Pyth oracle. Nobody
+        LP pool). Settlement is automatic, driven by the RedStone oracle. Nobody
         -including the operator- picks or can alter an outcome once it's
         settled on-chain.
       </Section>
@@ -107,7 +107,7 @@ export function TermsPage() {
             - and placing many bets to get around it re-exposes you to the
             full risk. If and when an audit happens, this section will say so
             and name the auditor.</li>
-          <li><b>Oracle risk.</b> Settlement depends on Pyth price feeds.
+          <li><b>Oracle risk.</b> Settlement depends on RedStone price feeds.
             Staleness or unavailability can delay settlement or trigger a
             refund instead of a payout.</li>
           <li><b>No guaranteed counterparty.</b> If nobody's on the other
@@ -208,7 +208,7 @@ export function TermsPage() {
 
       <Section n="P3" title="Who else sees some of this">
         Cloudflare (edge routing - sees your IP, like any reverse proxy
-        would), your own wallet/RPC provider, and Pyth Network (price data
+        would), your own wallet/RPC provider, and RedStone (price data
         only, no personal data from you).
       </Section>
 

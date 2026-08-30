@@ -32,7 +32,7 @@ export function HowItWorksPage() {
           5 minutes, your stake is refunded automatically.
         </Step>
         <Step n={3} title="The market settles">
-          When the timeframe ends, the Pyth oracle price decides the winner - nobody at
+          When the timeframe ends, the RedStone oracle price decides the winner - nobody at
           FlipTheMeme picks or influences the outcome.
         </Step>
         <Step n={4} title="Winner takes the pot">
