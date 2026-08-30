@@ -1,5 +1,5 @@
 {
-  "_comment": "Sprint 5 — Mini App manifest. accountAssociation signed via Warpcast Dev Tools for flipthememe.com. `frame` dropped: current schema rejects manifests providing both `frame` and `miniapp`.",
+  "_comment": "Sprint 5 - Mini App manifest. accountAssociation signed via Warpcast Dev Tools for flipthememe.com. `frame` dropped: current schema rejects manifests providing both `frame` and `miniapp`.",
   "accountAssociation": {
     "header": "eyJmaWQiOjE2NjIyLCJ0eXBlIjoiY3VzdG9keSIsImtleSI6IjB4N0MwNjJkYjc5NEY4MjYwRjlBMkQ0OGRhQTNjQjI2N0VEMjZEODU3QSJ9",
     "payload": "eyJkb21haW4iOiJmbGlwdGhlbWVtZS5jb20ifQ",
