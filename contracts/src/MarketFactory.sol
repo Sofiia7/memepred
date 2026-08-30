@@ -67,6 +67,10 @@ contract MarketFactory is Ownable {
 
     uint256[] public allowedDurations;
 
+    /// @notice Markets the emergency stop freezes per call, newest first.
+    ///         See pauseMarketsForFeed for why it is bounded and why 64.
+    uint256 public constant PAUSE_SWEEP_LIMIT = 64;
+
     /// @notice Defense-in-depth cooldown against duplicate markets. The
     ///         off-chain keeper (marketCreator.ts) already dedupes by
     ///         querying its own DB before calling createMarket, but that DB
@@ -247,14 +251,31 @@ contract MarketFactory is Ownable {
             "not authorized"
         );
         // Order matters: stop new markets first, then freeze the live ones.
-        // The flag is the part that actually holds, since the loop only ever
-        // covers markets that already exist.
         feedPaused[feedId] = true;
         emit FeedPaused(feedId, msg.sender);
 
+        // Newest first, and only PAUSE_SWEEP_LIMIT of them.
+        //
+        // activeMarkets[feedId] is append-only - every market ever created for
+        // the feed stays in it - and this used to walk the whole array. The
+        // keeper rolls a fresh market per duration every duration/2, so the
+        // 5-minute slot alone adds hundreds of entries a day. Within about a
+        // fortnight the loop stops fitting in a block, and since the flag above
+        // is written in the same transaction, running out of gas would revert
+        // that too: the one-call emergency stop would quietly cease to exist
+        // some weeks after launch, discovered at the worst possible moment.
+        //
+        // Bounding it is safe because creation is chronological and only the
+        // newest markets can still be trading. With five durations rolling at
+        // duration/2, at most two or three markets per duration overlap, so a
+        // feed has on the order of fifteen live at once; 64 is four times that.
+        // Everything further back closed long ago and pausing it changes
+        // nothing.
         address[] storage list = activeMarkets[feedId];
-        for (uint256 i = 0; i < list.length; i++) {
-            try OrderbookMarket(list[i]).pauseByFactory() {} catch {}
+        uint256 len  = list.length;
+        uint256 stop = len > PAUSE_SWEEP_LIMIT ? len - PAUSE_SWEEP_LIMIT : 0;
+        for (uint256 i = len; i > stop; i--) {
+            try OrderbookMarket(list[i - 1]).pauseByFactory() {} catch {}
         }
     }
 

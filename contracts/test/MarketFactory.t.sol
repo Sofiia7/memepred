@@ -292,4 +292,87 @@ contract MarketFactoryTest is RedstoneTest {
         assertTrue(OrderbookMarket(m1).paused());
         assertTrue(OrderbookMarket(m2).paused());
     }
+
+    /**
+     * Give a feed `count` distinct, long-expired markets.
+     *
+     * Distinct matters: pushing one address repeatedly would leave every call
+     * after the first warm, and the gas figure these tests rest on would mean
+     * nothing. vm.etch rather than 1500 deployments keeps it quick.
+     */
+    function _seedExpiredMarkets(bytes32 feedId, uint256 count) internal {
+        bytes memory stub = address(new ExpiredMarketStub()).code;
+        for (uint256 i = 0; i < count; i++) {
+            address m = address(uint160(0x5000 + i));
+            vm.etch(m, stub);
+            factory.pushActiveMarket(feedId, m);
+        }
+    }
+
+    /**
+     * The emergency stop has to keep fitting in one transaction.
+     *
+     * activeMarkets[feedId] is append-only - every market ever created for the
+     * feed stays in it - and the sweep walked the whole thing. The keeper rolls
+     * a fresh market per duration every duration/2, so on the 5-minute slot
+     * alone that array grows by hundreds a day. Within a couple of weeks the
+     * loop no longer fits in a block, and because the flag is written in the
+     * same transaction, running out of gas would take `feedPaused` down with
+     * it: the one-call emergency stop would stop existing, silently, some time
+     * after launch.
+     */
+    function test_PauseMarketsForFeed_CostDoesNotGrowWithFeedHistory() public {
+        // History first, then the markets that are currently trading - the
+        // order createMarket actually produces, and the one the bounded sweep
+        // relies on.
+        //
+        // Both feeds hold more markets than one sweep covers; one holds seven
+        // times as many as the other. Past the bound, history length is the
+        // thing that must stop mattering.
+        _seedExpiredMarkets(FEED_PEPE, 200);
+        _seedExpiredMarkets(FEED_DOGE, 1500);
+
+        vm.startPrank(resolver);
+        address livePepe = factory.createMarket(FEED_PEPE, 15 minutes);
+        address liveDoge = factory.createMarket(FEED_DOGE, 15 minutes);
+        vm.stopPrank();
+
+        uint256 shorter = _gasToPause(FEED_PEPE);
+        uint256 longer  = _gasToPause(FEED_DOGE);
+
+        // Asserted as a ratio rather than a gas ceiling on purpose: the
+        // absolute numbers here are not the chain's, since vm.etch leaves the
+        // seeded accounts warm. What has to hold is that the sweep stops
+        // scaling with how long the feed has existed.
+        assertApproxEqRel(longer, shorter, 0.10e18, "an old feed must not cost more to stop than a newer one");
+        assertTrue(factory.feedPaused(FEED_PEPE), "the flag is the part that must always hold");
+        assertTrue(factory.feedPaused(FEED_DOGE));
+        assertTrue(OrderbookMarket(livePepe).paused(), "the markets that are actually live still get paused");
+        assertTrue(OrderbookMarket(liveDoge).paused());
+    }
+
+    function _gasToPause(bytes32 feedId) internal returns (uint256) {
+        uint256 before = gasleft();
+        factory.pauseMarketsForFeed(feedId);
+        return before - gasleft();
+    }
+
+    /**
+     * The bound is only safe because the live markets are the newest ones.
+     * Creation is chronological, so sweeping from the end reaches everything
+     * that can still be trading; the entries further back closed long ago and
+     * pausing them would change nothing.
+     */
+    function test_PauseMarketsForFeed_PausesTheNewestMarkets_NotTheOldest() public {
+        _seedExpiredMarkets(FEED_PEPE, 1500);
+        vm.startPrank(resolver);
+        address m1 = factory.createMarket(FEED_PEPE, 5 minutes);
+        address m2 = factory.createMarket(FEED_PEPE, 15 minutes);
+        vm.stopPrank();
+
+        factory.pauseMarketsForFeed(FEED_PEPE);
+
+        assertTrue(OrderbookMarket(m1).paused(), "newest markets are the ones that matter");
+        assertTrue(OrderbookMarket(m2).paused());
+    }
 }

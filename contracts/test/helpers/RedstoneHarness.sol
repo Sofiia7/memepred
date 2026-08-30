@@ -90,4 +90,33 @@ contract MarketFactoryHarness is MarketFactory {
             _referralRegistry, _multisig, bytes32(0), 0
         ));
     }
+
+    /**
+     * Fill activeMarkets with `count` long-dead entries, cheaply.
+     *
+     * Deploying thousands of real clones to reach the interesting length would
+     * take minutes; what the emergency-stop test needs is only the length. The
+     * addresses have no code, so pauseByFactory on them is a no-op inside the
+     * sweep's try/catch - which is also how a genuinely expired market behaves
+     * from the factory's point of view.
+     */
+    /**
+     * Append an entry to activeMarkets without creating a real market.
+     *
+     * The emergency-stop test needs a feed with a long history, and deploying
+     * thousands of clones to get one would take minutes. The caller supplies
+     * addresses it has already given code to - each must be a contract, since
+     * Solidity's try/catch does not catch "call to a non-contract address", and
+     * each must be distinct, or every call after the first is warm and the gas
+     * measurement stops meaning anything.
+     */
+    function pushActiveMarket(bytes32 feedId, address market) external {
+        activeMarkets[feedId].push(market);
+    }
+}
+
+/// @dev Stands in for a market that closed long ago: still deployed, still
+///      answers pauseByFactory, and pausing it changes nothing.
+contract ExpiredMarketStub {
+    function pauseByFactory() external {}
 }
