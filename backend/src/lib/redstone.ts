@@ -111,16 +111,45 @@ export function withPayload(callData: `0x${string}`, payload: string): `0x${stri
   return `${callData}${payload.startsWith('0x') ? payload.slice(2) : payload}` as `0x${string}`
 }
 
+/**
+ * The gateway itself could not be reached or would not answer.
+ *
+ * Kept distinct from "this feed has no usable price" because the two mean
+ * opposite things to the watchdog: a feed-specific fault is worth pausing that
+ * market for, while an unreachable gateway fails every feed at once and says
+ * nothing about any of them. Pausing on the latter turns someone else's outage
+ * into ours, and only the multisig can undo it.
+ */
+export class GatewayUnreachableError extends Error {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options)
+    this.name = 'GatewayUnreachableError'
+  }
+}
+
+/** GET the gateway's latest packages, or say clearly that we could not. */
+async function getLatestPackages(timeoutMs: number): Promise<Record<string, unknown[]>> {
+  const url = `${REDSTONE_GATEWAY}/v2/data-packages/latest/${REDSTONE_DATA_SERVICE}`
+  let res: Response
+  try {
+    res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) })
+  } catch (err) {
+    throw new GatewayUnreachableError('redstone gateway unreachable', { cause: err })
+  }
+  if (!res.ok) throw new GatewayUnreachableError(`redstone gateway ${res.status}`)
+  try {
+    return (await res.json()) as Record<string, unknown[]>
+  } catch (err) {
+    throw new GatewayUnreachableError('redstone gateway sent unparseable json', { cause: err })
+  }
+}
+
 /** Fetch signed packages for one feed and build the calldata payload. */
 export async function fetchPayload(
   symbol: string,
   timeoutMs = 8_000,
 ): Promise<`0x${string}`> {
-  const url = `${REDSTONE_GATEWAY}/v2/data-packages/latest/${REDSTONE_DATA_SERVICE}`
-  const res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) })
-  if (!res.ok) throw new Error(`redstone gateway ${res.status}`)
-
-  const all = (await res.json()) as Record<string, GatewayPackage[]>
+  const all = (await getLatestPackages(timeoutMs)) as Record<string, GatewayPackage[]>
   const packages = all[symbol]
   if (!packages || packages.length === 0) {
     throw new Error(`RedStone gateway served no packages for ${symbol}`)
@@ -139,11 +168,7 @@ export async function fetchPayload(
 
 /** Latest price for a feed as a plain number, for the off-chain price history. */
 export async function fetchPrice(symbol: string, timeoutMs = 8_000): Promise<number> {
-  const url = `${REDSTONE_GATEWAY}/v2/data-packages/latest/${REDSTONE_DATA_SERVICE}`
-  const res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) })
-  if (!res.ok) throw new Error(`redstone gateway ${res.status}`)
-
-  const all = (await res.json()) as Record<
+  const all = (await getLatestPackages(timeoutMs)) as Record<
     string,
     { dataPoints: { value: number }[]; signerAddress: string }[]
   >

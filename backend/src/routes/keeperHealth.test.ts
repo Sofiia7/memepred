@@ -153,6 +153,21 @@ describe('GET /health/deep', () => {
     expect(res.statusCode).toBe(200)
     await app.close()
   })
+
+  /**
+   * An oracle-side outage stops price pushes and settlement alike, but it is
+   * upstream and self-healing, and the watchdog deliberately pauses nothing
+   * over it. It still has to be visible immediately rather than only once the
+   * settlement backlog crosses an hour.
+   */
+  it('warns while no feed is answering at all', async () => {
+    const app = await build({ 'watchdog:state': snapshot({ oracleOutage: true }) })
+    const res = await app.inject({ url: '/health/deep' })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json().warn).toContain('oracle-outage')
+    await app.close()
+  })
 })
 
 /**

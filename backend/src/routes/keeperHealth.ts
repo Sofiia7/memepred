@@ -65,6 +65,8 @@ interface Snapshot {
    * parses as healthy rather than as an outage.
    */
   settlementsOverdueSecs?: number
+  /** No feed answered the watchdog's last tick: the oracle side is down. */
+  oracleOutage?:     boolean
   lastTick:          number
 }
 
@@ -92,7 +94,7 @@ type Code =
  * name a condition, never a balance or an address.
  */
 type Warn = 'keeper-eth-low' | 'resolver-eth-low' | 'feed-degraded' | 'gas-throttled'
-          | 'nonce-escalating' | 'settlements-overdue'
+          | 'nonce-escalating' | 'settlements-overdue' | 'oracle-outage'
 
 interface Verdict {
   ok:         boolean
@@ -176,6 +178,10 @@ export async function evaluateKeeperHealth(get: Reader, now: number): Promise<Ve
   if (snap.gasThrottled) warn.push('gas-throttled')
   if ((snap.escalationLevel ?? 0) > 0) warn.push('nonce-escalating')
   if (overdue >= SETTLEMENTS_WARN_SECS) warn.push('settlements-overdue')
+  // Upstream and self-healing, and the watchdog pauses nothing over it - but a
+  // dead oracle stops both price pushes and settlement, so it must be visible
+  // now rather than an hour later via the settlement backlog.
+  if (snap.oracleOutage) warn.push('oracle-outage')
 
   return { ok: true, warn, snapshot: snap, ageMs: age }
 }

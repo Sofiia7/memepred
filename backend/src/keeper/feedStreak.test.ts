@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { nextFailStreak, STALE_FAIL_LIMIT, type FeedPing } from './feedStreak.js'
+import { nextFailStreak, isSystemicOutage, STALE_FAIL_LIMIT, type FeedPing } from './feedStreak.js'
 
 /** Feed the watchdog N ticks of the same ping result and report the streak. */
 const run = (ping: FeedPing, ticks: number, from = 0) => {
@@ -46,5 +46,51 @@ describe('nextFailStreak', () => {
     let streak = run('unavailable', 2)
     streak = run('unauthenticated', 10, streak)
     expect(nextFailStreak(streak, 'unavailable')).toBe(3)
+  })
+
+  /**
+   * Same guarantee, the failure that actually happens now.
+   *
+   * The gateway being unreachable - DNS, timeout, a 502 - says nothing about
+   * any individual feed, and it fails every feed at once. Counting it would
+   * auto-pause the entire product over a blip in someone else's infrastructure,
+   * and the factory grants the keeper pause but deliberately not unpause.
+   */
+  it('never auto-pauses because we could not reach the gateway', () => {
+    expect(run('unreachable', STALE_FAIL_LIMIT * 5)).toBeLessThan(STALE_FAIL_LIMIT)
+  })
+})
+
+/**
+ * The per-feed streak cannot tell "this feed died" from "everything died",
+ * because a dead gateway advances every feed's streak in lockstep. One feed
+ * going stale while the others answer is a real, feed-specific fault worth
+ * pausing that market for. All of them going at once is our side of the wire,
+ * and pausing every market over it is a self-inflicted outage that only the
+ * multisig can undo, market by market.
+ */
+describe('isSystemicOutage', () => {
+  it('calls it systemic when no feed answered', () => {
+    expect(isSystemicOutage(['unavailable', 'unavailable'])).toBe(true)
+    expect(isSystemicOutage(['unreachable', 'unavailable', 'unreachable'])).toBe(true)
+  })
+
+  it('is not systemic while any feed still answers', () => {
+    expect(isSystemicOutage(['unavailable', 'ok'])).toBe(false)
+  })
+
+  it('is not systemic on a healthy board', () => {
+    expect(isSystemicOutage(['ok', 'ok'])).toBe(false)
+  })
+
+  /**
+   * With one feed configured the aggregate carries no information - "the only
+   * feed is down" and "everything is down" are the same observation. Fall back
+   * to the per-feed rule rather than inventing a reading; a genuinely dead
+   * single feed still needs to be pausable.
+   */
+  it('will not guess from a single feed', () => {
+    expect(isSystemicOutage(['unavailable'])).toBe(false)
+    expect(isSystemicOutage([])).toBe(false)
   })
 })

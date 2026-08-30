@@ -1,22 +1,28 @@
 /**
  * oracleWatchdog — Sprint 2.5 + 2.6
  *
- * Two responsibilities, one loop:
+ * Responsibilities, one loop:
  *
- *   1. ETH-fund monitor for the OracleResolver
- *      OracleResolver pays Pyth update fees out of its own ETH balance. If it
- *      runs dry, every settle/recordPrice will revert. We track the balance
- *      and warn / page when it drops below thresholds.
+ *   1. ETH-fund monitor for the keeper and the OracleResolver
+ *      The keeper pays for every settlement, rollover and price push. The
+ *      resolver's own balance is watched too, though RedStone charges no
+ *      update fee, so unlike the Pyth arrangement this file was written for it
+ *      no longer needs one to function.
  *
  *   2. Stale-oracle auto-pause
- *      For every whitelisted feed, ping Pyth Hermes. If a feed fails N pings
- *      in a row, call MarketFactory.pauseMarketsForFeed(feedId) via the
- *      `emergencyPauser` hot wallet. This freezes all live markets on that
- *      feed until the multisig manually unpauses, which is the right default
- *      when an oracle is misbehaving.
+ *      For every whitelisted feed, try to build the same signed payload the
+ *      keeper would push. If a feed fails N ticks in a row *while other feeds
+ *      still answer*, call MarketFactory.pauseMarketsForFeed(feedId) via the
+ *      `emergencyPauser` hot wallet, freezing that feed's live markets.
  *
- *      Unpause is intentionally NOT here: it requires multisig signing on
- *      each market.
+ *      The "while other feeds still answer" is the whole safety property. A
+ *      gateway that is simply down fails every feed at once, and pausing them
+ *      all turns an upstream blip into a total outage that only the multisig
+ *      can undo, market by market. Unpause is intentionally NOT here.
+ *
+ *   3. Settlement backlog
+ *      How far past its deadline the oldest unsettled match is, so a
+ *      settlement path that has quietly stopped reads as an outage.
  */
 import {
   createPublicClient,
@@ -27,8 +33,8 @@ import {
 import { privateKeyToAccount } from 'viem/accounts'
 import { base, baseSepolia } from 'viem/chains'
 import { CONTRACTS, SUPPORTED_FEED_IDS } from '../config.js'
-import { fetchPayload, bytes32ToFeedId } from '../lib/redstone.js'
-import { nextFailStreak, STALE_FAIL_LIMIT, type FeedPing } from './feedStreak.js'
+import { fetchPayload, bytes32ToFeedId, GatewayUnreachableError } from '../lib/redstone.js'
+import { nextFailStreak, isSystemicOutage, STALE_FAIL_LIMIT, type FeedPing } from './feedStreak.js'
 import { redis } from '../db/redis.js'
 import { pg } from '../db/pg.js'
 import { getKeeperWalletClient, escalationState } from './keeperWallet.js'
@@ -133,6 +139,9 @@ export const watchdogState = {
   // because nothing settled on-chain. Published so a settlement path that has
   // quietly stopped reads as an outage.
   settlementsOverdueSecs: 0,
+  // True when no feed answered this tick. Distinct from a per-feed fail
+  // streak: it means the oracle side is down, not that any market is stale.
+  oracleOutage:    false,
   lastTick:        0,
 }
 
@@ -190,6 +199,7 @@ export async function oracleWatchdogTick() {
         stuckNonce:        watchdogState.stuckNonce,
         escalationLevel:   watchdogState.escalationLevel,
         settlementsOverdueSecs: watchdogState.settlementsOverdueSecs,
+        oracleOutage:      watchdogState.oracleOutage,
         lastTick:          watchdogState.lastTick,
       }),
     )
@@ -285,9 +295,29 @@ async function checkFeedsAndAutoPause() {
     )
   }
 
+  // Ping everything first, then judge. A per-feed decision taken inside the
+  // loop cannot see that every other feed failed too, which is the difference
+  // between one stale feed and the gateway being down.
+  const pings = new Map<string, FeedPing>()
   for (const feedId of priceable) {
-    const ping   = await pingOracle(feedId)
-    const streak = nextFailStreak(failStreak.get(feedId) ?? 0, ping)
+    pings.set(feedId, await pingOracle(feedId))
+  }
+
+  const systemic = isSystemicOutage([...pings.values()])
+  if (systemic) {
+    console.error(
+      `[watchdog] no feed answered this tick (${priceable.length} checked) - ` +
+      `treating as an oracle-side outage: holding streaks, pausing nothing`,
+    )
+  }
+
+  for (const feedId of priceable) {
+    const ping = pings.get(feedId)!
+    // A systemic outage says nothing about any individual feed, so hold the
+    // streak exactly as a credentials failure does.
+    const streak = systemic
+      ? failStreak.get(feedId) ?? 0
+      : nextFailStreak(failStreak.get(feedId) ?? 0, ping)
     failStreak.set(feedId, streak)
 
     watchdogState.feedStatus[feedId] = {
@@ -295,12 +325,14 @@ async function checkFeedsAndAutoPause() {
       lastPausedAt: lastPauseAt.get(feedId),
     }
 
-    // Only 'unavailable' can reach the limit; see feedStreak.ts for why a
-    // credentials failure must not pause anything.
-    if (ping === 'unavailable' && streak >= STALE_FAIL_LIMIT) {
+    // Only 'unavailable' can reach the limit, and only when other feeds are
+    // still answering; see feedStreak.ts for why the rest must not pause.
+    if (!systemic && ping === 'unavailable' && streak >= STALE_FAIL_LIMIT) {
       await maybePauseFeed(feedId, streak)
     }
   }
+
+  watchdogState.oracleOutage = systemic
 }
 
 /**
@@ -316,11 +348,15 @@ async function pingOracle(feedId: string): Promise<FeedPing> {
     const payload = await fetchPayload(symbol)
     return payload.length > 2 ? 'ok' : 'unavailable'
   } catch (err) {
-    // "not enough authorised signers" is about the gateway's data, not our
-    // credentials, so it counts toward the feed's streak like any other
-    // unavailability. There is no credential to be wrong any more - which is
-    // why the 'unauthenticated' arm now only exists for the pause-safety
-    // guarantee described in feedStreak.ts.
+    // A gateway we could not reach at all says nothing about this feed, so it
+    // must not advance a streak that ends in pausing that feed's markets.
+    // "not enough authorised signers" and a missing symbol are different: the
+    // gateway answered and its data is unusable, which is the feed's own fault
+    // and exactly what the streak is counting.
+    if (err instanceof GatewayUnreachableError) {
+      console.error(`[watchdog] oracle gateway unreachable while checking ${symbol}:`, err.message)
+      return 'unreachable'
+    }
     console.error(`[watchdog] cannot build a payload for ${symbol}:`, err)
     return 'unavailable'
   }
