@@ -259,10 +259,14 @@ async function tick(env: Env, now: number): Promise<State> {
   const gap     = prev.lastWriteAt ? now - prev.lastWriteAt : CRON_MS
   const wasDown = prev.status === 'down'
 
-  // The most ticks a healthy gap can contain: one quiet interval, plus the tick
-  // that crosses it. More than that means the cron did not run, and those
-  // minutes were not watched by anything - so they are not checks.
-  const MAX_GAP_TICKS = Math.round((QUIET_WRITE_MS + CRON_MS) / CRON_MS)
+  // The most ticks a healthy gap can contain.
+  //
+  // A write lands on the first tick at or after QUIET_WRITE_MS, so the real
+  // interval between writes is 10-12 minutes, not 10 - measured at 11m37s on
+  // 2026-08-30. Two ticks of headroom on top of that absorbs schedule jitter;
+  // sizing it to exactly one tick would report a healthy watchdog as having
+  // lost coverage, which is the same species of lie in the other direction.
+  const MAX_GAP_TICKS = Math.round((QUIET_WRITE_MS + 2 * CRON_MS) / CRON_MS)
   const raw = Math.max(1, Math.round(gap / CRON_MS))
   const ran = Math.min(raw, MAX_GAP_TICKS)
   if (raw > MAX_GAP_TICKS) {
