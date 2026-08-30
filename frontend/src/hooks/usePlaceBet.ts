@@ -1,5 +1,5 @@
 /**
- * usePlaceBet — Sprint 4.1 + 4.2
+ * usePlaceBet - Sprint 4.1 + 4.2
  *
  * 4.1: Decodes OrderPlaced from the receipt logs and exposes `orderId`. UI
  *      can redirect to /order/:address/:orderId immediately after confirm.
@@ -28,7 +28,7 @@ export type Direction = 0 | 1  // 0=UP, 1=DOWN
  *
  * Sprint 5.6: bets used to attach a flat 0.0001 ETH and rely on the contract
  * refunding the excess. Refunded or not, the wallet still had to be holding it
- * at send time — so a user with exactly enough ETH for gas simply could not
+ * at send time - so a user with exactly enough ETH for gas simply could not
  * bet, and everyone else was asked to park ~$0.19 for no reason. Pyth's actual
  * fee on Base is 1 wei per update. Now we ask what it costs and send that.
  */
@@ -109,7 +109,7 @@ export function usePlaceBet({
           break
         }
       } catch {
-        // not an OrderPlaced log — skip
+        // not an OrderPlaced log - skip
       }
     }
   }, [betReceiptOk, betReceipt, marketAddress])

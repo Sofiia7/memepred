@@ -103,7 +103,7 @@ export function Market() {
       </div>
 
       <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--text-faint)', letterSpacing: '.1em', textAlign: 'center', padding: '4px 0' }}>
-        EXPECTED {pythRaw > 0n ? (Number(pythRaw) / 1e18).toPrecision(6) : '—'} · SLIPPAGE 1%
+        EXPECTED {pythRaw > 0n ? (Number(pythRaw) / 1e18).toPrecision(6) : '-'} · SLIPPAGE 1%
       </div>
 
       <div style={{ height: 280 }} />

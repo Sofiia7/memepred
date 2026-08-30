@@ -1,15 +1,15 @@
 /**
- * OrderStatusCard — Sprint 4.3
+ * OrderStatusCard - Sprint 4.3
  *
  * Single source of truth for order status visualization. Renders the four
  * lifecycle states (pending → matched → settled → refunded) with the right
  * affordances:
  *
- *   pending    — show countdown to MATCH_TIMEOUT (5 min). Allow refund if expired.
- *   matched    — show "result in <duration>" countdown.
- *   settled    — show win/loss + payout. If payout > 0, allow Claim.
- *   claimed    — show "claimed"
- *   refunded   — show "refunded"
+ *   pending    - show countdown to MATCH_TIMEOUT (5 min). Allow refund if expired.
+ *   matched    - show "result in <duration>" countdown.
+ *   settled    - show win/loss + payout. If payout > 0, allow Claim.
+ *   claimed    - show "claimed"
+ *   refunded   - show "refunded"
  *
  * Reads order state via useOrderStatus + getOrder.
  */
@@ -118,11 +118,11 @@ export function OrderStatusCard({
         <div className="osc-head">{isLpMatch ? '🏦 Matched with LP pool' : '⚡ Matched'}</div>
         <div className="osc-meta">
           {dir} · ${filledUsd} at risk
-          {filled < amount && ` (partial fill — $${amountUsd} deposit)`}
+          {filled < amount && ` (partial fill - $${amountUsd} deposit)`}
         </div>
         <div className="osc-sub">
           {graceLapsed
-            ? 'Settlement is overdue — the keeper never resolved this match.'
+            ? 'Settlement is overdue - the keeper never resolved this match.'
             : 'Awaiting market settlement…'}
         </div>
         {graceLapsed && matchId !== undefined && matchId > 0n && onEmergencyRefund && (
@@ -148,7 +148,7 @@ export function OrderStatusCard({
   if (status === 'settled') {
     return (
       <div className={`osc ${won ? 'osc-won' : 'osc-lost'}`}>
-        <div className="osc-head">{won ? '🎉 You won' : 'Loss — better luck next time'}</div>
+        <div className="osc-head">{won ? '🎉 You won' : 'Loss - better luck next time'}</div>
         <div className="osc-meta">
           {dir} · ${filledUsd} at risk · payout ${payoutUsd}
         </div>

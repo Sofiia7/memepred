@@ -23,7 +23,7 @@ describe('getPendingReferrer', () => {
   })
 
   // OrderbookMarket._placeBet has require(referrer != msg.sender), so passing
-  // your own address is a hard revert — and clicking your own share link is the
+  // your own address is a hard revert - and clicking your own share link is the
   // obvious way to end up in that state.
   it('drops a self-referral so the bet does not revert', () => {
     const me = '0x000000000000000000000000000000000000dead'
@@ -88,7 +88,7 @@ describe('captureReferralCode', () => {
     expect(localStorage.getItem(STORAGE_KEY)).toBe(referrer)
   })
 
-  it('never throws when the resolve call fails — best-effort only', async () => {
+  it('never throws when the resolve call fails - best-effort only', async () => {
     vi.stubEnv('VITE_API_URL', 'https://api.flipthememe.com')
     Object.defineProperty(window, 'location', {
       value: new URL('https://flipthememe.com/?ref=ABC123'),

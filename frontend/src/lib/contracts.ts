@@ -14,7 +14,7 @@ export const CONTRACTS = {
 
 // Mirrors OrderbookMarket.sol's MIN_BET/MAX_BET (1 USDC / 100 USDC). Not
 // read on-chain because it's a compile-time constant on the contract, not
-// per-market state — keeping it here lets the UI clamp/validate client-side
+// per-market state - keeping it here lets the UI clamp/validate client-side
 // instead of letting users submit a tx that's guaranteed to revert.
 export const MIN_BET_USD = 1
 export const MAX_BET_USD = 100
@@ -120,7 +120,7 @@ export const PVPMARKET_ABI = [
 export const ORDERBOOK_MARKET_ABI = [
   // Sprint 5.6: the bare `placeBet` entry is gone from this ABI because it is
   // gone from the contract. It priced a bet off the keeper's last on-chain
-  // push, so the strike could be seconds old — enough for anyone watching
+  // push, so the strike could be seconds old - enough for anyone watching
   // Hermes live to enter against a price they already knew had moved.
   // The only way to bet. The price is not an argument: it rides on the tail of
   // the calldata as a signed RedStone payload, so this cannot be called through
@@ -299,7 +299,7 @@ export const ORDERBOOK_MARKET_ABI = [
   }
 ] as const
 
-// LiquidityPool ABI (ERC4626 vault — shares are soulbound)
+// LiquidityPool ABI (ERC4626 vault - shares are soulbound)
 export const LIQUIDITY_POOL_ABI = [
   // ── ERC4626 / actions ─────────────────────────────────────
   {

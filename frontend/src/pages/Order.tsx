@@ -1,5 +1,5 @@
 /**
- * Order page — Sprint 4.4
+ * Order page - Sprint 4.4
  *
  * /order/:address/:orderId
  * Status card + claim/refund actions for a single order.
@@ -24,7 +24,7 @@ export function OrderPage() {
   })()
   const isValidOrder = Boolean(marketAddress) && orderId !== 0n
 
-  // Hooks must run unconditionally on every render — React Router doesn't
+  // Hooks must run unconditionally on every render - React Router doesn't
   // remount OrderPage across param changes on the same route, so an early
   // return before these (as this page used to have) changes the hook count
   // between renders and crashes with "Rendered fewer hooks than expected"
@@ -66,8 +66,8 @@ export function OrderPage() {
   /**
    * Recover a stake from a match the keeper never settled.
    *
-   * Past settleAt + SETTLE_GRACE (24h) the contract refuses to settle at all —
-   * resolveOrderbookMarketBatch reverts with "settlement window expired" — and
+   * Past settleAt + SETTLE_GRACE (24h) the contract refuses to settle at all -
+   * resolveOrderbookMarketBatch reverts with "settlement window expired" - and
    * emergencyRefundMatch becomes the only way to get the money out. It is
    * permissionless by design, but nothing in the app ever called it: the ABI
    * entry existed and had no caller, so a keeper outage longer than a day left

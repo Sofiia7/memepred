@@ -8,7 +8,7 @@ import { useConnectWallet } from '../hooks/useConnectWallet'
 import { useEnsureChain } from '../hooks/useEnsureChain'
 import { TARGET_CHAIN } from '../wagmi.config'
 
-const NETWORK_LABEL = TARGET_CHAIN.name // "Base" or "Base Sepolia" — derived from the actual configured chain, not hardcoded
+const NETWORK_LABEL = TARGET_CHAIN.name // "Base" or "Base Sepolia" - derived from the actual configured chain, not hardcoded
 
 export function GenesisPage() {
   const { address, isConnected } = useAccount()
@@ -174,7 +174,7 @@ export function GenesisPage() {
           First 20 LPs earn <em>1.5×</em> fee share <em>forever</em>.
         </h3>
         <div className="gh-sub">
-          Provide USDC to the matching vault, mint a soulbound Genesis NFT, and accrue boosted fees on every market settlement — for as long as flipthememe exists.
+          Provide USDC to the matching vault, mint a soulbound Genesis NFT, and accrue boosted fees on every market settlement - for as long as flipthememe exists.
         </div>
         <div className="spots">
           <div className="big">{genesisLeft}</div>
@@ -271,9 +271,9 @@ export function GenesisPage() {
         <div className="b-row"><span className="k">Fee-stream weight</span><span className="glp">1.5×</span><span className="reg">1.0×</span></div>
         <div className="b-row"><span className="k">Share-price growth</span><span className="check">✓ yes</span><span className="reg">✓ yes</span></div>
         {/* Sprint 4.7: NFT is transferable; boost follows the NFT, not the address. */}
-        <div className="b-row"><span className="k">Genesis NFT</span><span className="check">transferable*</span><span className="dash">—</span></div>
+        <div className="b-row"><span className="k">Genesis NFT</span><span className="check">transferable*</span><span className="dash">-</span></div>
         <div className="b-row"><span className="k">LP vault shares</span><span className="check">soulbound</span><span className="reg">soulbound</span></div>
-        <div className="b-row"><span className="k">Hall of Fame</span><span className="check">forever</span><span className="dash">—</span></div>
+        <div className="b-row"><span className="k">Hall of Fame</span><span className="check">forever</span><span className="dash">-</span></div>
         <div className="b-row"><span className="k">Min deposit</span><span className="glp">50 USDC</span><span className="reg">50 USDC</span></div>
       </div>
 
@@ -296,7 +296,7 @@ export function GenesisPage() {
       </button>
       {!hasPosition && actionError && <div className="osc-error">{actionError}</div>}
       <div className="g-foot">
-        {NETWORK_LABEL} · {genesisLeft > 0 && !hasPosition ? `You'll receive Genesis NFT #${21 - genesisLeft}` : 'LP funds are at risk — not principal-protected'}
+        {NETWORK_LABEL} · {genesisLeft > 0 && !hasPosition ? `You'll receive Genesis NFT #${21 - genesisLeft}` : 'LP funds are at risk - not principal-protected'}
       </div>
       {/* Sprint 4.7: clarify that the boost rides on the NFT, not the address. */}
       <div className="g-foot" style={{ marginTop: 6, fontSize: 10, opacity: 0.6 }}>

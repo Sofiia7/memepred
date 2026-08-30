@@ -1,5 +1,5 @@
 /**
- * Refer page — Sprint 5.5 audit fix.
+ * Refer page - Sprint 5.5 audit fix.
  *
  * Dedicated "invite friends" screen. Portfolio's ReferralPanel already
  * covers the connected-wallet case inline; this page is the deep-linkable
@@ -58,7 +58,7 @@ export function ReferPage() {
           Get <em>40%</em> of the protocol fee from every bet your friends place.
         </h3>
         <div className="gh-sub">
-          Share your link. Once someone bets using it, they're yours forever — you earn a cut of their fees for as long as they trade on FlipTheMeme.
+          Share your link. Once someone bets using it, they're yours forever - you earn a cut of their fees for as long as they trade on FlipTheMeme.
         </div>
       </div>
 
@@ -98,7 +98,7 @@ export function ReferPage() {
 
           <div className="b-title">Friends you've referred</div>
           {!friends?.length ? (
-            <div className="empty-state">No referrals yet — share your link above</div>
+            <div className="empty-state">No referrals yet - share your link above</div>
           ) : (
             <div className="lb-list">
               {friends.map((f) => (

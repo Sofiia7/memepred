@@ -44,7 +44,7 @@ export function Composer({ picked, onClear }: { picked: PickedBet | null; onClea
   }, [bet.isConfirmed, bet.orderId, picked, navigate, onClear])
 
   // Real payout is always 2x the matched stake (winner takes the matched
-  // loser's stake), minus whichever fee applies — never a function of the
+  // loser's stake), minus whichever fee applies - never a function of the
   // queue-depth "lean" shown on the UP/DOWN buttons. Showing odds-implied
   // payout here previously misled users into expecting e.g. 3.3x on a 30%
   // lean and getting 2x instead.
@@ -122,7 +122,7 @@ export function Composer({ picked, onClear }: { picked: PickedBet | null; onClea
 
       <div className="payout">
         <span>Fee: 0% peer match · 1% if matched by LP pool (win only)</span>
-        <span>PAYOUT IF WON · <b>${payout2x ?? '—'}</b></span>
+        <span>PAYOUT IF WON · <b>${payout2x ?? '-'}</b></span>
       </div>
     </div>
   )

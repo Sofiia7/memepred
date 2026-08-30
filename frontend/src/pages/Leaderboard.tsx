@@ -65,7 +65,7 @@ export function Leaderboard() {
       </div>
 
       {isLoading && <div className="empty-state">Loading…</div>}
-      {!isLoading && !data?.length && <div className="empty-state">No data yet — be the first</div>}
+      {!isLoading && !data?.length && <div className="empty-state">No data yet - be the first</div>}
 
       {top3.length > 0 && (
         <div className="podium">

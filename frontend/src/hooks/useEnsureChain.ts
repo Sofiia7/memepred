@@ -6,7 +6,7 @@ import { TARGET_CHAIN_ID } from '../wagmi.config'
  * Wallets on the wrong network (e.g. Ethereum mainnet, or Base mainnet while
  * this deploy targets Sepolia) previously got an opaque "Transaction failed"
  * from the RPC. Call this before any write and bail out of the caller if it
- * doesn't resolve to true — the wallet handles the actual switch prompt.
+ * doesn't resolve to true - the wallet handles the actual switch prompt.
  */
 export function useEnsureChain() {
   const { chain } = useAccount()

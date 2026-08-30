@@ -107,7 +107,7 @@ export function useOrderStatus(marketAddress: Address, orderId: bigint) {
     settleAt,
     payout,
     isLpMatch,
-    // Needed to offer emergencyRefundMatch when settlement never happens —
+    // Needed to offer emergencyRefundMatch when settlement never happens -
     // that call takes a matchId, not an orderId.
     matchId: order?.matchId,
     refetch

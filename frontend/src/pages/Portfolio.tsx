@@ -71,7 +71,7 @@ function BetRow({ bet }: { bet: Bet }) {
   // old chain (won === null ? … : won ? 'WON' : 'LOST') rendered every live and
   // every unclaimed-winning bet as LOST, and hid the claim button behind a
   // condition that could only become true after the money had already been
-  // taken. REFUNDED is its own outcome — the stake came back, nobody lost.
+  // taken. REFUNDED is its own outcome - the stake came back, nobody lost.
   const status =
     bet.status === 'REFUNDED' ? 'REFUNDED' :
     bet.status === 'CLAIMED'  ? 'CLAIMED'  :
@@ -97,12 +97,12 @@ function BetRow({ bet }: { bet: Bet }) {
         <span />
       )}
       <div className={'lb-pnl ' + (bet.won === false ? 'dn' : '')}>
-        {payout !== null ? `$${payout.toFixed(2)}` : '—'}
+        {payout !== null ? `$${payout.toFixed(2)}` : '-'}
       </div>
     </>
   )
 
-  // Every bet with an on-chain order_id has a status page — link to it so
+  // Every bet with an on-chain order_id has a status page - link to it so
   // "pending" bets are actually trackable instead of a dead-end list row.
   if (bet.order_id) {
     return (
@@ -217,7 +217,7 @@ export function Portfolio() {
   }
 
   const ownedBadgeIds = new Set((profile.badges ?? []).map((b) => b.badge_id))
-  // Same condition as BetRow's canClaim — an order is claimable only while it
+  // Same condition as BetRow's canClaim - an order is claimable only while it
   // is SETTLED. Without the status check an already-claimed bet reappeared here
   // forever, because the API never sent `claimed` and `!undefined` is true.
   const claimable = profile.recentBets.filter(

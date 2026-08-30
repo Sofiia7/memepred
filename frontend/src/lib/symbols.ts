@@ -17,7 +17,7 @@ export function symbolMeta(sym: string): SymbolMeta {
 }
 
 export function formatPrice(p: number): string {
-  if (!Number.isFinite(p) || p === 0) return '—'
+  if (!Number.isFinite(p) || p === 0) return '-'
   if (p < 0.001) return p.toFixed(8)
   if (p < 1) return p.toFixed(4)
   return p.toFixed(2)

@@ -39,7 +39,7 @@ export function MarketCardUI({ symbol, livePrice = 0, chg24h = 0, markets, picke
   // Clamp instead of trusting activeIdx: if markets rolled over while the
   // user had a later tab selected, sorted can shrink and activeIdx can point
   // past the end. Hooks below must run unconditionally either way (Rules of
-  // Hooks) — this keeps `active` defined-or-undefined without an early return
+  // Hooks) - this keeps `active` defined-or-undefined without an early return
   // before the useOdds call.
   const safeIdx = Math.min(activeIdx, Math.max(0, sorted.length - 1))
   const active = sorted[safeIdx]

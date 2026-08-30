@@ -5,7 +5,7 @@ import { farcasterMiniApp } from './lib/farcasterConnector'
 
 const isMainnet = import.meta.env.VITE_NETWORK === 'mainnet'
 
-// Single source of truth for "the chain this app runs on" — used by
+// Single source of truth for "the chain this app runs on" - used by
 // useEnsureChain to detect/prompt a wallet-side network switch before writes.
 export const TARGET_CHAIN    = isMainnet ? base : baseSepolia
 export const TARGET_CHAIN_ID = TARGET_CHAIN.id
@@ -17,7 +17,7 @@ export const config = createConfig({
     // exposes the host's EIP-1193 provider. Outside Farcaster the connector
     // silently fails and the next one is used.
     farcasterMiniApp(),
-    // Coinbase Smart Wallet — primary connector outside Farcaster.
+    // Coinbase Smart Wallet - primary connector outside Farcaster.
     coinbaseWallet({
       appName:    'FlipTheMeme',
       appLogoUrl: 'https://flipthememe.com/icon.png',

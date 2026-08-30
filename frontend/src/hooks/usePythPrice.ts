@@ -27,7 +27,7 @@ export function usePythPrice(feedId?: string | null): PythPrice {
         setRaw(BigInt(Math.round(usd * 1e18)))
         setDisplay(usd)
       } catch {
-        /* network blip — keep last */
+        /* network blip - keep last */
       } finally {
         if (!cancel) setLoading(false)
       }

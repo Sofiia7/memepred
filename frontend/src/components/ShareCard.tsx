@@ -1,13 +1,13 @@
 /**
- * ShareCard — Sprint 5.5 audit fix.
+ * ShareCard - Sprint 5.5 audit fix.
  *
  * Lets a winner share their result. Uses the Web Share API on mobile
- * (native share sheet — Farcaster/Twitter/Discord/iMessage all show up)
+ * (native share sheet - Farcaster/Twitter/Discord/iMessage all show up)
  * and falls back to copy-to-clipboard on desktop.
  *
  * Scope note: this shares TEXT + a link, not a per-position rendered image.
  * True per-position OG image previews need server-side rendering (the site
- * only serves one static og:image today — see index.html); that's a
+ * only serves one static og:image today - see index.html); that's a
  * separate infra project, not a client-only fix.
  */
 import { useState } from 'react'
@@ -30,7 +30,7 @@ export function ShareCard({ direction, amountUsd, payoutUsd }: Props) {
         await navigator.share({ text, url })
         return
       } catch {
-        // User cancelled the native share sheet — not an error.
+        // User cancelled the native share sheet - not an error.
         return
       }
     }
@@ -39,7 +39,7 @@ export function ShareCard({ direction, amountUsd, payoutUsd }: Props) {
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     } catch {
-      // Clipboard API unavailable — silently do nothing rather than crash.
+      // Clipboard API unavailable - silently do nothing rather than crash.
     }
   }
 

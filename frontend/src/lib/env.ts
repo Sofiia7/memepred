@@ -1,5 +1,5 @@
 /**
- * Runtime env validation — Sprint 4.5.
+ * Runtime env validation - Sprint 4.5.
  *
  * Vite inlines `import.meta.env.*` at build time. A missing var produces an
  * `undefined` that propagates as a runtime "0x" or "0xundefined" address,

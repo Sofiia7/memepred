@@ -1,5 +1,5 @@
 /**
- * geocheck — Sprint 4.6 + 4.8
+ * geocheck - Sprint 4.6 + 4.8
  *
  * Behaviour change vs. v1:
  *   - 451 from edge → blocked (unchanged)
@@ -8,11 +8,11 @@
  *     backend / worker was misconfigured. For a regulated product that's
  *     unacceptable; fail-closed is the correct default.
  *   - Country list lives on the Worker (`/api/geo/config`). Frontend
- *     compares country against that authoritative list — no local
+ *     compares country against that authoritative list - no local
  *     duplication that can drift.
  */
 
-// Mirrors workers/geo-block.ts's BLOCKED set — kept in sync manually since
+// Mirrors workers/geo-block.ts's BLOCKED set - kept in sync manually since
 // this is only the fallback used if /api/geo/config is unreachable.
 //
 // Note this list is nearly unreachable in practice: the Worker evaluates
@@ -60,7 +60,7 @@ export async function checkGeo(): Promise<{ blocked: boolean; country: string }>
   let country = 'XX'
   try {
     const res = await fetch(`${import.meta.env.VITE_API_URL}/api/geo`)
-    // 451 = explicit edge block — done.
+    // 451 = explicit edge block - done.
     if (res.status === 451) return { blocked: true, country: 'XX' }
     // Fail-closed: any non-ok means we can't trust the answer.
     if (!res.ok) return { blocked: true, country: 'XX' }

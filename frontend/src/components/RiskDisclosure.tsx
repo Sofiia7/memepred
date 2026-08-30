@@ -1,20 +1,20 @@
 /**
- * RiskDisclosure — the "say it out loud" half of the unaudited-launch posture.
+ * RiskDisclosure - the "say it out loud" half of the unaudited-launch posture.
  *
  * FlipTheMeme is going live with contracts that no external auditor has
  * reviewed. That is a deliberate, defensible choice for a launch this small
- * ONLY if the tradeoff is stated plainly to users up front — a disclosure
+ * ONLY if the tradeoff is stated plainly to users up front - a disclosure
  * buried in §4 of a Terms page nobody opens is not informed consent, it's
  * paperwork. So this ships in two parts:
  *
- *   1. <RiskGate>  — a one-time, blocking acknowledgement on first visit.
+ *   1. <RiskGate>  - a one-time, blocking acknowledgement on first visit.
  *                    Requires an explicit click; no "X" to dismiss it past.
- *   2. <RiskStrip> — a permanent, non-dismissible line at the top of every
+ *   2. <RiskStrip> - a permanent, non-dismissible line at the top of every
  *                    screen, so the state of things stays visible after the
  *                    gate is behind you rather than being a single moment
  *                    the user scrolled past once.
  *
- * Remove both only when there is a real audit to point at — and if MAX_BET
+ * Remove both only when there is a real audit to point at - and if MAX_BET
  * is ever raised in the contract, update MAX_BET_USDC here in the same
  * change, or this text quietly becomes a false statement.
  */
@@ -46,7 +46,7 @@ export function RiskGate({ children }: { children: React.ReactNode }) {
     try {
       stored = localStorage.getItem(ACK_KEY)
     } catch {
-      // Private mode / storage disabled — treat as un-acked. Showing the
+      // Private mode / storage disabled - treat as un-acked. Showing the
       // notice again is the safe failure direction here.
     }
     setAcked(stored === '1')
@@ -60,7 +60,7 @@ export function RiskGate({ children }: { children: React.ReactNode }) {
     try {
       localStorage.setItem(ACK_KEY, '1')
     } catch {
-      // Can't persist — the gate will show again next visit. Acceptable.
+      // Can't persist - the gate will show again next visit. Acceptable.
     }
     setAcked(true)
   }
@@ -79,7 +79,7 @@ export function RiskGate({ children }: { children: React.ReactNode }) {
           <li>
             <b>The smart contracts have not been audited.</b> No independent
             security firm has reviewed the code holding the money. A bug could
-            mean deposited USDC is lost permanently — there is no insurance,
+            mean deposited USDC is lost permanently - there is no insurance,
             no reversal, and no support desk that can get it back.
           </li>
           <li>
@@ -90,7 +90,7 @@ export function RiskGate({ children }: { children: React.ReactNode }) {
           </li>
           <li>
             <b>You can lose your entire stake normally, too.</b> Even with
-            perfect code — if the price goes the other way, the money goes to
+            perfect code - if the price goes the other way, the money goes to
             whoever took the other side. This is not investing.
           </li>
         </ol>
@@ -102,7 +102,7 @@ export function RiskGate({ children }: { children: React.ReactNode }) {
         </p>
 
         <button className="cta risk-accept" onClick={accept}>
-          I understand — the contracts are unaudited
+          I understand - the contracts are unaudited
         </button>
       </div>
     </div>
