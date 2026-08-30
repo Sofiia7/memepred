@@ -86,6 +86,25 @@ contract OracleResolverTest is Test {
         settled = abi.decode(ret, (uint256));
     }
 
+    /// Settle a window that starts `offset` entries past the queue head.
+    function _resolveBatchFrom(address market, uint256 offset, uint256 maxCount, uint256 spot8dp)
+        internal
+        returns (uint256 settled)
+    {
+        vm.prank(keeper);
+        (bool ok, bytes memory ret) = address(resolver)
+            .call(
+                bytes.concat(
+                    abi.encodeWithSelector(
+                        OracleResolver.resolveOrderbookMarketBatchFrom.selector, market, offset, maxCount
+                    ),
+                    RedstonePayloadBuilder.buildNow(FEED, spot8dp, 3)
+                )
+            );
+        require(ok, "resolveOrderbookMarketBatchFrom reverted");
+        settled = abi.decode(ret, (uint256));
+    }
+
     function _resolveAll(address market, uint256 spot8dp) internal {
         vm.prank(keeper);
         (bool ok,) = address(resolver)
@@ -357,6 +376,61 @@ contract OracleResolverTest is Test {
         assertTrue(m.settled, "settled");
         assertTrue(m.upWon, "UP was right at settleAt and must win regardless of keeper lateness");
         assertGt(m.exitPrice, m.entryPrice, "exit price is the one from settleAt");
+    }
+
+    /**
+     * A match that cannot be priced must not hide the ones behind it.
+     *
+     * pendingSettlementsHead only advances past matches that actually settled,
+     * and both the keeper and _resolveBatch read the window at offset 0. So a
+     * match sitting at the head that is ready but unsettleable - unpriceable
+     * after an outage longer than HISTORY_RETENTION, or repeatedly tripping the
+     * spread guard - pins the window in place. Everything past head + maxCount
+     * is invisible for as long as it stays there, which for the unpriceable
+     * case is until SETTLE_GRACE lapses a day later and somebody calls
+     * emergencyRefundMatch by hand.
+     *
+     * The queue view has always taken an offset. Nothing used it.
+     */
+    function test_StuckHeadDoesNotHideTheMatchesBehindIt() public {
+        (OrderbookMarket market,) = _freshMarketWithOneMatch(15 minutes);
+
+        // Long enough that the first match's own settleAt window has been
+        // pruned out of history: it is due, and it can never be priced.
+        vm.warp(block.timestamp + resolver.HISTORY_RETENTION() + 1 hours);
+        _record(1e8);
+
+        // A second match, opened now and due in the ordinary way.
+        address carol = makeAddr("carol");
+        address dave = makeAddr("dave");
+        MockUSDC usdc = MockUSDC(address(market.usdc()));
+        usdc.mint(carol, 100e6);
+        usdc.mint(dave, 100e6);
+        vm.prank(carol);
+        usdc.approve(address(market), type(uint256).max);
+        vm.prank(dave);
+        usdc.approve(address(market), type(uint256).max);
+        _bet(market, carol, OrderbookMarket.Direction.UP, 25e6, 1e8);
+        _bet(market, dave, OrderbookMarket.Direction.DOWN, 25e6, 1e8);
+
+        // A tick inside the second match's own TWAP window (duration/5 = 3 min,
+        // ending at its settleAt), so it is genuinely priceable - otherwise the
+        // test would pass for the wrong reason, both matches unsettleable.
+        vm.warp(block.timestamp + 14 minutes);
+        _record(105e6);
+        vm.warp(block.timestamp + 1 minutes + 1);
+        _record(105e6);
+
+        // The head is the unpriceable match, and a one-wide window sees only it.
+        assertEq(_resolveBatch(address(market), 1, 105e6), 0, "the stuck head settles nothing, as expected");
+        assertFalse(market.getMatch(2).settled, "and the match behind it is still waiting");
+
+        // Stepping past it reaches the one that can settle.
+        assertEq(
+            _resolveBatchFrom(address(market), 1, 1, 105e6), 1, "the match behind the stuck head must be reachable"
+        );
+        assertTrue(market.getMatch(2).settled, "second match settled");
+        assertFalse(market.getMatch(1).settled, "the unpriceable one is still left for emergencyRefundMatch");
     }
 
     /**

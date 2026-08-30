@@ -2,12 +2,14 @@
  * resolveKeeper — Sprint 2.1
  *
  * Walks OPEN markets and batch-settles their ready matches via
- * OracleResolver.resolveOrderbookMarketBatch, capping per-tx settlements so
+ * OracleResolver.resolveOrderbookMarketBatchFrom, capping per-tx settlements so
  * each tx stays under a predictable gas ceiling. Loops per-market until the
- * "ready" queue is drained or a bounded max-loop is hit.
+ * "ready" queue is drained or a bounded max-loop is hit, stepping the read
+ * offset past any window the resolver declines to settle.
  */
 import {
   createPublicClient,
+  decodeFunctionResult,
   encodeFunctionData,
   http,
   type Address,
@@ -23,12 +25,17 @@ const chain = process.env.CHAIN_ID === '8453' ? base : baseSepolia
 
 const ORACLE_RESOLVER_BATCH_ABI = [
   {
-    name: 'resolveOrderbookMarketBatch',
+    // Takes an offset past the queue head. The head only advances over matches
+    // that actually settled, so one ready-but-unsettleable match at the front
+    // pins the window and hides everything behind it; walking the offset is how
+    // the rest stays reachable.
+    name: 'resolveOrderbookMarketBatchFrom',
     type: 'function',
     stateMutability: 'nonpayable',
     // The price is a calldata suffix, not an argument.
     inputs: [
       { name: 'market',   type: 'address' },
+      { name: 'offset',   type: 'uint256' },
       { name: 'maxCount', type: 'uint256' },
     ],
     outputs: [{ name: 'settled', type: 'uint256' }],
@@ -134,11 +141,21 @@ export async function settlePendingMarkets() {
         address: market, abi: MARKET_VIEW_ABI, functionName: 'feedId',
       })
 
+      // Where this tick is reading from, counted past the queue head.
+      //
+      // The head only advances over matches that actually settled. A match at
+      // the front that is ready but cannot settle - unpriceable after a long
+      // outage, or repeatedly over the spread guard - therefore pins the window
+      // and hides everything behind it. Re-reading offset 0 every loop is what
+      // turned that into a standstill; stepping past a window that settles
+      // nothing is what keeps the rest reachable.
+      let offset = 0n
+
       for (let i = 0; i < MAX_LOOPS; i++) {
         const ready = await publicClient.readContract({
           address: market, abi: MARKET_VIEW_ABI,
           functionName: 'getReadySettlements',
-          args: [0n, BigInt(MAX_PER_TX)],
+          args: [offset, BigInt(MAX_PER_TX)],
         })
         if (ready.length === 0) break
 
@@ -146,8 +163,8 @@ export async function settlePendingMarkets() {
         const settleCallData = withPayload(
           encodeFunctionData({
             abi:          ORACLE_RESOLVER_BATCH_ABI,
-            functionName: 'resolveOrderbookMarketBatch',
-            args:         [market, BigInt(MAX_PER_TX)],
+            functionName: 'resolveOrderbookMarketBatchFrom',
+            args:         [market, offset, BigInt(MAX_PER_TX)],
           }),
           payload,
         )
@@ -165,21 +182,46 @@ export async function settlePendingMarkets() {
         // OracleResolver.priceHistory has too few points for _getTWAP to cover
         // the window — legitimate, transient, and exactly what should not cost
         // 1.8M gas a minute to rediscover.
+        let wouldSettle: bigint
         try {
           // publicClient.call rather than simulateContract: the latter encodes
           // the call itself, leaving nowhere to append the signed price, so it
           // would simulate a call the chain would never see and always revert.
-          await publicClient.call({
+          const sim = await publicClient.call({
             account: wallet.account,
             to:      CONTRACTS.ORACLE_RESOLVER as Address,
             data:    settleCallData,
           })
+          // The batch returns how many it settled. Reading it here is what
+          // separates "this window has work" from "this window has matches the
+          // resolver will skip" - the two used to be indistinguishable, so a
+          // skipped window was re-sent MAX_LOOPS times and logged as a
+          // successful settle of `ready.length` matches every time.
+          wouldSettle = decodeFunctionResult({
+            abi:          ORACLE_RESOLVER_BATCH_ABI,
+            functionName: 'resolveOrderbookMarketBatchFrom',
+            data:         sim.data ?? '0x',
+          }) as bigint
         } catch (simErr: any) {
           console.warn(
             `[resolver] ${market}: settle would revert, skipping ` +
             `(${simErr?.shortMessage ?? simErr?.message ?? 'unknown'})`,
           )
           break
+        }
+
+        if (wouldSettle === 0n) {
+          // Every match in this window is one the resolver declines to settle
+          // right now. Sending would cost a full gas ceiling to accomplish
+          // nothing; step past them instead so anything behind is reachable.
+          // They stay in the queue, and become refundable by anyone once
+          // SETTLE_GRACE lapses.
+          console.warn(
+            `[resolver] ${market}: ${ready.length} ready match(es) at offset ${offset} ` +
+            `cannot settle yet - stepping past them`,
+          )
+          offset += BigInt(MAX_PER_TX)
+          continue
         }
 
         // Critical: never blocked by the fee ceiling or the daily budget.
@@ -205,7 +247,10 @@ export async function settlePendingMarkets() {
           console.error(`[resolver] ${market}: settle tx reverted on-chain, tx=${hash}`)
           break
         }
-        console.log(`[resolver] ${market} settled ${ready.length} (loop ${i + 1}) tx=${hash}`)
+        // The count the resolver reported, not the number that looked ready.
+        console.log(`[resolver] ${market} settled ${wouldSettle} (loop ${i + 1}) tx=${hash}`)
+        // The head has moved past what just settled, so read from it again.
+        offset = 0n
       }
     } catch (err) {
       console.error(`[resolver] market ${market} failed:`, err)

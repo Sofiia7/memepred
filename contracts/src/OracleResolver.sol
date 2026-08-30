@@ -146,7 +146,7 @@ contract OracleResolver is AccessControl, PrimaryProdDataServiceConsumerBase {
      * @param market  Address of OrderbookMarket
      */
     function resolveOrderbookMarket(address market) external onlyRole(KEEPER_ROLE) {
-        _resolveBatch(market, 0); // 0 = all ready
+        _resolveBatch(market, 0, 0); // from the head, 0 = all ready
     }
 
     /**
@@ -160,15 +160,36 @@ contract OracleResolver is AccessControl, PrimaryProdDataServiceConsumerBase {
         onlyRole(KEEPER_ROLE)
         returns (uint256 settled)
     {
-        return _resolveBatch(market, maxCount);
+        return _resolveBatch(market, 0, maxCount);
     }
 
-    function _resolveBatch(address market, uint256 maxCount) internal returns (uint256 settled) {
+    /**
+     * @notice Settle a window starting `offset` entries past the queue head.
+     *
+     * @dev    The head only advances past matches that actually settled, and
+     *         every caller read the window at offset 0 - so a match sitting at
+     *         the head that is ready but unsettleable (unpriceable after an
+     *         outage longer than HISTORY_RETENTION, or repeatedly tripping the
+     *         spread guard) pinned the window in place and hid everything past
+     *         head + maxCount behind it, until SETTLE_GRACE lapsed a day later
+     *         and somebody called emergencyRefundMatch by hand.
+     *
+     *         The queue view has always taken an offset. Nothing used it.
+     */
+    function resolveOrderbookMarketBatchFrom(address market, uint256 offset, uint256 maxCount)
+        external
+        onlyRole(KEEPER_ROLE)
+        returns (uint256 settled)
+    {
+        return _resolveBatch(market, offset, maxCount);
+    }
+
+    function _resolveBatch(address market, uint256 offset, uint256 maxCount) internal returns (uint256 settled) {
         OrderbookMarket m = OrderbookMarket(market);
         bytes32 feedId = m.feedId();
 
         uint256 window = _twapWindowFor(m.duration());
-        uint256[] memory ready = m.getReadySettlements(0, maxCount);
+        uint256[] memory ready = m.getReadySettlements(offset, maxCount);
 
         for (uint256 i = 0; i < ready.length; i++) {
             if (_settleOne(m, feedId, window, ready[i])) settled++;
