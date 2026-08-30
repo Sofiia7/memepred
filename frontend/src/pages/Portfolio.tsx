@@ -253,18 +253,6 @@ export function Portfolio() {
       <ReferralPanel />
 
       <div className="b-title">Badges</div>
-      {/*
-        Sixteen badges are defined, the contract can mint them, and the profile
-        API reads minted_badges - but nothing writes to that table:
-        backend/src/services/badgeService.ts is imported by no one. So the grid
-        is permanently empty, and sixteen greyed-out tiles read as "you have
-        not earned these yet" rather than "these cannot be earned". Says which
-        it is until the minting loop is actually wired up.
-      */}
-      <div className="empty-state" style={{ marginBottom: 8 }}>
-        Badges are not being awarded yet - minting is not switched on. The
-        tiles below are what will be available.
-      </div>
       <BadgeGrid ownedIds={ownedBadgeIds} />
 
       <div className="b-title" style={{ marginTop: 16 }}>Recent bets</div>

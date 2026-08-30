@@ -1,9 +1,12 @@
-import { createWalletClient, http } from 'viem'
+import { createPublicClient, createWalletClient, http } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 import { base, baseSepolia } from 'viem/chains'
 const chain = process.env.CHAIN_ID === '8453' ? base : baseSepolia
 import { pg }   from '../db/pg.js'
 import { BADGE_NFT_ABI, BADGE_NFT_ADDRESS, BASE_RPC_URL } from '../config.js'
+import { gasGuard, recordReceipt } from '../keeper/gasGuardInstance.js'
+import { earnedBadges, type TraderStats } from './badgeRules.js'
+import { streaksFrom } from './streaks.js'
 
 const account = process.env.BADGE_MINTER_KEY
   ? privateKeyToAccount(process.env.BADGE_MINTER_KEY as `0x${string}`)
@@ -13,40 +16,7 @@ const client = account
   ? createWalletClient({ account, chain, transport: http(BASE_RPC_URL) })
   : null
 
-interface TraderStats {
-  address:          string
-  totalBets:        number
-  wonBets:          number
-  currentStreak:    number
-  maxStreak:        number
-  totalVolume:      number
-  pepeBets:         number
-  brettBets:        number
-  hasFiveMinBet:    boolean // Sprint 5.5: badge 5 "Speed"
-  hasBigMoveWin:    boolean // Sprint 5.5: badge 7 "To The Moon"
-  isWeeklyChampion: boolean // Sprint 5.5: badge 10 "Champion"
-  activeReferrals:  number  // Sprint 5.5: badges 15/16 "Connector"/"Network"
-}
-
-// Conditions for each badge
-const BADGE_CONDITIONS: Record<number, (s: TraderStats) => boolean> = {
-  1:  s => s.totalBets >= 1,                                 // Beginner
-  2:  s => s.currentStreak >= 7,                             // On Fire
-  3:  s => s.currentStreak >= 30,                            // Diamond
-  4:  s => s.currentStreak >= 10,                            // Sniper — 10 correct in a row
-  5:  s => s.hasFiveMinBet,                                  // Speed — played the fastest (5-min) market
-  6:  s => s.totalVolume >= 500,                             // Whale
-  7:  s => s.hasBigMoveWin,                                  // To The Moon — won a bet on a 10%+ price move
-  8:  s => s.totalBets >= 100 && s.wonBets / s.totalBets >= 0.80, // Oracle
-  9:  s => s.currentStreak >= 100,                           // Legend
-  10: s => s.isWeeklyChampion,                               // Champion — #1 on the weekly leaderboard
-  11: s => s.pepeBets >= 50,                                 // Pepe Master
-  12: s => s.brettBets >= 50,                                // Brett Fan
-  13: s => s.totalVolume >= 10_000,                          // Pro
-  14: s => s.totalVolume >= 100_000,                         // Institutional
-  15: s => s.activeReferrals >= 5,                           // Connector — 5 active referrals
-  16: s => s.activeReferrals >= 20,                          // Network — 20 active referrals
-}
+const publicClient = createPublicClient({ chain, transport: http(BASE_RPC_URL) })
 
 /**
  * Check and mint badges for a trader.
@@ -58,13 +28,13 @@ export async function checkAndMintBadges(traderAddress: string) {
     return
   }
 
+  // Cosmetic. A badge that waits for cheaper gas costs nothing, so unlike a
+  // settlement this is routine work and the ceiling and daily budget apply.
+  if (await gasGuard.check('routine')) return
+
   const stats = await getTraderStats(traderAddress)
 
-  for (const [badgeIdStr, condition] of Object.entries(BADGE_CONDITIONS)) {
-    const badgeId = parseInt(badgeIdStr)
-    if (!condition(stats)) continue
-
-    // Check if badge already minted (off-chain cache)
+  for (const badgeId of earnedBadges(stats)) {
     const existing = await pg.query(
       'SELECT 1 FROM minted_badges WHERE trader_address = $1 AND badge_id = $2',
       [traderAddress, badgeId]
@@ -78,6 +48,17 @@ export async function checkAndMintBadges(traderAddress: string) {
         functionName: 'mintBadge',
         args: [traderAddress as `0x${string}`, BigInt(badgeId)]
       })
+
+      // Recorded only once it is actually on-chain. This used to INSERT right
+      // after submission, so a mint that reverted - out of gas, minter role
+      // revoked, supply exhausted - still left a row saying the badge existed,
+      // and the profile page would show a badge the wallet does not own.
+      const receipt = await publicClient.waitForTransactionReceipt({ hash })
+      await recordReceipt(receipt, 'routine')
+      if (receipt.status !== 'success') {
+        console.error(`badge ${badgeId} for ${traderAddress}: mint reverted, tx ${hash}`)
+        continue
+      }
 
       await pg.query(
         'INSERT INTO minted_badges (trader_address, badge_id, tx_hash, minted_at) VALUES ($1, $2, $3, NOW())',
@@ -108,10 +89,22 @@ async function getTraderStats(address: string): Promise<TraderStats> {
     WHERE trader_address = $1 AND status IN ('SETTLED', 'CLAIMED')
   `, [addr])
 
-  const streak = await pg.query(
-    'SELECT current_streak, max_streak FROM trader_streaks WHERE trader_address = $1',
+  // Derived from the settled orders, not read from a counter. trader_streaks
+  // was maintained by an updateStreak() that nothing ever called, so every
+  // streak read zero and the four streak badges were unreachable. Bounded to
+  // the most recent 500: the longest streak badge needs 100 in a row, so
+  // anything older cannot change a verdict.
+  const settled = await pg.query(
+    `SELECT COALESCE(payout_usdc, 0) > 0 AS won
+       FROM orders
+      WHERE trader_address = $1 AND status IN ('SETTLED', 'CLAIMED')
+      ORDER BY settled_at DESC NULLS LAST, order_id DESC
+      LIMIT 500`,
     [addr]
   )
+  // The query returns newest first for the LIMIT to mean "most recent";
+  // streaksFrom wants them in the order they happened.
+  const streak = streaksFrom(settled.rows.map((r: { won: boolean }) => r.won).reverse())
 
   // Badge 5 "Speed": played on the fastest (5-minute) market.
   const speed = await pg.query(`
@@ -165,14 +158,12 @@ async function getTraderStats(address: string): Promise<TraderStats> {
   `, [addr])
 
   const r = result.rows[0]
-  const s = streak.rows[0] || { current_streak: 0, max_streak: 0 }
 
   return {
-    address,
     totalBets:        parseInt(r.total_bets),
     wonBets:          parseInt(r.won_bets),
-    currentStreak:    parseInt(s.current_streak),
-    maxStreak:        parseInt(s.max_streak),
+    currentStreak:    streak.current,
+    maxStreak:        streak.max,
     totalVolume:      parseFloat(r.total_volume),
     pepeBets:         parseInt(r.pepe_bets),
     brettBets:        parseInt(r.brett_bets),

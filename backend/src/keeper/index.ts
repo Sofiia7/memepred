@@ -6,6 +6,7 @@ import { recordPricesOnChain }    from './onchainPriceRecorder.js'
 import { settlePendingMarkets }   from './resolveKeeper.js'
 import { oracleWatchdogTick }     from './oracleWatchdog.js'
 import { createMissingMarkets }   from './marketCreator.js'
+import { badgeSweepTick } from './badgeSweep.js'
 import { invariantTick }          from './invariantMonitor.js'
 import { runMigrations }          from '../db/migrate.js'
 import { pg }                     from '../db/pg.js'
@@ -42,8 +43,11 @@ async function start() {
   // arrives it is how fast the 5m and 15m markets come back onto the board.
   await loop('marketCreator',        createMissingMarkets,   Number(process.env.CREATE_INTERVAL_MS ?? 30_000))
   await loop('invariantMonitor',     invariantTick,          60_000)
+  // Slow on purpose: nothing about a badge is time-critical, and it is the one
+  // loop here that mints for cosmetic reasons.
+  await loop('badgeSweep',           badgeSweepTick,         Number(process.env.BADGE_SWEEP_INTERVAL_MS ?? 10 * 60_000))
 
-  console.log('Keeper running: priceOffchain/30s, priceOnchain/30s, snapshots/60s, indexer/45s, resolver/60s, refund/5m, watchdog/90s, createMarkets/30s, invariant/60s')
+  console.log('Keeper running: priceOffchain/30s, priceOnchain/30s, snapshots/60s, indexer/45s, resolver/60s, refund/5m, watchdog/90s, createMarkets/30s, invariant/60s, badges/10m')
 }
 
 start().catch((err) => {
