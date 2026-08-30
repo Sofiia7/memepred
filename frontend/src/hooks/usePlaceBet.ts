@@ -83,8 +83,11 @@ export function usePlaceBet({
     query: { enabled: !!address },
   })
 
-  const { writeContractAsync: approve, data: approveTxHash } = useWriteContract()
-  useWaitForTransactionReceipt({ hash: approveTxHash, query: { enabled: !!approveTxHash } })
+  // The approval receipt is awaited inline in execute(), where the bet
+  // actually has to stop and wait for it. A useWaitForTransactionReceipt here
+  // watched the same hash and blocked nothing, which is how the bet came to be
+  // sent against an allowance that had not landed.
+  const { writeContractAsync: approve } = useWriteContract()
 
   const { sendTransactionAsync: sendBet, data: betTxHash } = useSendTransaction()
   const { data: betReceipt, isSuccess: betReceiptOk } = useWaitForTransactionReceipt({
@@ -129,12 +132,26 @@ export function usePlaceBet({
 
       if (!allowance || allowance < amountWei) {
         setStep('approving')
-        await approve({
+        const approveHash = await approve({
           address: CONTRACTS.USDC,
           abi: ERC20_ABI,
           functionName: 'approve',
           args: [marketAddress, maxUint256],
         })
+        // Wait for it to land, not merely to be submitted.
+        //
+        // writeContractAsync resolves the moment the wallet accepts, so the
+        // bet used to go out while the approval was still pending. Nonce
+        // ordering would have executed them in the right order, but the
+        // wallet estimates gas for the bet first and does not care about the
+        // queue - the user gets "transfer amount exceeds allowance" on a bet
+        // they were just told had been approved.
+        if (publicClient) {
+          const receipt = await publicClient.waitForTransactionReceipt({ hash: approveHash })
+          if (receipt.status !== 'success') {
+            throw new Error('USDC approval failed on-chain - nothing was bet.')
+          }
+        }
         await refetchAllowance()
       }
 

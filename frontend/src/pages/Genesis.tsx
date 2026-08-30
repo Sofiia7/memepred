@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useReadContract, useWriteContract, useAccount } from 'wagmi'
+import { useReadContract, useWriteContract, useAccount, usePublicClient } from 'wagmi'
 import { parseUnits, maxUint256 } from 'viem'
 import { CONTRACTS, LIQUIDITY_POOL_ABI, ERC20_ABI } from '../lib/contracts'
 import { ScreenTitle } from '../components/ui/AppShell'
@@ -14,12 +14,24 @@ export function GenesisPage() {
   const { address, isConnected } = useAccount()
   const { connectWallet } = useConnectWallet()
   const ensureChain = useEnsureChain()
+  const publicClient = usePublicClient()
   const [depositAmount, setDepositAmount] = useState('50')
   const [withdrawAmount, setWithdrawAmount] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [isWithdrawing, setIsWithdrawing] = useState(false)
   const [isClaiming, setIsClaiming] = useState(false)
   const [actionError, setActionError] = useState<string>()
+
+  // Without this every deposit opened with an approval, including from LPs
+  // who had already granted an unlimited one - two wallet prompts and a wasted
+  // fee to change nothing.
+  const { data: usdcAllowance, refetch: refetchAllowance } = useReadContract({
+    address: CONTRACTS.USDC,
+    abi: ERC20_ABI,
+    functionName: 'allowance',
+    args: [address!, CONTRACTS.LIQUIDITY_POOL],
+    query: { enabled: !!address },
+  })
 
   const { data: stats, refetch: refetchStats } = useReadContract({
     address: CONTRACTS.LIQUIDITY_POOL,
@@ -73,6 +85,9 @@ export function GenesisPage() {
     refetchMyAssets()
     refetchMaxWithdrawable()
     refetchPendingFees()
+    // A deposit spends allowance; leaving it stale would have the next one
+    // decide whether to approve from a number that is no longer true.
+    refetchAllowance()
   }
 
   const { writeContractAsync: approve } = useWriteContract()
@@ -103,12 +118,24 @@ export function GenesisPage() {
       const chainCheck = await ensureChain()
       if (!chainCheck.ok) { setActionError(chainCheck.error); return }
       const amount = parseUnits(depositAmount, 6)
-      await approve({
-        address: CONTRACTS.USDC,
-        abi: ERC20_ABI,
-        functionName: 'approve',
-        args: [CONTRACTS.LIQUIDITY_POOL, maxUint256],
-      })
+      if (usdcAllowance === undefined || usdcAllowance < amount) {
+        const approveHash = await approve({
+          address: CONTRACTS.USDC,
+          abi: ERC20_ABI,
+          functionName: 'approve',
+          args: [CONTRACTS.LIQUIDITY_POOL, maxUint256],
+        })
+        // Mined, not merely submitted: writeContractAsync resolves when the
+        // wallet accepts, and the deposit's own gas estimation runs before the
+        // approval lands, so it fails on an allowance that is on its way.
+        if (publicClient) {
+          const receipt = await publicClient.waitForTransactionReceipt({ hash: approveHash })
+          if (receipt.status !== 'success') {
+            throw new Error('USDC approval failed on-chain - nothing was deposited.')
+          }
+        }
+        await refetchAllowance()
+      }
       await deposit({
         address: CONTRACTS.LIQUIDITY_POOL,
         abi: LIQUIDITY_POOL_ABI,
