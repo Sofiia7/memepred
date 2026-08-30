@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { earnedBadges, BADGE_IDS, type TraderStats } from './badgeRules.js'
+import { earnedBadges, isMintable, BADGE_IDS, type TraderStats } from './badgeRules.js'
 
 const stats = (over: Partial<TraderStats> = {}): TraderStats => ({
   totalBets:        0,
@@ -65,5 +65,37 @@ describe('earnedBadges', () => {
       hasFiveMinBet: true, hasBigMoveWin: true, activeReferrals: 20,
     }))
     expect(earned).toEqual([...earned].sort((a, b) => a - b))
+  })
+})
+
+/**
+ * The sweep found this the hard way on its first production tick.
+ *
+ * config.ts falls back to the literal '0x' when BADGE_NFT is unset, which is a
+ * valid-looking nothing, and docker-compose had never passed that variable to
+ * the keeper - correctly, until the badge sweep made it a read path. Every mint
+ * then failed with `Address "0x" is invalid`, once per earned badge per address
+ * per tick: 138 error lines in ten minutes, each a full viem error object, on a
+ * box whose logs filled the disk once already.
+ *
+ * A missing address is a configuration fault. It should be said once and stop,
+ * not rediscovered per badge.
+ */
+describe('isMintable', () => {
+  it('refuses the placeholder config.ts falls back to', () => {
+    expect(isMintable('0x')).toBe(false)
+  })
+
+  it('refuses an unset or empty address', () => {
+    expect(isMintable(undefined)).toBe(false)
+    expect(isMintable('')).toBe(false)
+  })
+
+  it('refuses the zero address', () => {
+    expect(isMintable('0x0000000000000000000000000000000000000000')).toBe(false)
+  })
+
+  it('accepts a real contract address', () => {
+    expect(isMintable('0xa044D7D8B3361aB8799f0055D81310A5C8e96483')).toBe(true)
   })
 })

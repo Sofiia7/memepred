@@ -5,7 +5,7 @@ const chain = process.env.CHAIN_ID === '8453' ? base : baseSepolia
 import { pg }   from '../db/pg.js'
 import { BADGE_NFT_ABI, BADGE_NFT_ADDRESS, BASE_RPC_URL } from '../config.js'
 import { gasGuard, recordReceipt } from '../keeper/gasGuardInstance.js'
-import { earnedBadges, type TraderStats } from './badgeRules.js'
+import { earnedBadges, isMintable, type TraderStats } from './badgeRules.js'
 import { streaksFrom } from './streaks.js'
 
 const account = process.env.BADGE_MINTER_KEY
@@ -18,6 +18,9 @@ const client = account
 
 const publicClient = createPublicClient({ chain, transport: http(BASE_RPC_URL) })
 
+/** So a misconfiguration is reported once per process, not once per tick. */
+let warnedAboutAddress = false
+
 /**
  * Check and mint badges for a trader.
  * Called after each market settlement event.
@@ -25,6 +28,21 @@ const publicClient = createPublicClient({ chain, transport: http(BASE_RPC_URL) }
 export async function checkAndMintBadges(traderAddress: string) {
   if (!client) {
     console.warn('Badge minter key not configured, skipping badge check')
+    return
+  }
+
+  // Once, not once per badge per address per tick. config.ts falls back to the
+  // literal '0x' when BADGE_NFT is unset, and viem only rejects that at send
+  // time - so a variable missing from the container surfaced as a wall of
+  // `Address "0x" is invalid` instead of as the configuration fault it is.
+  if (!isMintable(BADGE_NFT_ADDRESS)) {
+    if (!warnedAboutAddress) {
+      console.error(
+        `BADGE_NFT is not a contract address (${BADGE_NFT_ADDRESS || 'unset'}) - ` +
+        'badge minting is disabled. Check the keeper container environment.',
+      )
+      warnedAboutAddress = true
+    }
     return
   }
 

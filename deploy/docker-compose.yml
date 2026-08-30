@@ -116,6 +116,11 @@ services:
       # name that nothing looks up, so the container held a hot-wallet key it
       # could not use and the service would have found none.
       BADGE_MINTER_KEY:          ${BADGE_MINTER_KEY}
+      # The contract that key signs for. Never passed to the keeper before,
+      # because no keeper path read it - config.ts falls back to the literal
+      # '0x', which is a valid-looking nothing. The badge sweep made it a
+      # read path, and every mint failed with `Address "0x" is invalid`.
+      BADGE_NFT:                 ${BADGE_NFT}
       INDEXER_START_BLOCK:       ${INDEXER_START_BLOCK}
       CHAIN_ID:                  ${CHAIN_ID:-84532}
 

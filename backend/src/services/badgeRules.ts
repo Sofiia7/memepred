@@ -73,6 +73,20 @@ const CONDITIONS: Record<number, (s: TraderStats) => boolean> = {
  * Ascending order so a minting run is deterministic and a partial failure
  * resumes at the same place.
  */
+/**
+ * Whether an address is a real contract to mint against.
+ *
+ * config.ts falls back to the literal `'0x'` when BADGE_NFT is unset, which is
+ * a valid-looking nothing that viem only rejects at send time - so an unset
+ * variable surfaced as one `Address "0x" is invalid` per earned badge per
+ * address per tick rather than as the configuration fault it is.
+ */
+export function isMintable(address: string | undefined): boolean {
+  if (!address) return false
+  if (!/^0x[0-9a-fA-F]{40}$/.test(address)) return false
+  return address !== '0x0000000000000000000000000000000000000000'
+}
+
 export function earnedBadges(stats: TraderStats): number[] {
   return Object.entries(CONDITIONS)
     .filter(([, meets]) => meets(stats))
