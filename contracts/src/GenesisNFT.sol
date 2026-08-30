@@ -41,7 +41,19 @@ contract GenesisNFT is ERC721, Ownable {
         emit GenesisMinted(to, tokenId, number);
     }
 
+    /**
+     * @notice Name the pool that may mint. Settable once.
+     * @dev    One-shot, matching LiquidityPool.setMarketFactory and
+     *         FeeDistributor.setMarketFactory. This one was freely re-settable,
+     *         and the pool is the sole minter: repointing it at an address the
+     *         owner controls is a licence to mint Genesis NFTs, each of which
+     *         carries a permanent 1.5x on the LP fee stream. MAX_SUPPLY bounds
+     *         the damage, which made it owner-trust rather than an open door -
+     *         but there was no reason for the gap.
+     */
     function setLiquidityPool(address _pool) external onlyOwner {
+        require(liquidityPool == address(0), "pool already set");
+        require(_pool != address(0), "zero pool");
         liquidityPool = _pool;
     }
 

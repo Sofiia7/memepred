@@ -78,6 +78,28 @@ contract GenesisNFTTest is Test {
         nft.setLiquidityPool(alice);
     }
 
+    /**
+     * The pool is the sole minter, and this setter could be called again at any
+     * time - unlike LiquidityPool.setMarketFactory and
+     * FeeDistributor.setMarketFactory, which are both one-shot. Repointing it
+     * at an address the owner controls is a licence to mint Genesis NFTs, and
+     * a Genesis NFT is a permanent 1.5x on the LP fee stream. The supply cap of
+     * 20 bounds it, which is why this is an owner-trust gap rather than an open
+     * door, but there is no reason for the gap to exist.
+     */
+    function test_SetLiquidityPool_IsOneShot() public {
+        vm.expectRevert("pool already set");
+        nft.setLiquidityPool(makeAddr("another-pool"));
+
+        assertEq(nft.liquidityPool(), address(pool), "the original minter stands");
+    }
+
+    function test_SetLiquidityPool_RejectsZero() public {
+        GenesisNFT fresh = new GenesisNFT("ipfs://test/");
+        vm.expectRevert("zero pool");
+        fresh.setLiquidityPool(address(0));
+    }
+
     function test_SetBaseURI_OnlyOwner() public {
         vm.prank(makeAddr("rogue"));
         vm.expectRevert();
