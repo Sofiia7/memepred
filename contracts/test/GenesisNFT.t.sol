@@ -23,9 +23,9 @@ contract MockPoolHook {
 
     function onGenesisTransfer(address from, address to) external {
         if (shouldRevert) revert("boom");
-        called   = true;
+        called = true;
         lastFrom = from;
-        lastTo   = to;
+        lastTo = to;
     }
 }
 
@@ -38,10 +38,10 @@ contract GenesisNFTTest is Test {
     GenesisNFT nft;
     MockPoolHook pool;
     address alice = makeAddr("alice");
-    address bob   = makeAddr("bob");
+    address bob = makeAddr("bob");
 
     function setUp() public {
-        nft  = new GenesisNFT("ipfs://test/");
+        nft = new GenesisNFT("ipfs://test/");
         pool = new MockPoolHook();
         nft.setLiquidityPool(address(pool));
     }
@@ -111,7 +111,7 @@ contract GenesisNFTTest is Test {
 
         assertTrue(pool.called(), "pool notified on mint");
         assertEq(pool.lastFrom(), address(0));
-        assertEq(pool.lastTo(),   alice);
+        assertEq(pool.lastTo(), alice);
     }
 
     function test_Transfer_NotifiesPoolHook() public {
@@ -122,8 +122,8 @@ contract GenesisNFTTest is Test {
         nft.transferFrom(alice, bob, 1);
 
         assertEq(pool.lastFrom(), alice);
-        assertEq(pool.lastTo(),   bob);
-        assertEq(nft.ownerOf(1),  bob);
+        assertEq(pool.lastTo(), bob);
+        assertEq(nft.ownerOf(1), bob);
     }
 
     /// @dev The hook call is wrapped in try/catch — a misbehaving pool must

@@ -14,40 +14,35 @@ import "./helpers/RedstoneTest.sol";
 import "./helpers/RedstoneHarness.sol";
 
 contract MarketFactoryTest is RedstoneTest {
-    MockUSDC      usdc;
-    address       resolver;
-    GenesisNFT    genesisNFT;
+    MockUSDC usdc;
+    address resolver;
+    GenesisNFT genesisNFT;
     LiquidityPool pool;
     MarketFactoryHarness factory;
 
     address treasury = makeAddr("treasury");
     address multisig = makeAddr("multisig");
-    address keeper   = makeAddr("keeper");
+    address keeper = makeAddr("keeper");
 
     bytes32 constant FEED_PEPE = bytes32("PEPE/USD");
     bytes32 constant FEED_DOGE = bytes32("DOGE/USD");
 
     function setUp() public {
-        usdc       = new MockUSDC();
-        resolver   = makeAddr("resolver");
+        usdc = new MockUSDC();
+        resolver = makeAddr("resolver");
         _setPrice(FEED_PEPE, 1000e8);
         _setPrice(FEED_DOGE, 2000e8);
 
         genesisNFT = new GenesisNFT("ipfs://test/");
-        pool       = new LiquidityPool(IERC20(address(usdc)), address(genesisNFT));
+        pool = new LiquidityPool(IERC20(address(usdc)), address(genesisNFT));
         genesisNFT.setLiquidityPool(address(pool));
 
         // Deploy real FeeDistributor + ReferralRegistry so factory can authorize them.
-        FeeDistributor   feeDist   = new FeeDistributor(address(usdc), treasury, treasury, treasury);
-        ReferralRegistry refReg    = new ReferralRegistry();
+        FeeDistributor feeDist = new FeeDistributor(address(usdc), treasury, treasury, treasury);
+        ReferralRegistry refReg = new ReferralRegistry();
 
         factory = new MarketFactoryHarness(
-            address(usdc),
-            resolver,
-            address(feeDist),
-            address(refReg),
-            multisig,
-            address(pool)
+            address(usdc), resolver, address(feeDist), address(refReg), multisig, address(pool)
         );
 
         pool.setMarketFactory(address(factory));
@@ -181,14 +176,14 @@ contract MarketFactoryTest is RedstoneTest {
         address m = factory.createMarket(FEED_PEPE, 15 minutes);
         OrderbookMarket ob = OrderbookMarket(m);
 
-        assertEq(address(ob.usdc()),           address(usdc));
-        assertEq(address(ob.resolver()),       resolver);
-        assertEq(address(ob.liquidityPool()),  address(pool));
-        assertEq(ob.feeDistributor(),          factory.feeDistributor());
-        assertEq(ob.referralRegistry(),        factory.referralRegistry());
-        assertEq(ob.multisig(),                multisig);
-        assertEq(ob.feedId(),              FEED_PEPE);
-        assertEq(ob.duration(),                15 minutes);
+        assertEq(address(ob.usdc()), address(usdc));
+        assertEq(address(ob.resolver()), resolver);
+        assertEq(address(ob.liquidityPool()), address(pool));
+        assertEq(ob.feeDistributor(), factory.feeDistributor());
+        assertEq(ob.referralRegistry(), factory.referralRegistry());
+        assertEq(ob.multisig(), multisig);
+        assertEq(ob.feedId(), FEED_PEPE);
+        assertEq(ob.duration(), 15 minutes);
     }
 
     // ── duplicate-market guard (Sprint 5.5 audit fix) ─────
@@ -338,13 +333,13 @@ contract MarketFactoryTest is RedstoneTest {
         vm.stopPrank();
 
         uint256 shorter = _gasToPause(FEED_PEPE);
-        uint256 longer  = _gasToPause(FEED_DOGE);
+        uint256 longer = _gasToPause(FEED_DOGE);
 
         // Asserted as a ratio rather than a gas ceiling on purpose: the
         // absolute numbers here are not the chain's, since vm.etch leaves the
         // seeded accounts warm. What has to hold is that the sweep stops
         // scaling with how long the feed has existed.
-        assertApproxEqRel(longer, shorter, 0.10e18, "an old feed must not cost more to stop than a newer one");
+        assertApproxEqRel(longer, shorter, 0.1e18, "an old feed must not cost more to stop than a newer one");
         assertTrue(factory.feedPaused(FEED_PEPE), "the flag is the part that must always hold");
         assertTrue(factory.feedPaused(FEED_DOGE));
         assertTrue(OrderbookMarket(livePepe).paused(), "the markets that are actually live still get paused");

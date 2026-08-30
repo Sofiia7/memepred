@@ -45,9 +45,8 @@ contract RedstonePayloadBuilderTest is Test {
 
     function _read(bytes32 feedId, bytes memory payload) internal view returns (bool ok, uint256 price) {
         bytes memory ret;
-        (ok, ret) = address(reader).staticcall(
-            bytes.concat(abi.encodeWithSelector(MockPriceReader.readPrice.selector, feedId), payload)
-        );
+        (ok, ret) = address(reader)
+            .staticcall(bytes.concat(abi.encodeWithSelector(MockPriceReader.readPrice.selector, feedId), payload));
         if (ok && ret.length == 32) price = abi.decode(ret, (uint256));
     }
 
@@ -96,7 +95,7 @@ contract RedstonePayloadBuilderTest is Test {
 
     function test_PackageCountChangesLengthBy142() public pure {
         uint256 three = RedstonePayloadBuilder.build(PEPE, 1, 1_787_853_570_000, 3).length;
-        uint256 four  = RedstonePayloadBuilder.build(PEPE, 1, 1_787_853_570_000, 4).length;
+        uint256 four = RedstonePayloadBuilder.build(PEPE, 1, 1_787_853_570_000, 4).length;
 
         assertEq(four - three, 142);
     }
@@ -104,7 +103,7 @@ contract RedstonePayloadBuilderTest is Test {
     /// The marker is how the consumer finds the end of the payload at all.
     function test_EndsWithTheRedstoneMarker() public pure {
         bytes memory built = RedstonePayloadBuilder.build(PEPE, 392, 1_787_853_570_000, 3);
-        bytes memory live  = RedstoneFixture.PEPE_PAYLOAD;
+        bytes memory live = RedstoneFixture.PEPE_PAYLOAD;
 
         for (uint256 i = 1; i <= 9; i++) {
             assertEq(built[built.length - i], live[live.length - i], "marker mismatch");
@@ -153,12 +152,10 @@ contract RedstonePayloadBuilderTest is Test {
         uint256 tsMs = 1_787_853_570_000;
         bytes memory payload = RedstonePayloadBuilder.build(PEPE, 392, tsMs, 3);
 
-        (bool ok, bytes memory ret) = address(reader).staticcall(
-            bytes.concat(
-                abi.encodeWithSelector(reader.extractTimestampsAndAssertAllAreEqual.selector),
-                payload
-            )
-        );
+        (bool ok, bytes memory ret) = address(reader)
+            .staticcall(
+                bytes.concat(abi.encodeWithSelector(reader.extractTimestampsAndAssertAllAreEqual.selector), payload)
+            );
 
         assertTrue(ok, "timestamp extraction reverted");
         assertEq(abi.decode(ret, (uint256)), tsMs);
@@ -167,12 +164,10 @@ contract RedstonePayloadBuilderTest is Test {
     function test_BuildNowStampsTheCurrentBlockInMilliseconds() public {
         bytes memory payload = RedstonePayloadBuilder.buildNow(PEPE, 392, 3);
 
-        (bool ok, bytes memory ret) = address(reader).staticcall(
-            bytes.concat(
-                abi.encodeWithSelector(reader.extractTimestampsAndAssertAllAreEqual.selector),
-                payload
-            )
-        );
+        (bool ok, bytes memory ret) = address(reader)
+            .staticcall(
+                bytes.concat(abi.encodeWithSelector(reader.extractTimestampsAndAssertAllAreEqual.selector), payload)
+            );
 
         assertTrue(ok, "timestamp extraction reverted");
         // Milliseconds, not seconds: RedStone timestamps are ms and a payload

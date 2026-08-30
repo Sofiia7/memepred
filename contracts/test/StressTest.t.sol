@@ -18,50 +18,49 @@ import "./helpers/RedstoneHarness.sol";
 ///         conservation invariant after every operation:
 ///             sum(USDC in market+pool+claimed) == sum(USDC ever in)
 contract StressTest is RedstoneTest {
-    OrderbookMarket  market;
-    LiquidityPool    pool;
-    GenesisNFT       genesisNFT;
-    FeeDistributor   feeDist;
+    OrderbookMarket market;
+    LiquidityPool pool;
+    GenesisNFT genesisNFT;
+    FeeDistributor feeDist;
     ReferralRegistry refReg;
     MarketFactoryHarness factory;
-    MockUSDC         usdc;
+    MockUSDC usdc;
 
     address resolver;
     address treasury = makeAddr("treasury");
-    address lpSink   = makeAddr("lpSink");
-    address nftPool  = makeAddr("nftPool");
+    address lpSink = makeAddr("lpSink");
+    address nftPool = makeAddr("nftPool");
     address multisig = makeAddr("multisig");
 
     bytes32 constant FEED = bytes32("PEPE/USD");
     uint256 constant ENTRY_PRICE = 9142e12;
-    uint256 constant DURATION    = 15 minutes;
+    uint256 constant DURATION = 15 minutes;
 
     address[30] traders;
-    address[5]  lps;
+    address[5] lps;
 
-    uint256 totalUsdcIn;     // every transferIn to the system
-    uint256 totalUsdcOut;    // every transferOut from the system
+    uint256 totalUsdcIn; // every transferIn to the system
+    uint256 totalUsdcOut; // every transferOut from the system
 
     function setUp() public {
         resolver = makeAddr("resolver");
         _setPrice(FEED, 914200);
 
-        usdc       = new MockUSDC();
+        usdc = new MockUSDC();
         genesisNFT = new GenesisNFT("ipfs://stress/");
-        pool       = new LiquidityPool(IERC20(address(usdc)), address(genesisNFT));
+        pool = new LiquidityPool(IERC20(address(usdc)), address(genesisNFT));
         genesisNFT.setLiquidityPool(address(pool));
 
         feeDist = new FeeDistributor(address(usdc), treasury, lpSink, nftPool);
-        refReg  = new ReferralRegistry();
+        refReg = new ReferralRegistry();
 
         factory = new MarketFactoryHarness(
-            address(usdc), resolver, address(feeDist),
-            address(refReg), multisig, address(pool)
+            address(usdc), resolver, address(feeDist), address(refReg), multisig, address(pool)
         );
 
-        pool   .setMarketFactory(address(factory));
+        pool.setMarketFactory(address(factory));
         feeDist.setMarketFactory(address(factory));
-        refReg .setMarketFactory(address(factory));
+        refReg.setMarketFactory(address(factory));
 
         factory.addFeed(FEED);
 
@@ -80,13 +79,15 @@ contract StressTest is RedstoneTest {
             traders[i] = address(uint160(uint256(keccak256(abi.encode("trader", i)))));
             usdc.mint(traders[i], 10_000e6);
             totalUsdcIn += 10_000e6;
-            vm.prank(traders[i]); usdc.approve(address(market), type(uint256).max);
+            vm.prank(traders[i]);
+            usdc.approve(address(market), type(uint256).max);
         }
         for (uint256 i = 0; i < lps.length; i++) {
             lps[i] = address(uint160(uint256(keccak256(abi.encode("lp", i)))));
             usdc.mint(lps[i], 50_000e6);
             totalUsdcIn += 50_000e6;
-            vm.prank(lps[i]); usdc.approve(address(pool), type(uint256).max);
+            vm.prank(lps[i]);
+            usdc.approve(address(pool), type(uint256).max);
         }
     }
 
@@ -96,12 +97,16 @@ contract StressTest is RedstoneTest {
     function _assertConservation() internal view {
         uint256 held = usdc.balanceOf(address(market)) + usdc.balanceOf(address(pool));
         // Includes treasury/lpSink/nftPool/feeDist as "out" since they're sinks.
-        uint256 out = usdc.balanceOf(treasury) + usdc.balanceOf(lpSink)
-                    + usdc.balanceOf(nftPool)  + usdc.balanceOf(address(feeDist));
+        uint256 out = usdc.balanceOf(treasury) + usdc.balanceOf(lpSink) + usdc.balanceOf(nftPool)
+            + usdc.balanceOf(address(feeDist));
         uint256 totalTraderBal;
-        for (uint256 i = 0; i < traders.length; i++) totalTraderBal += usdc.balanceOf(traders[i]);
+        for (uint256 i = 0; i < traders.length; i++) {
+            totalTraderBal += usdc.balanceOf(traders[i]);
+        }
         uint256 totalLpBal;
-        for (uint256 i = 0; i < lps.length; i++) totalLpBal += usdc.balanceOf(lps[i]);
+        for (uint256 i = 0; i < lps.length; i++) {
+            totalLpBal += usdc.balanceOf(lps[i]);
+        }
 
         // Total minted should equal sum of everything everywhere.
         uint256 systemTotal = held + out + totalTraderBal + totalLpBal;
@@ -113,13 +118,14 @@ contract StressTest is RedstoneTest {
         // 5 LPs deposit varying amounts.
         uint256[5] memory lpAmounts = [uint256(1000e6), 2000e6, 5000e6, 10000e6, 20000e6];
         for (uint256 i = 0; i < lps.length; i++) {
-            vm.prank(lps[i]); pool.deposit(lpAmounts[i], lps[i]);
+            vm.prank(lps[i]);
+            pool.deposit(lpAmounts[i], lps[i]);
         }
         _assertConservation();
 
         uint256 pvpMatches = 0;
-        uint256 lpMatches  = 0;
-        uint256 refunds    = 0;
+        uint256 lpMatches = 0;
+        uint256 refunds = 0;
 
         // 500 rounds, each round: spawn UP+DOWN pair → match → settle → claim.
         for (uint256 round = 0; round < 500; round++) {
@@ -129,26 +135,25 @@ contract StressTest is RedstoneTest {
             // Always set a fresh price so MAX_PRICE_AGE never trips.
             _setPrice(FEED, 914200);
 
-            address up   = traders[round % traders.length];
+            address up = traders[round % traders.length];
             address down = traders[(round * 7 + 3) % traders.length];
             if (up == down) down = traders[(round + 1) % traders.length];
 
             uint256 betAmount = 1e6 + ((round % 50) * 1e6); // 1-50 USDC
 
-            (bool upOk,) = _tryBet(
-                market, up, OrderbookMarket.Direction.UP, betAmount, address(0), ENTRY_PRICE, 100);
+            (bool upOk,) = _tryBet(market, up, OrderbookMarket.Direction.UP, betAmount, address(0), ENTRY_PRICE, 100);
             if (!upOk) continue;
 
-            (bool downOk,) = _tryBet(
-                market, down, OrderbookMarket.Direction.DOWN, betAmount, address(0), ENTRY_PRICE, 100);
+            (bool downOk,) =
+                _tryBet(market, down, OrderbookMarket.Direction.DOWN, betAmount, address(0), ENTRY_PRICE, 100);
             if (!downOk) continue;
             pvpMatches++;
 
             // Settle. Alternate winner direction for realistic mix.
             vm.warp(block.timestamp + DURATION + 1);
             uint256 exitPrice = (round % 2 == 0)
-                ? ENTRY_PRICE + (ENTRY_PRICE / 100)   // UP wins
-                : ENTRY_PRICE - (ENTRY_PRICE / 100);  // DOWN wins
+                ? ENTRY_PRICE + (ENTRY_PRICE / 100)  // UP wins
+                : ENTRY_PRICE - (ENTRY_PRICE / 100); // DOWN wins
             _setPrice(FEED, 914200); // keep oracle fresh
             uint256 matchIdToSettle = market.nextMatchId() - 1;
             vm.prank(resolver);
@@ -156,8 +161,10 @@ contract StressTest is RedstoneTest {
 
             // Try claim by both sides (only winner actually transfers).
             uint256 ordersBefore = market.nextOrderId() - 1;
-            vm.prank(up);   try market.claim(ordersBefore - 1) {} catch {}
-            vm.prank(down); try market.claim(ordersBefore)     {} catch {}
+            vm.prank(up);
+            try market.claim(ordersBefore - 1) {} catch {}
+            vm.prank(down);
+            try market.claim(ordersBefore) {} catch {}
 
             // Periodic invariant check.
             if (round % 50 == 0) _assertConservation();
@@ -168,8 +175,7 @@ contract StressTest is RedstoneTest {
             vm.warp(block.timestamp + 1);
             _setPrice(FEED, 914200);
             address t = traders[(i * 11) % traders.length];
-            (bool betOk,) = _tryBet(
-                market, t, OrderbookMarket.Direction.UP, 5e6, address(0), ENTRY_PRICE, 100);
+            (bool betOk,) = _tryBet(market, t, OrderbookMarket.Direction.UP, 5e6, address(0), ENTRY_PRICE, 100);
             if (betOk) {
                 lpMatches++;
                 vm.warp(block.timestamp + DURATION + 1);
@@ -178,7 +184,8 @@ contract StressTest is RedstoneTest {
                 vm.prank(resolver);
                 try market.settleMatch(mid, ENTRY_PRICE + 5) {} catch {}
                 uint256 oid = market.nextOrderId() - 1;
-                vm.prank(t); try market.claim(oid) {} catch {}
+                vm.prank(t);
+                try market.claim(oid) {} catch {}
             }
         }
 
@@ -186,15 +193,13 @@ contract StressTest is RedstoneTest {
         for (uint256 i = 0; i < 50; i++) {
             vm.warp(block.timestamp + 1);
             _setPrice(FEED, 914200);
-            address up   = traders[(i * 13) % traders.length];
+            address up = traders[(i * 13) % traders.length];
             address down = traders[(i * 17 + 5) % traders.length];
             if (up == down) continue;
 
-            (bool upOk2,) = _tryBet(
-                market, up, OrderbookMarket.Direction.UP, 3e6, address(0), ENTRY_PRICE, 100);
+            (bool upOk2,) = _tryBet(market, up, OrderbookMarket.Direction.UP, 3e6, address(0), ENTRY_PRICE, 100);
             if (!upOk2) continue;
-            (bool downOk2,) = _tryBet(
-                market, down, OrderbookMarket.Direction.DOWN, 3e6, address(0), ENTRY_PRICE, 100);
+            (bool downOk2,) = _tryBet(market, down, OrderbookMarket.Direction.DOWN, 3e6, address(0), ENTRY_PRICE, 100);
             if (!downOk2) continue;
 
             // Abandon: skip settle, jump past grace.
@@ -208,13 +213,13 @@ contract StressTest is RedstoneTest {
 
         _assertConservation();
 
-        emit log_named_uint("PvP matches",        pvpMatches);
-        emit log_named_uint("LP fallback matches",lpMatches);
-        emit log_named_uint("Emergency refunds",  refunds);
-        emit log_named_uint("Final pool assets",  pool.totalAssets());
-        emit log_named_uint("Final market USDC",  usdc.balanceOf(address(market)));
+        emit log_named_uint("PvP matches", pvpMatches);
+        emit log_named_uint("LP fallback matches", lpMatches);
+        emit log_named_uint("Emergency refunds", refunds);
+        emit log_named_uint("Final pool assets", pool.totalAssets());
+        emit log_named_uint("Final market USDC", usdc.balanceOf(address(market)));
         emit log_named_uint("Treasury collected", usdc.balanceOf(treasury));
-        emit log_named_uint("LP sink collected",  usdc.balanceOf(lpSink));
+        emit log_named_uint("LP sink collected", usdc.balanceOf(lpSink));
 
         assertGt(pvpMatches, 400, "should complete >400 PvP matches");
     }

@@ -28,9 +28,9 @@ contract TestLocalPool is Script {
             address(usdc),
             address(resolver),
             address(pool),
-            deployer,    // fee distrib (mock)
-            address(0),  // referralRegistry — dev script, not exercised
-            deployer,    // multisig
+            deployer, // fee distrib (mock)
+            address(0), // referralRegistry — dev script, not exercised
+            deployer, // multisig
             bytes32("PEPE/USD"),
             15 minutes
         );
@@ -59,22 +59,25 @@ contract TestLocalPool is Script {
         bytes memory payload = vm.envBytes("REDSTONE_PAYLOAD");
         require(payload.length > 0, "REDSTONE_PAYLOAD not set - see comment above");
 
-        (bool ok, bytes memory ret) = address(market).call(bytes.concat(
-            abi.encodeWithSelector(
-                OrderbookMarket.placeBet.selector,
-                OrderbookMarket.Direction.UP,
-                uint256(100e6),
-                address(0),
-                uint256(1000 * 1e18),
-                uint256(100)
-            ),
-            payload
-        ));
+        (bool ok, bytes memory ret) = address(market)
+            .call(
+                bytes.concat(
+                    abi.encodeWithSelector(
+                        OrderbookMarket.placeBet.selector,
+                        OrderbookMarket.Direction.UP,
+                        uint256(100e6),
+                        address(0),
+                        uint256(1000 * 1e18),
+                        uint256(100)
+                    ),
+                    payload
+                )
+            );
         require(ok, "placeBet reverted - is the payload fresh? the entry window is 20s");
         uint256 orderId = abi.decode(ret, (uint256));
 
         OrderbookMarket.Order memory o = market.getOrder(orderId);
-        console.log("Order matched? ", uint(o.status) == uint(OrderbookMarket.OrderStatus.MATCHED));
+        console.log("Order matched? ", uint256(o.status) == uint256(OrderbookMarket.OrderStatus.MATCHED));
 
         vm.stopBroadcast();
     }

@@ -9,11 +9,11 @@ contract ReferralRegistryTest is Test {
     ReferralRegistry registry;
     MockMarketRegistry factory;
 
-    address owner    = makeAddr("owner");
-    address market   = makeAddr("market");
-    address alice    = makeAddr("alice");
-    address bob      = makeAddr("bob");
-    address charlie  = makeAddr("charlie");
+    address owner = makeAddr("owner");
+    address market = makeAddr("market");
+    address alice = makeAddr("alice");
+    address bob = makeAddr("bob");
+    address charlie = makeAddr("charlie");
 
     function setUp() public {
         vm.prank(owner);

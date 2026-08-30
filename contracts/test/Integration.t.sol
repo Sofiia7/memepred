@@ -18,46 +18,41 @@ import "./helpers/RedstoneHarness.sol";
 ///         - OrderbookMarket.placeBet registers referral via the registry.
 ///         - OrderbookMarket._settleOrder pushes fee through FeeDistributor split.
 contract IntegrationTest is RedstoneTest {
-    MockUSDC         usdc;
-    address          resolver;
-    GenesisNFT       genesisNFT;
-    LiquidityPool    pool;
-    FeeDistributor   feeDist;
+    MockUSDC usdc;
+    address resolver;
+    GenesisNFT genesisNFT;
+    LiquidityPool pool;
+    FeeDistributor feeDist;
     ReferralRegistry refReg;
     MarketFactoryHarness factory;
-    OrderbookMarket  market;
+    OrderbookMarket market;
 
     address treasury = makeAddr("treasury");
-    address lpSink   = makeAddr("lpSink");
-    address nftPool  = makeAddr("nftPool");
+    address lpSink = makeAddr("lpSink");
+    address nftPool = makeAddr("nftPool");
     address multisig = makeAddr("multisig");
 
     bytes32 constant FEED = bytes32("PEPE/USD");
 
     function setUp() public {
-        usdc     = new MockUSDC();
+        usdc = new MockUSDC();
         resolver = makeAddr("resolver");
         _setPrice(FEED, 1000e8);
 
         genesisNFT = new GenesisNFT("ipfs://test/");
-        pool       = new LiquidityPool(IERC20(address(usdc)), address(genesisNFT));
+        pool = new LiquidityPool(IERC20(address(usdc)), address(genesisNFT));
         genesisNFT.setLiquidityPool(address(pool));
 
         feeDist = new FeeDistributor(address(usdc), treasury, lpSink, nftPool);
-        refReg  = new ReferralRegistry();
+        refReg = new ReferralRegistry();
 
         factory = new MarketFactoryHarness(
-            address(usdc),
-            resolver,
-            address(feeDist),
-            address(refReg),
-            multisig,
-            address(pool)
+            address(usdc), resolver, address(feeDist), address(refReg), multisig, address(pool)
         );
 
-        pool   .setMarketFactory(address(factory));
+        pool.setMarketFactory(address(factory));
         feeDist.setMarketFactory(address(factory));
-        refReg .setMarketFactory(address(factory));
+        refReg.setMarketFactory(address(factory));
 
         factory.addFeed(FEED);
 
@@ -80,18 +75,19 @@ contract IntegrationTest is RedstoneTest {
 
     // ── B2/B5: createMarket authorizes everywhere ────────
     function test_MarketAuthorizedOn_All_Three() public view {
-        assertTrue(pool   .isAuthorizedMarket(address(market)),  "LP authorized");
-        assertTrue(feeDist.isAuthorizedMarket(address(market)),  "FeeDist authorized");
-        assertTrue(refReg .authorizedMarkets (address(market)),  "RefReg authorized");
+        assertTrue(pool.isAuthorizedMarket(address(market)), "LP authorized");
+        assertTrue(feeDist.isAuthorizedMarket(address(market)), "FeeDist authorized");
+        assertTrue(refReg.authorizedMarkets(address(market)), "RefReg authorized");
     }
 
     // ── B5: placeBet records referral ────────────────────
     function test_PlaceBet_RegistersReferral() public {
         address alice = makeAddr("alice");
-        address bob   = makeAddr("bob"); // referrer
+        address bob = makeAddr("bob"); // referrer
 
         usdc.mint(alice, 100e6);
-        vm.prank(alice); usdc.approve(address(market), type(uint256).max);
+        vm.prank(alice);
+        usdc.approve(address(market), type(uint256).max);
         _bet(market, alice, OrderbookMarket.Direction.UP, 25e6, bob, 1000 * 1e18, 100);
 
         assertEq(refReg.referrerOf(alice), bob, "referral recorded on first bet");
@@ -99,11 +95,12 @@ contract IntegrationTest is RedstoneTest {
 
     function test_PlaceBet_ReferralStable_OnSecondBet() public {
         address alice = makeAddr("alice");
-        address bob   = makeAddr("bob");
-        address eve   = makeAddr("eve");
+        address bob = makeAddr("bob");
+        address eve = makeAddr("eve");
 
         usdc.mint(alice, 100e6);
-        vm.prank(alice); usdc.approve(address(market), type(uint256).max);
+        vm.prank(alice);
+        usdc.approve(address(market), type(uint256).max);
         _bet(market, alice, OrderbookMarket.Direction.UP, 25e6, bob, 1000 * 1e18, 100);
 
         // Second bet attempts a different referrer — registry must keep the first.
@@ -116,7 +113,8 @@ contract IntegrationTest is RedstoneTest {
         address alice = makeAddr("alice");
 
         usdc.mint(alice, 100e6);
-        vm.prank(alice); usdc.approve(address(market), type(uint256).max);
+        vm.prank(alice);
+        usdc.approve(address(market), type(uint256).max);
         _bet(market, alice, OrderbookMarket.Direction.UP, 25e6, address(0), 1000 * 1e18, 100);
 
         assertEq(refReg.referrerOf(alice), address(0));
@@ -127,14 +125,17 @@ contract IntegrationTest is RedstoneTest {
         // LP funds vault.
         address lp = makeAddr("lp");
         usdc.mint(lp, 1000e6);
-        vm.prank(lp); usdc.approve(address(pool), type(uint256).max);
-        vm.prank(lp); pool.deposit(1000e6, lp);
+        vm.prank(lp);
+        usdc.approve(address(pool), type(uint256).max);
+        vm.prank(lp);
+        pool.deposit(1000e6, lp);
 
         // Alice (UP) with referrer = bob ; LP takes DOWN.
         address alice = makeAddr("alice");
-        address bob   = makeAddr("bob");
+        address bob = makeAddr("bob");
         usdc.mint(alice, 100e6);
-        vm.prank(alice); usdc.approve(address(market), type(uint256).max);
+        vm.prank(alice);
+        usdc.approve(address(market), type(uint256).max);
         _bet(market, alice, OrderbookMarket.Direction.UP, 25e6, bob, 1000 * 1e18, 100);
 
         // UP wins → user wins → settle pushes fee.
@@ -156,10 +157,12 @@ contract IntegrationTest is RedstoneTest {
     function test_Settle_NoReferrer_FullSplitToSinks() public {
         address alice = makeAddr("alice");
         address charlie = makeAddr("charlie");
-        usdc.mint(alice,   100e6);
+        usdc.mint(alice, 100e6);
         usdc.mint(charlie, 100e6);
-        vm.prank(alice);   usdc.approve(address(market), type(uint256).max);
-        vm.prank(charlie); usdc.approve(address(market), type(uint256).max);
+        vm.prank(alice);
+        usdc.approve(address(market), type(uint256).max);
+        vm.prank(charlie);
+        usdc.approve(address(market), type(uint256).max);
 
         // PvP match: Alice UP, Charlie DOWN, no referrer.
         _bet(market, alice, OrderbookMarket.Direction.UP, 25e6, address(0), 1000 * 1e18, 100);

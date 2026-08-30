@@ -10,7 +10,6 @@ import "./interfaces/IMarketRegistry.sol";
  *         Вызывается из авторизованных контрактов при первой ставке реферала.
  */
 contract ReferralRegistry is Ownable {
-
     // referee → referrer (once set, forever)
     mapping(address => address) public referrerOf;
     mapping(address => address[]) public referralsOf;
@@ -27,9 +26,9 @@ contract ReferralRegistry is Ownable {
 
     event ReferralRegistered(address indexed referee, address indexed referrer);
     event RefCodeGenerated(address indexed referrer, bytes6 code);
-    event MarketFactorySet (address indexed factory);
-    event MarketAuthorized (address indexed market);
-    event MarketRevoked    (address indexed market);
+    event MarketFactorySet(address indexed factory);
+    event MarketAuthorized(address indexed market);
+    event MarketRevoked(address indexed market);
 
     constructor() Ownable(msg.sender) {}
 
@@ -61,7 +60,7 @@ contract ReferralRegistry is Ownable {
     ///         (astronomically unlikely, but non-zero in a 48-bit space)
     ///         event that two different referrers hash to the same code.
     function generateCode(address referrer) external returns (bytes6 code) {
-        require(msg.sender == referrer,               "only self");
+        require(msg.sender == referrer, "only self");
         require(referrerToCode[referrer] == bytes6(0), "code exists");
 
         code = bytes6(keccak256(abi.encodePacked(referrer, block.timestamp, blockhash(block.number - 1))));
@@ -105,7 +104,7 @@ contract ReferralRegistry is Ownable {
     function authorizeMarket(address market) external {
         require(msg.sender == marketFactory || msg.sender == owner(), "only factory or owner");
         require(market != address(0), "zero market");
-        require(marketFactory != address(0),                    "factory not set");
+        require(marketFactory != address(0), "factory not set");
         require(IMarketRegistry(marketFactory).isMarket(market), "not a market");
         authorizedMarkets[market] = true;
         emit MarketAuthorized(market);

@@ -38,13 +38,9 @@ contract RedstoneOracleTest is Test {
 
     /// Appends a RedStone payload to the calldata of readPrice, the way the
     /// keeper and the frontend will have to.
-    function _readWithPayload(bytes32 feedId, bytes memory payload)
-        internal view returns (bool ok, uint256 price)
-    {
-        bytes memory callData = abi.encodePacked(
-            abi.encodeWithSelector(PriceReader.readPrice.selector, feedId),
-            payload
-        );
+    function _readWithPayload(bytes32 feedId, bytes memory payload) internal view returns (bool ok, uint256 price) {
+        bytes memory callData =
+            abi.encodePacked(abi.encodeWithSelector(PriceReader.readPrice.selector, feedId), payload);
         bytes memory ret;
         (ok, ret) = address(reader).staticcall(callData);
         if (ok && ret.length == 32) price = abi.decode(ret, (uint256));
@@ -53,8 +49,7 @@ contract RedstoneOracleTest is Test {
     function test_ReadsLivePepePrice() public {
         vm.warp(RedstoneFixture.PEPE_TIMESTAMP_MS / 1000);
 
-        (bool ok, uint256 price) =
-            _readWithPayload(bytes32("PEPE"), RedstoneFixture.PEPE_PAYLOAD);
+        (bool ok, uint256 price) = _readWithPayload(bytes32("PEPE"), RedstoneFixture.PEPE_PAYLOAD);
 
         assertTrue(ok, "payload rejected");
         assertEq(price, RedstoneFixture.PEPE_VALUE_8DP);
@@ -65,8 +60,7 @@ contract RedstoneOracleTest is Test {
     function test_ReadsLiveDogePrice() public {
         vm.warp(RedstoneFixture.DOGE_TIMESTAMP_MS / 1000);
 
-        (bool ok, uint256 price) =
-            _readWithPayload(bytes32("DOGE"), RedstoneFixture.DOGE_PAYLOAD);
+        (bool ok, uint256 price) = _readWithPayload(bytes32("DOGE"), RedstoneFixture.DOGE_PAYLOAD);
 
         assertTrue(ok, "payload rejected");
         assertEq(price, RedstoneFixture.DOGE_VALUE_8DP);
@@ -89,9 +83,7 @@ contract RedstoneOracleTest is Test {
     function test_RejectsCallWithNoPayload() public {
         vm.warp(RedstoneFixture.PEPE_TIMESTAMP_MS / 1000);
 
-        (bool ok,) = address(reader).staticcall(
-            abi.encodeWithSelector(PriceReader.readPrice.selector, bytes32("PEPE"))
-        );
+        (bool ok,) = address(reader).staticcall(abi.encodeWithSelector(PriceReader.readPrice.selector, bytes32("PEPE")));
 
         assertFalse(ok, "a call with no signed price must not produce one");
     }

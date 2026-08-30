@@ -15,7 +15,6 @@ import "./ReferralRegistry.sol";
  *         Keeper calls createMarket() every N minutes.
  */
 contract MarketFactory is Ownable {
-
     // ── CONFIG ─────────────────────────────────────────────
     address public immutable usdc;
     address public immutable resolver;
@@ -63,7 +62,7 @@ contract MarketFactory is Ownable {
     uint256 public pendingFeeBps;
     uint256 public feeChangeAvailableAt;
     uint256 public constant FEE_TIMELOCK = 48 hours;
-    uint256 public constant FEE_MAX      = 100;        // max 1%
+    uint256 public constant FEE_MAX = 100; // max 1%
 
     uint256[] public allowedDurations;
 
@@ -99,18 +98,13 @@ contract MarketFactory is Ownable {
     ///         sign a tx every N minutes just to keep fresh markets rolling.
     address public marketCreator;
 
-    event MarketCreated(
-        address indexed market,
-        bytes32 indexed feedId,
-        uint256 duration,
-        uint256 timestamp
-    );
+    event MarketCreated(address indexed market, bytes32 indexed feedId, uint256 duration, uint256 timestamp);
     event EmergencyPauserSet(address indexed pauser);
-    event MultisigChanged   (address indexed previous, address indexed current);
-    event FeedPaused        (bytes32 indexed feedId, address indexed by);
-    event FeedUnpaused      (bytes32 indexed feedId);
-    event FeeChangeProposed (uint256 newFeeBps, uint256 availableAt);
-    event FeeChanged        (uint256 newFeeBps);
+    event MultisigChanged(address indexed previous, address indexed current);
+    event FeedPaused(bytes32 indexed feedId, address indexed by);
+    event FeedUnpaused(bytes32 indexed feedId);
+    event FeeChangeProposed(uint256 newFeeBps, uint256 availableAt);
+    event FeeChanged(uint256 newFeeBps);
     event MarketCreatorSet(address indexed creator);
 
     constructor(
@@ -121,16 +115,18 @@ contract MarketFactory is Ownable {
         address _multisig,
         address _liquidityPool
     ) Ownable(msg.sender) {
-        require(_usdc != address(0) && _resolver != address(0)
-             && _feeDistributor != address(0) && _referralRegistry != address(0)
-             && _multisig != address(0) && _liquidityPool != address(0), "zero address");
-        usdc             = _usdc;
-        resolver         = _resolver;
-        feeDistributor   = _feeDistributor;
+        require(
+            _usdc != address(0) && _resolver != address(0) && _feeDistributor != address(0)
+                && _referralRegistry != address(0) && _multisig != address(0) && _liquidityPool != address(0),
+            "zero address"
+        );
+        usdc = _usdc;
+        resolver = _resolver;
+        feeDistributor = _feeDistributor;
         referralRegistry = _referralRegistry;
-        multisig         = _multisig;
-        feeBps           = 0;
-        liquidityPool    = _liquidityPool;
+        multisig = _multisig;
+        feeBps = 0;
+        liquidityPool = _liquidityPool;
 
         // Deploy the clone target once, here. Passing zeroed per-instance
         // config leaves it permanently initialized (OrderbookMarket._init
@@ -147,19 +143,13 @@ contract MarketFactory is Ownable {
         allowedDurations.push(24 hours);
     }
 
-    function createMarket(
-        bytes32 feedId,
-        uint256 duration
-    ) external returns (address market) {
-        require(
-            msg.sender == resolver || msg.sender == owner() || msg.sender == marketCreator,
-            "unauthorized"
-        );
+    function createMarket(bytes32 feedId, uint256 duration) external returns (address market) {
+        require(msg.sender == resolver || msg.sender == owner() || msg.sender == marketCreator, "unauthorized");
         require(allowedFeeds[feedId], "feed not whitelisted");
         // Without this the emergency stop is cosmetic: pauseMarketsForFeed
         // freezes the markets that exist right now, and the keeper's cron
         // replaces them minutes later.
-        require(!feedPaused[feedId],  "feed paused");
+        require(!feedPaused[feedId], "feed paused");
         require(_isDurationAllowed(duration), "duration not allowed");
 
         bytes32 slot = keccak256(abi.encodePacked(feedId, duration));
@@ -188,8 +178,8 @@ contract MarketFactory is Ownable {
         isMarket[market] = true;
 
         // Authorize this market on shared infra (one tx, atomic).
-        LiquidityPool   (liquidityPool)   .authorizeMarket(market);
-        FeeDistributor  (feeDistributor)  .authorizeMarket(market);
+        LiquidityPool(liquidityPool).authorizeMarket(market);
+        FeeDistributor(feeDistributor).authorizeMarket(market);
         ReferralRegistry(referralRegistry).authorizeMarket(market);
 
         emit MarketCreated(market, feedId, duration, block.timestamp);
@@ -217,16 +207,11 @@ contract MarketFactory is Ownable {
         // Zeroed per-instance config leaves it permanently initialized
         // (OrderbookMarket._init runs in the constructor), so nobody can call
         // initialize() on the implementation itself.
-        return address(new OrderbookMarket(
-            _usdc,
-            _resolver,
-            _liquidityPool,
-            _feeDistributor,
-            _referralRegistry,
-            _multisig,
-            bytes32(0),
-            0
-        ));
+        return address(
+            new OrderbookMarket(
+                _usdc, _resolver, _liquidityPool, _feeDistributor, _referralRegistry, _multisig, bytes32(0), 0
+            )
+        );
     }
 
     function addFeed(bytes32 feedId) external onlyOwner {
@@ -246,10 +231,7 @@ contract MarketFactory is Ownable {
     ///         hot wallet (typically the keeper) when the feed is detected as
     ///         stale. Bounded by feed market count.
     function pauseMarketsForFeed(bytes32 feedId) external {
-        require(
-            msg.sender == owner() || msg.sender == emergencyPauser,
-            "not authorized"
-        );
+        require(msg.sender == owner() || msg.sender == emergencyPauser, "not authorized");
         // Order matters: stop new markets first, then freeze the live ones.
         feedPaused[feedId] = true;
         emit FeedPaused(feedId, msg.sender);
@@ -272,7 +254,7 @@ contract MarketFactory is Ownable {
         // Everything further back closed long ago and pausing it changes
         // nothing.
         address[] storage list = activeMarkets[feedId];
-        uint256 len  = list.length;
+        uint256 len = list.length;
         uint256 stop = len > PAUSE_SWEEP_LIMIT ? len - PAUSE_SWEEP_LIMIT : 0;
         for (uint256 i = len; i > stop; i--) {
             try OrderbookMarket(list[i - 1]).pauseByFactory() {} catch {}
@@ -302,16 +284,16 @@ contract MarketFactory is Ownable {
     /// @notice Start the timelock on a protocol fee change.
     function proposeNewFee(uint256 newFeeBps) external onlyOwner {
         require(newFeeBps <= FEE_MAX, "fee too high");
-        pendingFeeBps        = newFeeBps;
+        pendingFeeBps = newFeeBps;
         feeChangeAvailableAt = block.timestamp + FEE_TIMELOCK;
         emit FeeChangeProposed(newFeeBps, feeChangeAvailableAt);
     }
 
     /// @notice Apply a fee change once its timelock has run.
     function applyNewFee() external onlyOwner {
-        require(feeChangeAvailableAt != 0,               "no proposal");
+        require(feeChangeAvailableAt != 0, "no proposal");
         require(block.timestamp >= feeChangeAvailableAt, "timelock");
-        feeBps               = pendingFeeBps;
+        feeBps = pendingFeeBps;
         feeChangeAvailableAt = 0;
         emit FeeChanged(feeBps);
     }
@@ -352,7 +334,7 @@ contract MarketFactory is Ownable {
     }
 
     function _isDurationAllowed(uint256 dur) internal view returns (bool) {
-        for (uint i = 0; i < allowedDurations.length; i++) {
+        for (uint256 i = 0; i < allowedDurations.length; i++) {
             if (allowedDurations[i] == dur) return true;
         }
         return false;

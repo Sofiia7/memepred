@@ -25,13 +25,15 @@ import "./OrderbookMarket.sol";
  *      down for two weeks.
  */
 contract OracleResolver is AccessControl, PrimaryProdDataServiceConsumerBase {
-
     bytes32 public constant KEEPER_ROLE = keccak256("KEEPER_ROLE");
 
     // TWAP: feedId → array {price, timestamp}.
     // historyHead[feedId] marks the first still-relevant index; cleanup just
     // advances the head (amortized O(1)) instead of shifting the array.
-    struct PricePoint { uint256 price; uint256 ts; }
+    struct PricePoint {
+        uint256 price;
+        uint256 ts;
+    }
     mapping(bytes32 => PricePoint[]) public priceHistory;
     mapping(bytes32 => uint256) public historyHead;
 
@@ -57,7 +59,7 @@ contract OracleResolver is AccessControl, PrimaryProdDataServiceConsumerBase {
      * a stale price would let someone enter at a strike they can already see is
      * wrong, is much tighter.
      */
-    uint256 public constant MAX_PRICE_AGE   = 3 minutes;
+    uint256 public constant MAX_PRICE_AGE = 3 minutes;
     uint256 public constant MAX_PRICE_AHEAD = 1 minutes;
 
     uint256 public constant MAX_SPREAD_BPS = 200; // 2% — если больше → отмена рынка
@@ -132,10 +134,7 @@ contract OracleResolver is AccessControl, PrimaryProdDataServiceConsumerBase {
      * @dev    Carry a RedStone payload on the calldata; it supplies the live
      *         price the recorded TWAP is sanity-checked against.
      */
-    function resolveOrderbookMatch(
-        address market,
-        uint256 matchId
-    ) external onlyRole(KEEPER_ROLE) {
+    function resolveOrderbookMatch(address market, uint256 matchId) external onlyRole(KEEPER_ROLE) {
         OrderbookMarket m = OrderbookMarket(market);
         _settleOne(m, m.feedId(), _twapWindowFor(m.duration()), matchId);
     }
@@ -156,19 +155,17 @@ contract OracleResolver is AccessControl, PrimaryProdDataServiceConsumerBase {
      *         Returns the number of matches actually settled in this call so
      *         keepers can loop until all ready matches are flushed.
      */
-    function resolveOrderbookMarketBatch(
-        address market,
-        uint256 maxCount
-    ) external onlyRole(KEEPER_ROLE) returns (uint256 settled) {
+    function resolveOrderbookMarketBatch(address market, uint256 maxCount)
+        external
+        onlyRole(KEEPER_ROLE)
+        returns (uint256 settled)
+    {
         return _resolveBatch(market, maxCount);
     }
 
-    function _resolveBatch(
-        address market,
-        uint256 maxCount
-    ) internal returns (uint256 settled) {
+    function _resolveBatch(address market, uint256 maxCount) internal returns (uint256 settled) {
         OrderbookMarket m = OrderbookMarket(market);
-        bytes32 feedId    = m.feedId();
+        bytes32 feedId = m.feedId();
 
         uint256 window = _twapWindowFor(m.duration());
         uint256[] memory ready = m.getReadySettlements(0, maxCount);
@@ -189,16 +186,10 @@ contract OracleResolver is AccessControl, PrimaryProdDataServiceConsumerBase {
      *      through the other entrypoint. Two implementations of one rule drift;
      *      this one cannot.
      */
-    function _settleOne(
-        OrderbookMarket m,
-        bytes32 feedId,
-        uint256 window,
-        uint256 matchId
-    ) internal returns (bool) {
-        address market   = address(m);
+    function _settleOne(OrderbookMarket m, bytes32 feedId, uint256 window, uint256 matchId) internal returns (bool) {
+        address market = address(m);
         uint256 settleAt = m.getMatch(matchId).settleAt;
-        (uint256 exitTwap, uint256 spotAtAnchor, bool ok) =
-            _getTWAPAt(feedId, window, settleAt);
+        (uint256 exitTwap, uint256 spotAtAnchor, bool ok) = _getTWAPAt(feedId, window, settleAt);
 
         if (!ok) {
             // No recorded price anywhere near this match's deadline - usually a
@@ -227,16 +218,14 @@ contract OracleResolver is AccessControl, PrimaryProdDataServiceConsumerBase {
         if (block.timestamp <= settleAt + MAX_PRICE_AGE) {
             // The live price is the one carried by this call's own calldata,
             // verified against three of five RedStone signers.
-            if (_spread(exitTwap, _normalizePrice(getOracleNumericValueFromTxMsg(feedId)))
-                    > MAX_SPREAD_BPS) {
+            if (_spread(exitTwap, _normalizePrice(getOracleNumericValueFromTxMsg(feedId))) > MAX_SPREAD_BPS) {
                 emit MarketRefunded(market, "oracle spread too high");
                 return false;
             }
         }
 
         m.settleMatch(matchId, exitTwap);
-        emit MarketResolved(market, exitTwap > m.getMatch(matchId).entryPrice,
-                            m.getMatch(matchId).entryPrice, exitTwap);
+        emit MarketResolved(market, exitTwap > m.getMatch(matchId).entryPrice, m.getMatch(matchId).entryPrice, exitTwap);
         return true;
     }
 
@@ -246,8 +235,8 @@ contract OracleResolver is AccessControl, PrimaryProdDataServiceConsumerBase {
     ///      MIN_TWAP_WINDOW, capped at TWAP_WINDOW_CAP.
     function _twapWindowFor(uint256 duration) internal pure returns (uint256) {
         uint256 scaled = duration / 5;
-        if (scaled > TWAP_WINDOW_CAP)  return TWAP_WINDOW_CAP;
-        if (scaled < MIN_TWAP_WINDOW)  return MIN_TWAP_WINDOW;
+        if (scaled > TWAP_WINDOW_CAP) return TWAP_WINDOW_CAP;
+        if (scaled < MIN_TWAP_WINDOW) return MIN_TWAP_WINDOW;
         return scaled;
     }
 
@@ -274,21 +263,23 @@ contract OracleResolver is AccessControl, PrimaryProdDataServiceConsumerBase {
      *      so one unpriceable match cannot block a whole batch.
      */
     function _getTWAPAt(bytes32 feedId, uint256 window, uint256 anchor)
-        internal view returns (uint256 twap, uint256 spotAtAnchor, bool ok)
+        internal
+        view
+        returns (uint256 twap, uint256 spotAtAnchor, bool ok)
     {
         PricePoint[] storage history = priceHistory[feedId];
-        uint256 head   = historyHead[feedId];
+        uint256 head = historyHead[feedId];
         uint256 cutoff = anchor > window ? anchor - window : 0;
 
-        uint256 sum   = 0;
+        uint256 sum = 0;
         uint256 count = 0;
         uint256 scanned = 0;
 
         for (uint256 i = history.length; i > head; i--) {
             if (scanned++ >= MAX_SCAN) break;
-            PricePoint storage p = history[i-1];
-            if (p.ts > anchor) continue;          // not yet due at settleAt
-            if (p.ts < cutoff) break;             // older than the window
+            PricePoint storage p = history[i - 1];
+            if (p.ts > anchor) continue; // not yet due at settleAt
+            if (p.ts < cutoff) break; // older than the window
             if (count == 0) spotAtAnchor = p.price; // newest point <= anchor
             sum += p.price;
             count++;
@@ -345,11 +336,8 @@ contract OracleResolver is AccessControl, PrimaryProdDataServiceConsumerBase {
      *         This stays only because a forced send (selfdestruct) can still
      *         strand funds that would otherwise be unrecoverable.
      */
-    function withdrawETH(address payable to, uint256 amount)
-        external
-        onlyRole(DEFAULT_ADMIN_ROLE)
-    {
-        (bool ok, ) = to.call{value: amount}("");
+    function withdrawETH(address payable to, uint256 amount) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        (bool ok,) = to.call{value: amount}("");
         require(ok, "eth withdraw failed");
     }
 }

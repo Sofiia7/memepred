@@ -18,29 +18,29 @@ import "./helpers/RedstoneHarness.sol";
 ///   C5 — refundExpired drops orderId from the queue; tryMatch is bounded.
 contract CriticalFixesTest is RedstoneTest {
     OrderbookMarket market;
-    LiquidityPool   pool;
-    GenesisNFT      genesisNFT;
-    MockUSDC        usdc;
+    LiquidityPool pool;
+    GenesisNFT genesisNFT;
+    MockUSDC usdc;
 
     address resolver;
     address feeDistrib = makeAddr("feeDistrib");
-    address multisig   = makeAddr("multisig");
-    address alice      = makeAddr("alice");
-    address bob        = makeAddr("bob");
-    address carol      = makeAddr("carol");
-    address lp1        = makeAddr("lp1");
-    address lp2        = makeAddr("lp2");
+    address multisig = makeAddr("multisig");
+    address alice = makeAddr("alice");
+    address bob = makeAddr("bob");
+    address carol = makeAddr("carol");
+    address lp1 = makeAddr("lp1");
+    address lp2 = makeAddr("lp2");
 
     uint256 constant ENTRY_PRICE = 9142e12; // 914200 * 1e10
-    uint256 constant DURATION    = 15 minutes;
+    uint256 constant DURATION = 15 minutes;
 
     function setUp() public {
         resolver = makeAddr("resolver");
         _setPrice(bytes32("PEPE/USD"), 914200);
 
-        usdc       = new MockUSDC();
+        usdc = new MockUSDC();
         genesisNFT = new GenesisNFT("ipfs://test/");
-        pool       = new LiquidityPool(IERC20(address(usdc)), address(genesisNFT));
+        pool = new LiquidityPool(IERC20(address(usdc)), address(genesisNFT));
         genesisNFT.setLiquidityPool(address(pool));
 
         market = new OrderbookMarketHarness(
@@ -62,16 +62,21 @@ contract CriticalFixesTest is RedstoneTest {
         pool.authorizeMarket(address(market));
 
         usdc.mint(alice, 1000e6);
-        usdc.mint(bob,   1000e6);
+        usdc.mint(bob, 1000e6);
         usdc.mint(carol, 1000e6);
-        usdc.mint(lp1,   1000e6);
-        usdc.mint(lp2,   1000e6);
+        usdc.mint(lp1, 1000e6);
+        usdc.mint(lp2, 1000e6);
 
-        vm.prank(alice); usdc.approve(address(market), type(uint256).max);
-        vm.prank(bob);   usdc.approve(address(market), type(uint256).max);
-        vm.prank(carol); usdc.approve(address(market), type(uint256).max);
-        vm.prank(lp1);   usdc.approve(address(pool),   type(uint256).max);
-        vm.prank(lp2);   usdc.approve(address(pool),   type(uint256).max);
+        vm.prank(alice);
+        usdc.approve(address(market), type(uint256).max);
+        vm.prank(bob);
+        usdc.approve(address(market), type(uint256).max);
+        vm.prank(carol);
+        usdc.approve(address(market), type(uint256).max);
+        vm.prank(lp1);
+        usdc.approve(address(pool), type(uint256).max);
+        vm.prank(lp2);
+        usdc.approve(address(pool), type(uint256).max);
     }
 
     // ── C2: emergencyRefundMatch (PvP) ────────────────────
@@ -83,17 +88,17 @@ contract CriticalFixesTest is RedstoneTest {
         vm.warp(block.timestamp + DURATION + market.SETTLE_GRACE() + 1);
 
         uint256 aliceBefore = usdc.balanceOf(alice);
-        uint256 bobBefore   = usdc.balanceOf(bob);
+        uint256 bobBefore = usdc.balanceOf(bob);
 
         market.emergencyRefundMatch(1);
 
         assertEq(usdc.balanceOf(alice) - aliceBefore, 25e6, "alice refunded");
-        assertEq(usdc.balanceOf(bob)   - bobBefore,   25e6, "bob refunded");
+        assertEq(usdc.balanceOf(bob) - bobBefore, 25e6, "bob refunded");
 
         OrderbookMarket.Order memory ao = market.getOrder(1);
         OrderbookMarket.Order memory bo = market.getOrder(2);
-        assertEq(uint(ao.status), uint(OrderbookMarket.OrderStatus.REFUNDED));
-        assertEq(uint(bo.status), uint(OrderbookMarket.OrderStatus.REFUNDED));
+        assertEq(uint256(ao.status), uint256(OrderbookMarket.OrderStatus.REFUNDED));
+        assertEq(uint256(bo.status), uint256(OrderbookMarket.OrderStatus.REFUNDED));
 
         // Match marked settled — settleMatch must now reject.
         vm.warp(block.timestamp + 1);
@@ -123,7 +128,7 @@ contract CriticalFixesTest is RedstoneTest {
         // The correct recovery path still works.
         market.emergencyRefundMatch(1);
         OrderbookMarket.Order memory ao = market.getOrder(1);
-        assertEq(uint(ao.status), uint(OrderbookMarket.OrderStatus.REFUNDED));
+        assertEq(uint256(ao.status), uint256(OrderbookMarket.OrderStatus.REFUNDED));
     }
 
     function test_C2_EmergencyRefundMatch_RevertsBeforeGrace() public {
@@ -138,7 +143,8 @@ contract CriticalFixesTest is RedstoneTest {
 
     // ── C2: emergencyRefundMatch (LP match) ────────────────
     function test_C2_EmergencyRefundMatch_LP_RestoresPoolExposure() public {
-        vm.prank(lp1); pool.deposit(500e6, lp1);
+        vm.prank(lp1);
+        pool.deposit(500e6, lp1);
 
         uint256 orderId = _bet(market, alice, OrderbookMarket.Direction.UP, 25e6, address(0), ENTRY_PRICE, 100);
 
@@ -146,7 +152,7 @@ contract CriticalFixesTest is RedstoneTest {
         uint256 expBefore = pool.totalExposure();
         assertGt(expBefore, 0, "exposure locked");
 
-        uint256 poolBalBefore  = usdc.balanceOf(address(pool));
+        uint256 poolBalBefore = usdc.balanceOf(address(pool));
         uint256 aliceBalBefore = usdc.balanceOf(alice);
 
         vm.warp(block.timestamp + DURATION + market.SETTLE_GRACE() + 1);
@@ -158,7 +164,7 @@ contract CriticalFixesTest is RedstoneTest {
         assertEq(pool.totalExposure(), 0, "exposure unlocked");
 
         OrderbookMarket.Order memory o = market.getOrder(orderId);
-        assertEq(uint(o.status), uint(OrderbookMarket.OrderStatus.REFUNDED));
+        assertEq(uint256(o.status), uint256(OrderbookMarket.OrderStatus.REFUNDED));
     }
 
     // ── C3: the bet carries its own price ────────────────────
@@ -189,7 +195,7 @@ contract CriticalFixesTest is RedstoneTest {
         _bet(market, alice, OrderbookMarket.Direction.UP, 25e6, address(0), ENTRY_PRICE, 100);
 
         OrderbookMarket.Order memory o = market.getOrder(1);
-        assertEq(uint(o.status), uint(OrderbookMarket.OrderStatus.PENDING));
+        assertEq(uint256(o.status), uint256(OrderbookMarket.OrderStatus.PENDING));
     }
 
     /**
@@ -200,10 +206,17 @@ contract CriticalFixesTest is RedstoneTest {
      */
     function test_C3_PlaceBet_RejectsACallWithNoSignedPrice() public {
         vm.prank(alice);
-        (bool ok,) = address(market).call(abi.encodeWithSelector(
-            OrderbookMarket.placeBet.selector,
-            OrderbookMarket.Direction.UP, uint256(25e6), address(0), ENTRY_PRICE, uint256(100)
-        ));
+        (bool ok,) = address(market)
+            .call(
+                abi.encodeWithSelector(
+                    OrderbookMarket.placeBet.selector,
+                    OrderbookMarket.Direction.UP,
+                    uint256(25e6),
+                    address(0),
+                    ENTRY_PRICE,
+                    uint256(100)
+                )
+            );
 
         assertFalse(ok, "a bet with no signed price must not be accepted");
     }
@@ -213,7 +226,7 @@ contract CriticalFixesTest is RedstoneTest {
     /// caller cannot select a stale-price path even deliberately.
     function test_C3_BarePlaceBetOverloadIsGone() public view {
         bytes4 bareSelector = bytes4(keccak256("placeBet(uint8,uint256,address,uint256,uint256)"));
-        (bool found, ) = _hasSelector(address(market), bareSelector);
+        (bool found,) = _hasSelector(address(market), bareSelector);
         assertFalse(found, "bare placeBet must not be callable");
     }
 
@@ -221,23 +234,28 @@ contract CriticalFixesTest is RedstoneTest {
     ///      returndata (no fallback on OrderbookMarket), which is how we
     ///      distinguish "not in the ABI" from "reverted with a reason".
     function _hasSelector(address target, bytes4 sel) internal view returns (bool, bytes memory) {
-        (bool ok, bytes memory ret) = target.staticcall(abi.encodeWithSelector(sel, 0, uint256(1), address(0), uint256(1), uint256(1)));
+        (bool ok, bytes memory ret) =
+            target.staticcall(abi.encodeWithSelector(sel, 0, uint256(1), address(0), uint256(1), uint256(1)));
         return (ok || ret.length > 0, ret);
     }
 
     // ── C4: Genesis NFT transfer moves fee weight to new owner ─
     function test_C4_GenesisTransferRebalancesFeeWeight() public {
         // Saturate Genesis: lp1 + 19 anon LPs claim all 20 NFTs.
-        vm.prank(lp1); pool.deposit(500e6, lp1);
+        vm.prank(lp1);
+        pool.deposit(500e6, lp1);
         for (uint256 i = 0; i < 19; i++) {
             address t = address(uint160(uint256(keccak256(abi.encode("genfiller", i)))));
             usdc.mint(t, 60e6);
-            vm.prank(t); usdc.approve(address(pool), type(uint256).max);
-            vm.prank(t); pool.deposit(60e6, t);
+            vm.prank(t);
+            usdc.approve(address(pool), type(uint256).max);
+            vm.prank(t);
+            pool.deposit(60e6, t);
         }
 
         // lp2 deposits AFTER cap → not Genesis.
-        vm.prank(lp2); pool.deposit(500e6, lp2);
+        vm.prank(lp2);
+        pool.deposit(500e6, lp2);
 
         assertTrue(pool.isGenesis(lp1), "lp1 starts as genesis");
         assertFalse(pool.isGenesis(lp2), "lp2 starts non-genesis");
@@ -252,7 +270,7 @@ contract CriticalFixesTest is RedstoneTest {
 
         // Genesis derives from NFT ownership now.
         assertFalse(pool.isGenesis(lp1), "lp1 lost genesis after transfer");
-        assertTrue(pool.isGenesis(lp2),  "lp2 gained genesis after transfer");
+        assertTrue(pool.isGenesis(lp2), "lp2 gained genesis after transfer");
 
         // Drive a fee-accrual event: simulate an LP-won match via direct call.
         // Easiest: make alice take an LP match, then mark LP as winner.
@@ -304,7 +322,8 @@ contract CriticalFixesTest is RedstoneTest {
         for (uint256 i = 0; i < nStale; i++) {
             address t = address(uint160(uint256(keccak256(abi.encode("staler", i)))));
             usdc.mint(t, 10e6);
-            vm.prank(t); usdc.approve(address(market), type(uint256).max);
+            vm.prank(t);
+            usdc.approve(address(market), type(uint256).max);
             _bet(market, t, OrderbookMarket.Direction.DOWN, 5e6, address(0), ENTRY_PRICE, 100);
         }
 
@@ -335,6 +354,6 @@ contract CriticalFixesTest is RedstoneTest {
         _bet(market, bob, OrderbookMarket.Direction.UP, 5e6, address(0), ENTRY_PRICE, 100);
 
         OrderbookMarket.Order memory o = market.getOrder(2);
-        assertEq(uint(o.status), uint(OrderbookMarket.OrderStatus.PENDING));
+        assertEq(uint256(o.status), uint256(OrderbookMarket.OrderStatus.PENDING));
     }
 }

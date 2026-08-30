@@ -35,26 +35,26 @@ import "./helpers/RedstoneHarness.sol";
  */
 contract ConcurrencyRacesTest is RedstoneTest {
     LiquidityPool pool;
-    GenesisNFT    genesisNFT;
-    MockUSDC      usdc;
+    GenesisNFT genesisNFT;
+    MockUSDC usdc;
 
     OrderbookMarket[3] markets;
 
     address feeDistrib = makeAddr("feeDistrib");
-    address multisig   = makeAddr("multisig");
+    address multisig = makeAddr("multisig");
     address resolver;
 
     uint256 constant LP_CAPITAL = 100_000e6; // 100k USDC
-    uint256 constant GLOBAL_CAP = LP_CAPITAL / 10;  // 10%
-    uint256 constant MARKET_CAP = LP_CAPITAL / 20;  // 5%
+    uint256 constant GLOBAL_CAP = LP_CAPITAL / 10; // 10%
+    uint256 constant MARKET_CAP = LP_CAPITAL / 20; // 5%
 
     function setUp() public {
         resolver = makeAddr("resolver");
         _setPrice(bytes32("PEPE/USD"), 1000e8);
 
-        usdc       = new MockUSDC();
+        usdc = new MockUSDC();
         genesisNFT = new GenesisNFT("ipfs://test/");
-        pool       = new LiquidityPool(IERC20(address(usdc)), address(genesisNFT));
+        pool = new LiquidityPool(IERC20(address(usdc)), address(genesisNFT));
         genesisNFT.setLiquidityPool(address(pool));
 
         MockMarketRegistry registry = new MockMarketRegistry();
@@ -85,8 +85,10 @@ contract ConcurrencyRacesTest is RedstoneTest {
     function _addLP(string memory name, uint256 amount) internal returns (address lp) {
         lp = makeAddr(name);
         usdc.mint(lp, amount);
-        vm.prank(lp); usdc.approve(address(pool), type(uint256).max);
-        vm.prank(lp); pool.deposit(amount, lp);
+        vm.prank(lp);
+        usdc.approve(address(pool), type(uint256).max);
+        vm.prank(lp);
+        pool.deposit(amount, lp);
     }
 
     /// Called by a market: takes LP stake for a match.
@@ -156,7 +158,7 @@ contract ConcurrencyRacesTest is RedstoneTest {
         // not a designed safety buffer.
         assertEq(a, MARKET_CAP, "first market gets its full slice");
         assertEq(b, MARKET_CAP, "so does the second");
-        assertEq(c, 0,          "third gets nothing, the cap is spent");
+        assertEq(c, 0, "third gets nothing, the cap is spent");
 
         // Exactly the nominal 10% of capital, never above it.
         assertEq(pool.totalExposure(), GLOBAL_CAP, "cap is reached, not breached");
@@ -170,14 +172,14 @@ contract ConcurrencyRacesTest is RedstoneTest {
      * bettor of a busy block; the full amount would be an over-committed pool.
      */
     function test_Race_LastMatchInBlockIsTruncatedNotReverted() public {
-        _match(0, 1, MARKET_CAP);              // 5% taken
-        _match(1, 2, MARKET_CAP / 2);          // 2.5% taken, 2.5% of global left
+        _match(0, 1, MARKET_CAP); // 5% taken
+        _match(1, 2, MARKET_CAP / 2); // 2.5% taken, 2.5% of global left
 
         uint256 headroom = pool.availableForMatching();
         uint256 got = _match(2, 3, MARKET_CAP); // asks for 5%, less remains
 
-        assertEq(got, headroom,   "should receive exactly the headroom the pool advertised");
-        assertGt(got, 0,          "a partial fill, not a refusal");
+        assertEq(got, headroom, "should receive exactly the headroom the pool advertised");
+        assertGt(got, 0, "a partial fill, not a refusal");
         assertLt(got, MARKET_CAP, "and not the full ask");
         assertEq(pool.availableForMatching(), 0, "headroom is now spent");
         _assertInvariants();
@@ -220,8 +222,7 @@ contract ConcurrencyRacesTest is RedstoneTest {
 
         // What the withdrawal DOES do is concentrate the open match onto
         // whoever is left: exposure is now the whole remaining balance.
-        assertEq(pool.totalExposure(), usdc.balanceOf(address(pool)),
-                 "remaining LPs now carry the whole match");
+        assertEq(pool.totalExposure(), usdc.balanceOf(address(pool)), "remaining LPs now carry the whole match");
 
         // And the settlement itself must go through.
         _settle(0, 1, first, true);
@@ -326,7 +327,9 @@ contract ConcurrencyRacesTest is RedstoneTest {
      */
     function test_Race_AllMatchesSettle_ExposureReturnsToZero() public {
         uint256[3] memory stakes;
-        for (uint256 i = 0; i < 3; i++) stakes[i] = _match(i, i + 1, MARKET_CAP / 2);
+        for (uint256 i = 0; i < 3; i++) {
+            stakes[i] = _match(i, i + 1, MARKET_CAP / 2);
+        }
 
         for (uint256 i = 0; i < 3; i++) {
             _settle(i, i + 1, stakes[i], i % 2 == 0);
@@ -386,17 +389,17 @@ contract ConcurrencyRacesTest is RedstoneTest {
         uint256 snap = vm.snapshotState();
 
         address a = _addLP("opportunist", LP_CAPITAL);
-        _settle(0, 1, stake, true);                  // upWon == true -> LP lost
+        _settle(0, 1, stake, true); // upWon == true -> LP lost
         uint256 onLoss = pool.maxWithdraw(a);
 
         vm.revertToState(snap);
 
         address b = _addLP("opportunist", LP_CAPITAL);
-        _settle(0, 1, stake, false);                 // LP won
+        _settle(0, 1, stake, false); // LP won
         uint256 onWin = pool.maxWithdraw(b);
 
         assertLt(onLoss, LP_CAPITAL, "the downside leg now costs the depositor too");
-        assertGt(onWin,  LP_CAPITAL, "and the upside leg still pays");
+        assertGt(onWin, LP_CAPITAL, "and the upside leg still pays");
 
         // Symmetric to within the 1% fee carved out of an LP win.
         assertApproxEqRel(LP_CAPITAL - onLoss, onWin - LP_CAPITAL, 0.02e18, "a fair bet, not an option");
@@ -422,8 +425,8 @@ contract ConcurrencyRacesTest is RedstoneTest {
      */
     function test_ExitingBeforeALoss_GainsNothingOverStaying() public {
         address stayer = _addLP("stayer", LP_CAPITAL);
-        address leaver = makeAddr("whale");       // the setUp LP, same size
-        uint256 stake  = _match(0, 1, MARKET_CAP);
+        address leaver = makeAddr("whale"); // the setUp LP, same size
+        uint256 stake = _match(0, 1, MARKET_CAP);
 
         uint256 snap = vm.snapshotState();
 
@@ -431,7 +434,7 @@ contract ConcurrencyRacesTest is RedstoneTest {
         uint256 out = pool.maxWithdraw(leaver);
         vm.prank(leaver);
         pool.withdraw(out, leaver, leaver);
-        _settle(0, 1, stake, true);               // upWon -> LP side lost
+        _settle(0, 1, stake, true); // upWon -> LP side lost
         uint256 dodged = out + pool.maxWithdraw(leaver);
 
         vm.revertToState(snap);
@@ -459,7 +462,7 @@ contract ConcurrencyRacesTest is RedstoneTest {
         _match(0, 1, MARKET_CAP);
 
         address tourist = _addLP("tourist", LP_CAPITAL);
-        uint256 back    = pool.maxWithdraw(tourist);
+        uint256 back = pool.maxWithdraw(tourist);
 
         assertLt(back, LP_CAPITAL, "a round trip through an open match is not free");
     }
@@ -474,10 +477,10 @@ contract ConcurrencyRacesTest is RedstoneTest {
      */
     function test_ExitingDuringOpenMatchForfeitsTheOutcome() public {
         address stayer = _addLP("stayer", LP_CAPITAL);
-        uint256 stake  = _match(0, 1, MARKET_CAP);
+        uint256 stake = _match(0, 1, MARKET_CAP);
 
         address leaver = makeAddr("whale"); // the setUp LP, same size as stayer
-        uint256 out    = pool.maxWithdraw(leaver);
+        uint256 out = pool.maxWithdraw(leaver);
         vm.prank(leaver);
         pool.withdraw(out, leaver, leaver);
 

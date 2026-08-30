@@ -26,7 +26,7 @@ jobs:
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
         with:
-          version: stable
+          version: v1.7.1
 
       - name: forge fmt --check
         working-directory: contracts
@@ -53,7 +53,7 @@ jobs:
         with: { submodules: recursive }
 
       - uses: foundry-rs/foundry-toolchain@v1
-        with: { version: stable }
+        with: { version: v1.7.1 }
 
       - name: Install Slither
         run: pip3 install slither-analyzer

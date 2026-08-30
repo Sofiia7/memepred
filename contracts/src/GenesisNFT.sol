@@ -13,7 +13,6 @@ import "@openzeppelin/contracts/utils/Strings.sol";
  *         Sold the NFT → sold the right to boosted fees.
  */
 contract GenesisNFT is ERC721, Ownable {
-
     uint256 public constant MAX_SUPPLY = 20;
     uint256 public totalMinted;
 
@@ -33,7 +32,7 @@ contract GenesisNFT is ERC721, Ownable {
 
     function mint(address to, uint256 number) external {
         require(msg.sender == liquidityPool, "only pool");
-        require(totalMinted < MAX_SUPPLY,    "max supply");
+        require(totalMinted < MAX_SUPPLY, "max supply");
 
         uint256 tokenId = ++totalMinted;
         genesisNumber[tokenId] = number;
@@ -65,11 +64,7 @@ contract GenesisNFT is ERC721, Ownable {
      *      so it can rebalance Genesis-boosted fee weights. Best-effort: a
      *      failed sync MUST NOT brick transfers — funds always stay safe.
      */
-    function _update(address to, uint256 tokenId, address auth)
-        internal
-        override
-        returns (address from)
-    {
+    function _update(address to, uint256 tokenId, address auth) internal override returns (address from) {
         from = super._update(to, tokenId, auth);
         if (liquidityPool != address(0)) {
             try ILiquidityPoolGenesisHook(liquidityPool).onGenesisTransfer(from, to) {} catch {}

@@ -13,8 +13,8 @@ interface ILiquidityPool {
         external
         returns (uint256 matchedAmount);
 
-    function onMatchSettled (uint256 matchId, bool upWon) external;
-    function onMatchRefunded(uint256 matchId)            external;
+    function onMatchSettled(uint256 matchId, bool upWon) external;
+    function onMatchRefunded(uint256 matchId) external;
 }
 
 interface IFeeDistributor {
@@ -50,40 +50,49 @@ contract OrderbookMarket is ReentrancyGuard, Pausable, PrimaryProdDataServiceCon
     using SafeERC20 for IERC20;
 
     // ── TYPES ──────────────────────────────────────────────
-    enum Direction   { UP, DOWN }
-    enum OrderStatus { PENDING, MATCHED, SETTLED, CLAIMED, REFUNDED }
+    enum Direction {
+        UP,
+        DOWN
+    }
+    enum OrderStatus {
+        PENDING,
+        MATCHED,
+        SETTLED,
+        CLAIMED,
+        REFUNDED
+    }
 
     struct Order {
-        address     trader;
-        Direction   direction;
-        uint256     amount;             // total deposit; immutable after placeBet
-        uint256     filledAmount;       // matched so far; <= amount
-        address     referrer;
+        address trader;
+        Direction direction;
+        uint256 amount; // total deposit; immutable after placeBet
+        uint256 filledAmount; // matched so far; <= amount
+        address referrer;
         OrderStatus status;
-        uint256     placedAt;
-        uint256     matchId;            // FIRST match for back-compat / view ease (0 if none)
-        uint256     pendingSettlements; // matches yet to settle
-        uint256     payout;             // accumulated winnings (claimable when pendingSettlements == 0)
-        bool        unmatchedRefunded;  // refundExpired already returned the unmatched portion
+        uint256 placedAt;
+        uint256 matchId; // FIRST match for back-compat / view ease (0 if none)
+        uint256 pendingSettlements; // matches yet to settle
+        uint256 payout; // accumulated winnings (claimable when pendingSettlements == 0)
+        bool unmatchedRefunded; // refundExpired already returned the unmatched portion
     }
 
     struct Match {
         uint256 upOrderId;
         uint256 downOrderId;
-        uint256 amount;       // per-side stake = matched amount
-        uint256 entryPrice;   // price at match creation
-        uint256 settleAt;     // matched-at + duration
+        uint256 amount; // per-side stake = matched amount
+        uint256 entryPrice; // price at match creation
+        uint256 settleAt; // matched-at + duration
         uint256 exitPrice;
-        bool    settled;
-        bool    upWon;
-        bool    lpMatch;      // true when one side is the LP pool
+        bool settled;
+        bool upWon;
+        bool lpMatch; // true when one side is the LP pool
     }
 
     // ── CONSTANTS ──────────────────────────────────────────
-    uint256 public constant MIN_BET       = 1e6;       // 1 USDC
-    uint256 public constant MAX_BET       = 100e6;     // 100 USDC, remove after audit
+    uint256 public constant MIN_BET = 1e6; // 1 USDC
+    uint256 public constant MAX_BET = 100e6; // 100 USDC, remove after audit
     uint256 public constant MATCH_TIMEOUT = 5 minutes; // PENDING → refundExpired
-    uint256 public constant SETTLE_GRACE  = 24 hours;  // MATCHED → emergencyRefundMatch
+    uint256 public constant SETTLE_GRACE = 24 hours; // MATCHED → emergencyRefundMatch
 
     // Sprint 5.6: 45 -> 20. The 45s figure existed to keep the bare
     // placeBet() overload usable between the keeper's 30s pushes. That
@@ -161,7 +170,7 @@ contract OrderbookMarket is ReentrancyGuard, Pausable, PrimaryProdDataServiceCon
     // immutables live in the *implementation's* runtime code, and an EIP-1167
     // clone delegatecalls into exactly that code, so clones read them
     // correctly for free — no storage slot, no per-market SSTORE.
-    IERC20  public immutable usdc;
+    IERC20 public immutable usdc;
     address public immutable resolver;
     address public immutable liquidityPool;
     address public immutable feeDistributor;
@@ -224,13 +233,13 @@ contract OrderbookMarket is ReentrancyGuard, Pausable, PrimaryProdDataServiceCon
     uint256 public pendingSettlementsHead;
 
     // ── EVENTS ─────────────────────────────────────────────
-    event OrderPlaced       (uint256 indexed orderId, address indexed trader, Direction dir, uint256 amount);
-    event OrderMatched      (uint256 indexed matchId, uint256 upId,    uint256 downId, uint256 amount, uint256 entryPrice);
-    event LPMatched         (uint256 indexed matchId, uint256 orderId, uint256 amount, uint256 entryPrice);
-    event OrderFilled       (uint256 indexed orderId, uint256 totalFilled); // emitted once filledAmount == amount
-    event MatchSettled      (uint256 indexed matchId, bool upWon, uint256 entry, uint256 exit);
-    event OrderRefunded     (uint256 indexed orderId, address trader, uint256 amount); // partial when amount < order.amount
-    event Claimed           (uint256 indexed orderId, address trader, uint256 payout);
+    event OrderPlaced(uint256 indexed orderId, address indexed trader, Direction dir, uint256 amount);
+    event OrderMatched(uint256 indexed matchId, uint256 upId, uint256 downId, uint256 amount, uint256 entryPrice);
+    event LPMatched(uint256 indexed matchId, uint256 orderId, uint256 amount, uint256 entryPrice);
+    event OrderFilled(uint256 indexed orderId, uint256 totalFilled); // emitted once filledAmount == amount
+    event MatchSettled(uint256 indexed matchId, bool upWon, uint256 entry, uint256 exit);
+    event OrderRefunded(uint256 indexed orderId, address trader, uint256 amount); // partial when amount < order.amount
+    event Claimed(uint256 indexed orderId, address trader, uint256 payout);
 
     // ── CONSTRUCTOR / INITIALIZER ──────────────────────────
     /**
@@ -252,12 +261,12 @@ contract OrderbookMarket is ReentrancyGuard, Pausable, PrimaryProdDataServiceCon
         bytes32 _feedId,
         uint256 _duration
     ) {
-        usdc             = IERC20(_usdc);
-        resolver         = _resolver;
-        liquidityPool    = _liquidityPool;
-        feeDistributor   = _feeDistributor;
+        usdc = IERC20(_usdc);
+        resolver = _resolver;
+        liquidityPool = _liquidityPool;
+        feeDistributor = _feeDistributor;
         referralRegistry = _referralRegistry;
-        factory          = msg.sender;
+        factory = msg.sender;
         // Direct deployment configures itself; there is no factory to ask, and
         // a fee of zero matches what this path has always produced.
         _init(_feedId, _duration, _multisig, 0);
@@ -272,32 +281,22 @@ contract OrderbookMarket is ReentrancyGuard, Pausable, PrimaryProdDataServiceCon
      *         (MarketFactory.createMarket), so there is no window in which an
      *         uninitialized clone is reachable by users.
      */
-    function initialize(
-        bytes32 _feedId,
-        uint256 _duration,
-        address _multisig,
-        uint256 _feeBps
-    ) external {
+    function initialize(bytes32 _feedId, uint256 _duration, address _multisig, uint256 _feeBps) external {
         require(msg.sender == factory, "only factory");
         _init(_feedId, _duration, _multisig, _feeBps);
     }
 
-    function _init(
-        bytes32 _feedId,
-        uint256 _duration,
-        address _multisig,
-        uint256 _feeBps
-    ) internal {
+    function _init(bytes32 _feedId, uint256 _duration, address _multisig, uint256 _feeBps) internal {
         require(!_initialized, "already initialized");
         _initialized = true;
-        feedId   = _feedId;
-        duration     = _duration;
-        multisig     = _multisig;
-        feeBps       = _feeBps;
+        feedId = _feedId;
+        duration = _duration;
+        multisig = _multisig;
+        feeBps = _feeBps;
         // Ids start at 1 — 0 is the "no match" sentinel in Order.matchId and
         // the "not queued" sentinel in _queueIndex.
-        nextOrderId  = 1;
-        nextMatchId  = 1;
+        nextOrderId = 1;
+        nextMatchId = 1;
     }
 
     // ── PLACE BET ──────────────────────────────────────────
@@ -338,33 +337,27 @@ contract OrderbookMarket is ReentrancyGuard, Pausable, PrimaryProdDataServiceCon
      *      function is no longer payable. Callers must append the payload;
      *      a call without one cannot produce a price and reverts.
      */
-    function placeBet(
-        Direction dir,
-        uint256   amount,
-        address   referrer,
-        uint256   expectedPrice,
-        uint256   slippageBps
-    ) external nonReentrant whenNotPaused returns (uint256 orderId) {
+    function placeBet(Direction dir, uint256 amount, address referrer, uint256 expectedPrice, uint256 slippageBps)
+        external
+        nonReentrant
+        whenNotPaused
+        returns (uint256 orderId)
+    {
         return _placeBet(dir, amount, referrer, expectedPrice, slippageBps);
     }
 
-    function _placeBet(
-        Direction dir,
-        uint256   amount,
-        address   referrer,
-        uint256   expectedPrice,
-        uint256   slippageBps
-    ) internal returns (uint256 orderId) {
-        require(amount >= MIN_BET,        "below min");
-        require(amount <= MAX_BET,        "above max");
-        require(referrer != msg.sender,   "self referral");
-        require(expectedPrice > 0,        "expectedPrice zero");
+    function _placeBet(Direction dir, uint256 amount, address referrer, uint256 expectedPrice, uint256 slippageBps)
+        internal
+        returns (uint256 orderId)
+    {
+        require(amount >= MIN_BET, "below min");
+        require(amount <= MAX_BET, "above max");
+        require(referrer != msg.sender, "self referral");
+        require(expectedPrice > 0, "expectedPrice zero");
 
         uint256 actualPrice = _getCurrentPrice();
 
-        uint256 diff = actualPrice > expectedPrice
-            ? actualPrice - expectedPrice
-            : expectedPrice - actualPrice;
+        uint256 diff = actualPrice > expectedPrice ? actualPrice - expectedPrice : expectedPrice - actualPrice;
         uint256 spread = (diff * 10_000) / expectedPrice;
         require(spread <= slippageBps, "price slippage exceeded");
 
@@ -376,17 +369,17 @@ contract OrderbookMarket is ReentrancyGuard, Pausable, PrimaryProdDataServiceCon
 
         orderId = nextOrderId++;
         orders[orderId] = Order({
-            trader:             msg.sender,
-            direction:          dir,
-            amount:             amount,
-            filledAmount:       0,
-            referrer:           referrer,
-            status:             OrderStatus.PENDING,
-            placedAt:           block.timestamp,
-            matchId:            0,
+            trader: msg.sender,
+            direction: dir,
+            amount: amount,
+            filledAmount: 0,
+            referrer: referrer,
+            status: OrderStatus.PENDING,
+            placedAt: block.timestamp,
+            matchId: 0,
             pendingSettlements: 0,
-            payout:             0,
-            unmatchedRefunded:  false
+            payout: 0,
+            unmatchedRefunded: false
         });
         traderOrders[msg.sender].push(orderId);
 
@@ -398,49 +391,36 @@ contract OrderbookMarket is ReentrancyGuard, Pausable, PrimaryProdDataServiceCon
     // ── MATCHING LOGIC ─────────────────────────────────────
     /// @notice Multi-fill matching: PvP queue first, then LP, then re-queue
     ///         any remaining portion (down to MIN_BET; dust is refunded).
-    function _tryMatch(
-        uint256   orderId,
-        Direction dir,
-        uint256   currentPrice
-    ) internal {
+    function _tryMatch(uint256 orderId, Direction dir, uint256 currentPrice) internal {
         Order storage o = orders[orderId];
-        uint256[] storage oppositeQueue = dir == Direction.UP
-            ? pendingDownQueue
-            : pendingUpQueue;
+        uint256[] storage oppositeQueue = dir == Direction.UP ? pendingDownQueue : pendingUpQueue;
 
         uint256 scanned = 0;
-        uint256 i       = 0;
+        uint256 i = 0;
 
         // Layer 1 — bounded PvP scan with multi-fill.
-        while (
-            i < oppositeQueue.length &&
-            scanned < MAX_MATCH_SCAN &&
-            o.filledAmount < o.amount
-        ) {
-            uint256 candidateId      = oppositeQueue[i];
-            Order  storage candidate = orders[candidateId];
+        while (i < oppositeQueue.length && scanned < MAX_MATCH_SCAN && o.filledAmount < o.amount) {
+            uint256 candidateId = oppositeQueue[i];
+            Order storage candidate = orders[candidateId];
             scanned++;
 
             // Lazy eviction of dead/expired orders.
             if (
-                candidate.status != OrderStatus.PENDING ||
-                candidate.unmatchedRefunded ||
-                block.timestamp > candidate.placedAt + MATCH_TIMEOUT
+                candidate.status != OrderStatus.PENDING || candidate.unmatchedRefunded
+                    || block.timestamp > candidate.placedAt + MATCH_TIMEOUT
             ) {
                 _removeAt(oppositeQueue, i);
                 continue;
             }
 
-            uint256 myRemaining        = o.amount         - o.filledAmount;
+            uint256 myRemaining = o.amount - o.filledAmount;
             uint256 candidateRemaining = candidate.amount - candidate.filledAmount;
             if (candidateRemaining == 0) {
                 _removeAt(oppositeQueue, i);
                 continue;
             }
 
-            uint256 matchAmount = myRemaining < candidateRemaining
-                ? myRemaining
-                : candidateRemaining;
+            uint256 matchAmount = myRemaining < candidateRemaining ? myRemaining : candidateRemaining;
 
             _createMatch(orderId, candidateId, dir, matchAmount, currentPrice, false);
 
@@ -478,7 +458,7 @@ contract OrderbookMarket is ReentrancyGuard, Pausable, PrimaryProdDataServiceCon
             usdc.safeTransfer(o.trader, dust);
             o.status = OrderStatus.MATCHED;
             emit OrderRefunded(orderId, o.trader, dust);
-            emit OrderFilled  (orderId, o.filledAmount);
+            emit OrderFilled(orderId, o.filledAmount);
         } else {
             // Queue the unmatched portion (>= MIN_BET).
             if (dir == Direction.UP) {
@@ -492,24 +472,15 @@ contract OrderbookMarket is ReentrancyGuard, Pausable, PrimaryProdDataServiceCon
     }
 
     /// @dev Layer 2 of _tryMatch: LP fallback bounded by MAX_TRADER_LP_EXPOSURE.
-    function _tryLpMatch(
-        uint256   orderId,
-        Order storage o,
-        Direction dir,
-        uint256   currentPrice
-    ) internal {
-        uint256 remaining  = o.amount - o.filledAmount;
+    function _tryLpMatch(uint256 orderId, Order storage o, Direction dir, uint256 currentPrice) internal {
+        uint256 remaining = o.amount - o.filledAmount;
         uint256 traderUsed = traderLpExposure[o.trader];
-        uint256 traderRoom = MAX_TRADER_LP_EXPOSURE > traderUsed
-            ? MAX_TRADER_LP_EXPOSURE - traderUsed
-            : 0;
+        uint256 traderRoom = MAX_TRADER_LP_EXPOSURE > traderUsed ? MAX_TRADER_LP_EXPOSURE - traderUsed : 0;
         uint256 lpRequest = remaining < traderRoom ? remaining : traderRoom;
         if (lpRequest == 0) return;
 
         uint256 reservedId = nextMatchId; // hint for LP bookkeeping; final id chosen in _createMatch
-        uint256 lpMatched  = ILiquidityPool(liquidityPool).tryMatch(
-            orderId, lpRequest, dir == Direction.UP, reservedId
-        );
+        uint256 lpMatched = ILiquidityPool(liquidityPool).tryMatch(orderId, lpRequest, dir == Direction.UP, reservedId);
         require(lpMatched <= lpRequest, "lp overmatched");
 
         if (lpMatched > 0) {
@@ -521,7 +492,7 @@ contract OrderbookMarket is ReentrancyGuard, Pausable, PrimaryProdDataServiceCon
 
     /// @dev Bookkeeping after a single match is created against the given order.
     function _registerFill(Order storage o, uint256 matchAmount) internal {
-        o.filledAmount       += matchAmount;
+        o.filledAmount += matchAmount;
         o.pendingSettlements += 1;
         if (o.matchId == 0) {
             o.matchId = nextMatchId - 1; // _createMatch already incremented
@@ -529,28 +500,28 @@ contract OrderbookMarket is ReentrancyGuard, Pausable, PrimaryProdDataServiceCon
     }
 
     function _createMatch(
-        uint256   orderId,
-        uint256   oppositeId,
+        uint256 orderId,
+        uint256 oppositeId,
         Direction dir,
-        uint256   amount,
-        uint256   entryPrice,
-        bool      isLpMatch
+        uint256 amount,
+        uint256 entryPrice,
+        bool isLpMatch
     ) internal {
         uint256 matchId = nextMatchId++;
 
-        uint256 upId   = dir == Direction.UP ? orderId   : oppositeId;
+        uint256 upId = dir == Direction.UP ? orderId : oppositeId;
         uint256 downId = dir == Direction.UP ? oppositeId : orderId;
 
         matches[matchId] = Match({
-            upOrderId:   upId,
+            upOrderId: upId,
             downOrderId: downId,
-            amount:      amount,
-            entryPrice:  entryPrice,
-            settleAt:    block.timestamp + duration,
-            exitPrice:   0,
-            settled:     false,
-            upWon:       false,
-            lpMatch:     isLpMatch
+            amount: amount,
+            entryPrice: entryPrice,
+            settleAt: block.timestamp + duration,
+            exitPrice: 0,
+            settled: false,
+            upWon: false,
+            lpMatch: isLpMatch
         });
 
         if (isLpMatch) {
@@ -563,14 +534,11 @@ contract OrderbookMarket is ReentrancyGuard, Pausable, PrimaryProdDataServiceCon
     }
 
     // ── SETTLE ─────────────────────────────────────────────
-    function settleMatch(uint256 matchId, uint256 exitPrice)
-        external
-        nonReentrant
-    {
+    function settleMatch(uint256 matchId, uint256 exitPrice) external nonReentrant {
         require(msg.sender == resolver, "only resolver");
         Match storage m = matches[matchId];
-        require(m.amount > 0,                  "match not found");
-        require(!m.settled,                    "already settled");
+        require(m.amount > 0, "match not found");
+        require(!m.settled, "already settled");
         require(block.timestamp >= m.settleAt, "too early");
         // Audit fix (S1, 2026-07-05): a keeper resuming after a long outage
         // must not settle on whatever price happens to be current at resume
@@ -579,18 +547,18 @@ contract OrderbookMarket is ReentrancyGuard, Pausable, PrimaryProdDataServiceCon
         // emergencyRefundMatch (same window emergencyRefundMatch itself uses).
         require(block.timestamp < m.settleAt + SETTLE_GRACE, "settlement window expired");
 
-        m.settled   = true;
+        m.settled = true;
         m.exitPrice = exitPrice;
-        m.upWon     = exitPrice > m.entryPrice;
+        m.upWon = exitPrice > m.entryPrice;
         _advancePendingSettlementsHead();
 
         if (!m.lpMatch) {
-            _settleOrder(m.upOrderId,   m.upWon,  m);
+            _settleOrder(m.upOrderId, m.upWon, m);
             _settleOrder(m.downOrderId, !m.upWon, m);
         } else {
-            bool    userIsUp     = m.upOrderId != 0;
-            uint256 userOrderId  = userIsUp ? m.upOrderId : m.downOrderId;
-            bool    userWon      = userIsUp ? m.upWon : !m.upWon;
+            bool userIsUp = m.upOrderId != 0;
+            uint256 userOrderId = userIsUp ? m.upOrderId : m.downOrderId;
+            bool userWon = userIsUp ? m.upWon : !m.upWon;
 
             _settleOrder(userOrderId, userWon, m);
 
@@ -614,8 +582,8 @@ contract OrderbookMarket is ReentrancyGuard, Pausable, PrimaryProdDataServiceCon
 
         if (won) {
             uint256 totalPool = m.amount * 2;
-            uint256 fee       = (totalPool * feeBps) / 10_000;
-            uint256 net       = totalPool - fee;
+            uint256 fee = (totalPool * feeBps) / 10_000;
+            uint256 net = totalPool - fee;
 
             if (m.lpMatch) {
                 uint256 lpTakerFee = (totalPool * LP_TAKER_FEE_BPS) / 10_000;
@@ -631,10 +599,7 @@ contract OrderbookMarket is ReentrancyGuard, Pausable, PrimaryProdDataServiceCon
             }
         }
 
-        if (
-            o.pendingSettlements == 0 &&
-            (o.filledAmount == o.amount || o.unmatchedRefunded)
-        ) {
+        if (o.pendingSettlements == 0 && (o.filledAmount == o.amount || o.unmatchedRefunded)) {
             o.status = OrderStatus.SETTLED;
         }
     }
@@ -642,20 +607,20 @@ contract OrderbookMarket is ReentrancyGuard, Pausable, PrimaryProdDataServiceCon
     // ── CLAIM ──────────────────────────────────────────────
     function claim(uint256 orderId) external nonReentrant {
         Order storage o = orders[orderId];
-        require(o.trader == msg.sender,    "not your order");
+        require(o.trader == msg.sender, "not your order");
         require(o.pendingSettlements == 0, "settlements pending");
         require(o.status != OrderStatus.CLAIMED, "already claimed");
         require(
-            o.status == OrderStatus.SETTLED ||
-            // graceful: allow claim if all settled but status not yet promoted
-            (o.filledAmount > 0 && (o.filledAmount == o.amount || o.unmatchedRefunded)),
+            o.status == OrderStatus.SETTLED || 
+                // graceful: allow claim if all settled but status not yet promoted
+                (o.filledAmount > 0 && (o.filledAmount == o.amount || o.unmatchedRefunded)),
             "not settled"
         );
         require(o.payout > 0, "nothing to claim");
 
         uint256 p = o.payout;
-        o.payout  = 0;
-        o.status  = OrderStatus.CLAIMED;
+        o.payout = 0;
+        o.status = OrderStatus.CLAIMED;
         usdc.safeTransfer(msg.sender, p);
 
         emit Claimed(orderId, msg.sender, p);
@@ -665,9 +630,9 @@ contract OrderbookMarket is ReentrancyGuard, Pausable, PrimaryProdDataServiceCon
     /// @notice Refund a matched-but-unsettled match after SETTLE_GRACE.
     function emergencyRefundMatch(uint256 matchId) external nonReentrant {
         Match storage m = matches[matchId];
-        require(m.amount > 0,                                  "match not found");
-        require(!m.settled,                                    "already settled");
-        require(block.timestamp > m.settleAt + SETTLE_GRACE,   "grace not over");
+        require(m.amount > 0, "match not found");
+        require(!m.settled, "already settled");
+        require(block.timestamp > m.settleAt + SETTLE_GRACE, "grace not over");
 
         m.settled = true;
         _advancePendingSettlementsHead();
@@ -679,7 +644,7 @@ contract OrderbookMarket is ReentrancyGuard, Pausable, PrimaryProdDataServiceCon
             _forceRefundOrder(dn);
             usdc.safeTransfer(up.trader, m.amount);
             usdc.safeTransfer(dn.trader, m.amount);
-            emit OrderRefunded(m.upOrderId,   up.trader, m.amount);
+            emit OrderRefunded(m.upOrderId, up.trader, m.amount);
             emit OrderRefunded(m.downOrderId, dn.trader, m.amount);
             _refundUnmatchedTail(m.upOrderId, up);
             _refundUnmatchedTail(m.downOrderId, dn);
@@ -687,7 +652,7 @@ contract OrderbookMarket is ReentrancyGuard, Pausable, PrimaryProdDataServiceCon
             uint256 userOrderId = m.upOrderId != 0 ? m.upOrderId : m.downOrderId;
             Order storage o = orders[userOrderId];
             _forceRefundOrder(o);
-            usdc.safeTransfer(o.trader,      m.amount);
+            usdc.safeTransfer(o.trader, m.amount);
             usdc.safeTransfer(liquidityPool, m.amount);
             emit OrderRefunded(userOrderId, o.trader, m.amount);
             ILiquidityPool(liquidityPool).onMatchRefunded(matchId);
@@ -719,13 +684,9 @@ contract OrderbookMarket is ReentrancyGuard, Pausable, PrimaryProdDataServiceCon
     function _decrementSettlement(Order storage o) internal {
         if (o.pendingSettlements > 0) o.pendingSettlements -= 1;
         if (o.status == OrderStatus.PENDING || o.status == OrderStatus.MATCHED) {
-            if (
-                o.pendingSettlements == 0 &&
-                (o.filledAmount == o.amount || o.unmatchedRefunded || o.filledAmount == 0)
-            ) {
-                o.status = o.filledAmount == 0
-                    ? OrderStatus.REFUNDED
-                    : OrderStatus.SETTLED;
+            if (o.pendingSettlements == 0 && (o.filledAmount == o.amount || o.unmatchedRefunded || o.filledAmount == 0))
+            {
+                o.status = o.filledAmount == 0 ? OrderStatus.REFUNDED : OrderStatus.SETTLED;
             }
         }
     }
@@ -741,10 +702,7 @@ contract OrderbookMarket is ReentrancyGuard, Pausable, PrimaryProdDataServiceCon
         // Check idempotency BEFORE status so a second call surfaces the
         // specific reason instead of a generic "wrong status".
         require(!o.unmatchedRefunded, "already refunded");
-        require(
-            o.status == OrderStatus.PENDING || o.status == OrderStatus.MATCHED,
-            "wrong status"
-        );
+        require(o.status == OrderStatus.PENDING || o.status == OrderStatus.MATCHED, "wrong status");
         require(block.timestamp > o.placedAt + MATCH_TIMEOUT, "not expired");
 
         uint256 unmatched = o.amount - o.filledAmount;
@@ -772,7 +730,7 @@ contract OrderbookMarket is ReentrancyGuard, Pausable, PrimaryProdDataServiceCon
     ///      instead of re-scanning a growing dead prefix.
     function _advancePendingSettlementsHead() internal {
         uint256 head = pendingSettlementsHead;
-        uint256 len  = pendingSettlements.length;
+        uint256 len = pendingSettlements.length;
         while (head < len && matches[pendingSettlements[head]].settled) {
             head++;
         }
@@ -785,7 +743,7 @@ contract OrderbookMarket is ReentrancyGuard, Pausable, PrimaryProdDataServiceCon
         uint256 removed = queue[index];
         if (index != lastIdx) {
             uint256 moved = queue[lastIdx];
-            queue[index]  = moved;
+            queue[index] = moved;
             _queueIndex[moved] = index + 1;
         }
         queue.pop();
@@ -814,11 +772,7 @@ contract OrderbookMarket is ReentrancyGuard, Pausable, PrimaryProdDataServiceCon
     ///      array index: the already-settled prefix is skipped automatically
     ///      so callers that always pass offset=0 (every real caller does)
     ///      keep seeing newly-ready matches instead of an ever-empty window.
-    function getReadySettlements(uint256 offset, uint256 limit)
-        external
-        view
-        returns (uint256[] memory ready)
-    {
+    function getReadySettlements(uint256 offset, uint256 limit) external view returns (uint256[] memory ready) {
         uint256 total = pendingSettlements.length;
         uint256 start = pendingSettlementsHead + offset;
         if (start >= total) return new uint256[](0);
@@ -845,7 +799,7 @@ contract OrderbookMarket is ReentrancyGuard, Pausable, PrimaryProdDataServiceCon
     ///         existing callers; prefer getReadySettlements with pagination.
     function getPendingSettlements() external view returns (uint256[] memory ready) {
         uint256 total = pendingSettlements.length;
-        uint256 head  = pendingSettlementsHead;
+        uint256 head = pendingSettlementsHead;
         uint256 count = 0;
         for (uint256 i = head; i < total; i++) {
             Match storage m = matches[pendingSettlements[i]];
@@ -890,8 +844,15 @@ contract OrderbookMarket is ReentrancyGuard, Pausable, PrimaryProdDataServiceCon
     // The fee timelock used to live here and was unreachable by construction;
     // it is now MarketFactory.proposeNewFee / applyNewFee. See feeBps above.
 
-    function pause()   external { require(msg.sender == multisig, "only multisig"); _pause();   }
-    function unpause() external { require(msg.sender == multisig, "only multisig"); _unpause(); }
+    function pause() external {
+        require(msg.sender == multisig, "only multisig");
+        _pause();
+    }
+
+    function unpause() external {
+        require(msg.sender == multisig, "only multisig");
+        _unpause();
+    }
 
     /// @notice Emergency pause callable by MarketFactory (feed deauthorized).
     function pauseByFactory() external {

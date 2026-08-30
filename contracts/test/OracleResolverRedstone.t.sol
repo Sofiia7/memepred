@@ -22,7 +22,7 @@ import "./helpers/RedstoneHarness.sol";
 contract OracleResolverRedstoneTest is Test {
     OracleResolverHarness resolver;
 
-    address keeper   = makeAddr("keeper");
+    address keeper = makeAddr("keeper");
     address stranger = makeAddr("stranger");
 
     bytes32 constant PEPE = bytes32("PEPE");
@@ -38,9 +38,8 @@ contract OracleResolverRedstoneTest is Test {
     function _recordPrice(bytes32 feedId, uint256 value8dp) internal returns (bool ok) {
         bytes memory payload = RedstonePayloadBuilder.buildNow(feedId, value8dp, 3);
         vm.prank(keeper);
-        (ok,) = address(resolver).call(
-            bytes.concat(abi.encodeWithSelector(OracleResolver.recordPrice.selector, feedId), payload)
-        );
+        (ok,) = address(resolver)
+            .call(bytes.concat(abi.encodeWithSelector(OracleResolver.recordPrice.selector, feedId), payload));
     }
 
     function _lastRecorded(bytes32 feedId) internal view returns (uint256 price) {
@@ -59,9 +58,7 @@ contract OracleResolverRedstoneTest is Test {
 
     function test_RefusesACallCarryingNoSignedPrice() public {
         vm.prank(keeper);
-        (bool ok,) = address(resolver).call(
-            abi.encodeWithSelector(OracleResolver.recordPrice.selector, PEPE)
-        );
+        (bool ok,) = address(resolver).call(abi.encodeWithSelector(OracleResolver.recordPrice.selector, PEPE));
 
         assertFalse(ok, "a call with no signed price must not record one");
         assertEq(resolver.historyLength(PEPE), 0);
@@ -70,9 +67,8 @@ contract OracleResolverRedstoneTest is Test {
     function test_StillKeeperOnly() public {
         bytes memory payload = RedstonePayloadBuilder.buildNow(PEPE, 392, 3);
         vm.prank(stranger);
-        (bool ok,) = address(resolver).call(
-            bytes.concat(abi.encodeWithSelector(OracleResolver.recordPrice.selector, PEPE), payload)
-        );
+        (bool ok,) = address(resolver)
+            .call(bytes.concat(abi.encodeWithSelector(OracleResolver.recordPrice.selector, PEPE), payload));
 
         assertFalse(ok, "a stranger must not be able to write price history");
     }
@@ -81,9 +77,8 @@ contract OracleResolverRedstoneTest is Test {
     function test_RefusesAPayloadForADifferentFeed() public {
         bytes memory dogePayload = RedstonePayloadBuilder.buildNow(DOGE, 8_922_446, 3);
         vm.prank(keeper);
-        (bool ok,) = address(resolver).call(
-            bytes.concat(abi.encodeWithSelector(OracleResolver.recordPrice.selector, PEPE), dogePayload)
-        );
+        (bool ok,) = address(resolver)
+            .call(bytes.concat(abi.encodeWithSelector(OracleResolver.recordPrice.selector, PEPE), dogePayload));
 
         assertFalse(ok, "a DOGE payload must not record a PEPE price");
     }
@@ -147,9 +142,8 @@ contract OracleResolverRedstoneTest is Test {
     function test_RejectsTooFewSigners() public {
         bytes memory payload = RedstonePayloadBuilder.buildNow(PEPE, 392, 2);
         vm.prank(keeper);
-        (bool ok,) = address(resolver).call(
-            bytes.concat(abi.encodeWithSelector(OracleResolver.recordPrice.selector, PEPE), payload)
-        );
+        (bool ok,) = address(resolver)
+            .call(bytes.concat(abi.encodeWithSelector(OracleResolver.recordPrice.selector, PEPE), payload));
 
         assertFalse(ok, "two signers must not be enough to write price history");
     }

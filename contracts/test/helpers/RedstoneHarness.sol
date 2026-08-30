@@ -26,9 +26,7 @@ import "../../src/OrderbookMarket.sol";
 import "../../src/MarketFactory.sol";
 
 contract OracleResolverHarness is OracleResolver, AuthorisedMockSignersBase {
-    function getAuthorisedSignerIndex(address signerAddress)
-        public view override returns (uint8)
-    {
+    function getAuthorisedSignerIndex(address signerAddress) public view override returns (uint8) {
         return getAuthorisedMockSignerIndex(signerAddress);
     }
 }
@@ -45,14 +43,11 @@ contract OrderbookMarketHarness is OrderbookMarket, AuthorisedMockSignersBase {
         uint256 _duration
     )
         OrderbookMarket(
-            _usdc, _resolver, _liquidityPool, _feeDistributor,
-            _referralRegistry, _multisig, _feedId, _duration
+            _usdc, _resolver, _liquidityPool, _feeDistributor, _referralRegistry, _multisig, _feedId, _duration
         )
     {}
 
-    function getAuthorisedSignerIndex(address signerAddress)
-        public view override returns (uint8)
-    {
+    function getAuthorisedSignerIndex(address signerAddress) public view override returns (uint8) {
         return getAuthorisedMockSignerIndex(signerAddress);
     }
 }
@@ -73,9 +68,7 @@ contract MarketFactoryHarness is MarketFactory {
         address _referralRegistry,
         address _multisig,
         address _liquidityPool
-    )
-        MarketFactory(_usdc, _resolver, _feeDistributor, _referralRegistry, _multisig, _liquidityPool)
-    {}
+    ) MarketFactory(_usdc, _resolver, _feeDistributor, _referralRegistry, _multisig, _liquidityPool) {}
 
     function _deployMarketImplementation(
         address _usdc,
@@ -85,10 +78,11 @@ contract MarketFactoryHarness is MarketFactory {
         address _referralRegistry,
         address _multisig
     ) internal override returns (address) {
-        return address(new OrderbookMarketHarness(
-            _usdc, _resolver, _liquidityPool, _feeDistributor,
-            _referralRegistry, _multisig, bytes32(0), 0
-        ));
+        return address(
+            new OrderbookMarketHarness(
+                _usdc, _resolver, _liquidityPool, _feeDistributor, _referralRegistry, _multisig, bytes32(0), 0
+            )
+        );
     }
 
     /**

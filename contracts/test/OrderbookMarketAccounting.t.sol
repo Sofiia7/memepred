@@ -39,17 +39,17 @@ contract MockResolverA {
 ///           reflects X, NOT Y. The (Y - X) portion is queued and refundable.
 contract OrderbookMarketAccountingTest is RedstoneTest {
     OrderbookMarket market;
-    LiquidityPool   pool;
-    GenesisNFT      genesisNFT;
-    MockUSDC        usdc;
-    MockResolverA   resolver;
+    LiquidityPool pool;
+    GenesisNFT genesisNFT;
+    MockUSDC usdc;
+    MockResolverA resolver;
 
     address feeDistrib = makeAddr("feeDistrib");
-    address multisig   = makeAddr("multisig");
-    address alice      = makeAddr("alice");
-    address bob        = makeAddr("bob");
-    address carol      = makeAddr("carol");
-    address lp1        = makeAddr("lp1");
+    address multisig = makeAddr("multisig");
+    address alice = makeAddr("alice");
+    address bob = makeAddr("bob");
+    address carol = makeAddr("carol");
+    address lp1 = makeAddr("lp1");
 
     bytes32 constant FEED = bytes32("PEPE/USD");
     uint256 constant DURATION = 15 minutes;
@@ -59,20 +59,13 @@ contract OrderbookMarketAccountingTest is RedstoneTest {
         resolver = new MockResolverA();
         _setPrice(FEED, 9142);
 
-        usdc       = new MockUSDC();
+        usdc = new MockUSDC();
         genesisNFT = new GenesisNFT("ipfs://test/");
-        pool       = new LiquidityPool(IERC20(address(usdc)), address(genesisNFT));
+        pool = new LiquidityPool(IERC20(address(usdc)), address(genesisNFT));
         genesisNFT.setLiquidityPool(address(pool));
 
         market = new OrderbookMarketHarness(
-            address(usdc),
-            address(resolver),
-            address(pool),
-            feeDistrib,
-            address(0),
-            multisig,
-            FEED,
-            DURATION
+            address(usdc), address(resolver), address(pool), feeDistrib, address(0), multisig, FEED, DURATION
         );
         // authorizeMarket now requires the pool's factory to vouch for the
         // market; this suite deploys one directly, so stand a registry up.
@@ -85,8 +78,10 @@ contract OrderbookMarketAccountingTest is RedstoneTest {
         for (uint256 i = 0; i < 4; i++) {
             address a = [alice, bob, carol, lp1][i];
             usdc.mint(a, 10_000e6);
-            vm.prank(a); usdc.approve(address(market), type(uint256).max);
-            vm.prank(a); usdc.approve(address(pool),   type(uint256).max);
+            vm.prank(a);
+            usdc.approve(address(market), type(uint256).max);
+            vm.prank(a);
+            usdc.approve(address(pool), type(uint256).max);
         }
     }
 
@@ -100,19 +95,19 @@ contract OrderbookMarketAccountingTest is RedstoneTest {
     ///         No USDC silently stuck.
     function test_PartialMatch_RemainderQueued() public {
         // Bob first, so Alice's bigger order matches against him.
-        uint256 bobId   = _bet(market, bob, OrderbookMarket.Direction.DOWN, 30e6, address(0), ENTRY_PRICE, 100);
+        uint256 bobId = _bet(market, bob, OrderbookMarket.Direction.DOWN, 30e6, address(0), ENTRY_PRICE, 100);
         uint256 aliceId = _bet(market, alice, OrderbookMarket.Direction.UP, 50e6, address(0), ENTRY_PRICE, 100);
 
         OrderbookMarket.Order memory ao = market.getOrder(aliceId);
         OrderbookMarket.Order memory bo = market.getOrder(bobId);
 
-        assertEq(ao.filledAmount,       30e6, "Alice filled = matched 30");
-        assertEq(ao.amount,             50e6, "Alice deposit unchanged");
-        assertEq(ao.pendingSettlements, 1,    "Alice 1 pending match");
-        assertEq(uint(ao.status),       uint(OrderbookMarket.OrderStatus.PENDING), "Alice still in queue");
+        assertEq(ao.filledAmount, 30e6, "Alice filled = matched 30");
+        assertEq(ao.amount, 50e6, "Alice deposit unchanged");
+        assertEq(ao.pendingSettlements, 1, "Alice 1 pending match");
+        assertEq(uint256(ao.status), uint256(OrderbookMarket.OrderStatus.PENDING), "Alice still in queue");
 
-        assertEq(bo.filledAmount,       30e6, "Bob fully filled");
-        assertEq(uint(bo.status),       uint(OrderbookMarket.OrderStatus.MATCHED));
+        assertEq(bo.filledAmount, 30e6, "Bob fully filled");
+        assertEq(uint256(bo.status), uint256(OrderbookMarket.OrderStatus.MATCHED));
 
         // Alice's 20 USDC remainder must still be in the contract, queueable.
         (uint256 up, uint256 dn) = market.getPendingDepth();
@@ -128,18 +123,19 @@ contract OrderbookMarketAccountingTest is RedstoneTest {
         _bet(market, carol, OrderbookMarket.Direction.DOWN, 20e6, address(0), ENTRY_PRICE, 100);
 
         OrderbookMarket.Order memory ao = market.getOrder(aliceId);
-        assertEq(ao.filledAmount,       50e6, "Alice fully filled");
-        assertEq(ao.pendingSettlements, 2,    "Alice in 2 matches");
-        assertEq(uint(ao.status),       uint(OrderbookMarket.OrderStatus.MATCHED));
+        assertEq(ao.filledAmount, 50e6, "Alice fully filled");
+        assertEq(ao.pendingSettlements, 2, "Alice in 2 matches");
+        assertEq(uint256(ao.status), uint256(OrderbookMarket.OrderStatus.MATCHED));
 
         (uint256 up, uint256 dn) = market.getPendingDepth();
-        assertEq(up, 0); assertEq(dn, 0);
+        assertEq(up, 0);
+        assertEq(dn, 0);
     }
 
     /// @notice INV-1: After all matches settle and Alice claims, sum of all
     ///         outgoing USDC equals sum of incoming deposits. No leakage.
     function test_PartialMatch_USDCConservation() public {
-        uint256 startBob   = usdc.balanceOf(bob);
+        uint256 startBob = usdc.balanceOf(bob);
         uint256 startAlice = usdc.balanceOf(alice);
         uint256 startCarol = usdc.balanceOf(carol);
 
@@ -157,20 +153,21 @@ contract OrderbookMarketAccountingTest is RedstoneTest {
 
         OrderbookMarket.Order memory ao = market.getOrder(aliceId);
         assertEq(ao.pendingSettlements, 0);
-        assertEq(uint(ao.status), uint(OrderbookMarket.OrderStatus.SETTLED));
+        assertEq(uint256(ao.status), uint256(OrderbookMarket.OrderStatus.SETTLED));
         // payout = (30*2) + (20*2) = 100 USDC at feeBps=0
         assertEq(ao.payout, 100e6, "Alice wins entire 100 USDC pool");
 
-        vm.prank(alice); market.claim(aliceId);
+        vm.prank(alice);
+        market.claim(aliceId);
 
         // Conservation: net USDC change across all participants equals 0.
         // Bob: -30, Carol: -20, Alice: -50 + 100 = +50. Sum = 0.
         int256 dAlice = int256(usdc.balanceOf(alice)) - int256(startAlice);
-        int256 dBob   = int256(usdc.balanceOf(bob))   - int256(startBob);
+        int256 dBob = int256(usdc.balanceOf(bob)) - int256(startBob);
         int256 dCarol = int256(usdc.balanceOf(carol)) - int256(startCarol);
         assertEq(dAlice + dBob + dCarol, 0, "USDC conservation closed");
         assertEq(dAlice, int256(50e6));
-        assertEq(dBob,   int256(-30e6));
+        assertEq(dBob, int256(-30e6));
         assertEq(dCarol, int256(-20e6));
     }
 
@@ -184,9 +181,9 @@ contract OrderbookMarketAccountingTest is RedstoneTest {
         uint256 aId = _bet(market, alice, OrderbookMarket.Direction.UP, 5_500_000, address(0), ENTRY_PRICE, 100);
 
         OrderbookMarket.Order memory ao = market.getOrder(aId);
-        assertEq(ao.filledAmount,       5e6, "Alice matched 5");
+        assertEq(ao.filledAmount, 5e6, "Alice matched 5");
         assertTrue(ao.unmatchedRefunded, "dust marked refunded");
-        assertEq(uint(ao.status), uint(OrderbookMarket.OrderStatus.MATCHED));
+        assertEq(uint256(ao.status), uint256(OrderbookMarket.OrderStatus.MATCHED));
 
         // Alice's net change so far: -5.5 + 0.5 refund = -5
         int256 dAlice = int256(usdc.balanceOf(alice)) - int256(startAlice);
@@ -204,8 +201,10 @@ contract OrderbookMarketAccountingTest is RedstoneTest {
     function test_LP_PartialMatch_QueueRemainder() public {
         // MIN_DEPOSIT = 50e6 — exactly at the floor.
         usdc.mint(lp1, 1_000e6);
-        vm.prank(lp1); usdc.approve(address(pool), type(uint256).max);
-        vm.prank(lp1); pool.deposit(50e6, lp1);
+        vm.prank(lp1);
+        usdc.approve(address(pool), type(uint256).max);
+        vm.prank(lp1);
+        pool.deposit(50e6, lp1);
 
         uint256 cap = (50e6 * pool.PER_MARKET_MAX_EXPOSURE_BPS()) / 10_000;
         assertEq(cap, 25e5, "2.5 USDC per-market cap");
@@ -215,9 +214,9 @@ contract OrderbookMarketAccountingTest is RedstoneTest {
 
         assertLe(ao.filledAmount, 25e5 + 1, "LP capped match");
         assertGt(ao.amount, ao.filledAmount, "remainder exists");
-        assertEq(uint(ao.status), uint(OrderbookMarket.OrderStatus.PENDING), "remainder in queue");
+        assertEq(uint256(ao.status), uint256(OrderbookMarket.OrderStatus.PENDING), "remainder in queue");
 
-        (uint256 up, ) = market.getPendingDepth();
+        (uint256 up,) = market.getPendingDepth();
         assertEq(up, 1, "remainder queued on UP");
     }
 
@@ -249,10 +248,11 @@ contract OrderbookMarketAccountingTest is RedstoneTest {
 
         ao = market.getOrder(aId);
         assertEq(ao.pendingSettlements, 0);
-        assertEq(uint(ao.status), uint(OrderbookMarket.OrderStatus.SETTLED));
+        assertEq(uint256(ao.status), uint256(OrderbookMarket.OrderStatus.SETTLED));
         assertEq(ao.payout, 60e6, "60 USDC payout from matched portion");
 
-        vm.prank(alice); market.claim(aId);
+        vm.prank(alice);
+        market.claim(aId);
         // Final Alice net: -30 + 60 = +30 profit. Matches Bob's loss exactly.
         assertEq(int256(usdc.balanceOf(alice)) - int256(preAlice), int256(30e6));
     }
@@ -266,7 +266,7 @@ contract OrderbookMarketAccountingTest is RedstoneTest {
         market.refundExpired(aId);
 
         OrderbookMarket.Order memory ao = market.getOrder(aId);
-        assertEq(uint(ao.status), uint(OrderbookMarket.OrderStatus.REFUNDED));
+        assertEq(uint256(ao.status), uint256(OrderbookMarket.OrderStatus.REFUNDED));
         assertEq(int256(usdc.balanceOf(alice)) - int256(preAlice), int256(0));
     }
 
@@ -298,9 +298,12 @@ contract OrderbookMarketAccountingTest is RedstoneTest {
         for (uint256 i = 0; i < 4; i++) {
             address a = makeAddr(string(abi.encodePacked("trader", i)));
             address b = makeAddr(string(abi.encodePacked("trader_b", i)));
-            usdc.mint(a, 100e6); usdc.mint(b, 100e6);
-            vm.prank(a); usdc.approve(address(market), type(uint256).max);
-            vm.prank(b); usdc.approve(address(market), type(uint256).max);
+            usdc.mint(a, 100e6);
+            usdc.mint(b, 100e6);
+            vm.prank(a);
+            usdc.approve(address(market), type(uint256).max);
+            vm.prank(b);
+            usdc.approve(address(market), type(uint256).max);
             _bet(market, a, OrderbookMarket.Direction.UP, 25e6, address(0), ENTRY_PRICE, 100);
             _bet(market, b, OrderbookMarket.Direction.DOWN, 25e6, address(0), ENTRY_PRICE, 100);
         }

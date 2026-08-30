@@ -35,37 +35,35 @@ contract FeeDistributor is Ownable, ReentrancyGuard {
     address public marketFactory;
     mapping(address => bool) public isAuthorizedMarket;
 
-    uint256 public constant REF_BPS      = 4000; // 40%
+    uint256 public constant REF_BPS = 4000; // 40%
     uint256 public constant TREASURY_BPS = 2000; // 20%
-    uint256 public constant LP_BPS       = 2000; // 20%
-    uint256 public constant NFT_BPS      = 2000; // 20%
+    uint256 public constant LP_BPS = 2000; // 20%
+    uint256 public constant NFT_BPS = 2000; // 20%
 
     mapping(address => uint256) public referralBalance;
     uint256 public totalReferralOwed;
 
-    event MarketFactorySet (address indexed factory);
-    event MarketAuthorized (address indexed market);
+    event MarketFactorySet(address indexed factory);
+    event MarketAuthorized(address indexed market);
     event MarketDeauthorized(address indexed market);
-    event FeeReceived      (address indexed market, uint256 totalFee, address indexed referrer);
-    event ReferralCredited (address indexed referrer, uint256 amount);
-    event ReferralClaimed  (address indexed referrer, uint256 amount);
+    event FeeReceived(address indexed market, uint256 totalFee, address indexed referrer);
+    event ReferralCredited(address indexed referrer, uint256 amount);
+    event ReferralClaimed(address indexed referrer, uint256 amount);
 
     modifier onlyFactoryOrOwner() {
         require(msg.sender == marketFactory || msg.sender == owner(), "only factory or owner");
         _;
     }
 
-    constructor(
-        address _usdc,
-        address _treasury,
-        address _liquidityPool,
-        address _nftRewardsPool
-    ) Ownable(msg.sender) {
-        require(_usdc != address(0) && _treasury != address(0)
-             && _liquidityPool != address(0) && _nftRewardsPool != address(0), "zero address");
-        usdc           = IERC20(_usdc);
-        treasury       = _treasury;
-        liquidityPool  = _liquidityPool;
+    constructor(address _usdc, address _treasury, address _liquidityPool, address _nftRewardsPool) Ownable(msg.sender) {
+        require(
+            _usdc != address(0) && _treasury != address(0) && _liquidityPool != address(0)
+                && _nftRewardsPool != address(0),
+            "zero address"
+        );
+        usdc = IERC20(_usdc);
+        treasury = _treasury;
+        liquidityPool = _liquidityPool;
         nftRewardsPool = _nftRewardsPool;
     }
 
@@ -90,7 +88,7 @@ contract FeeDistributor is Ownable, ReentrancyGuard {
      */
     function authorizeMarket(address market) external onlyFactoryOrOwner {
         require(market != address(0), "zero market");
-        require(marketFactory != address(0),                    "factory not set");
+        require(marketFactory != address(0), "factory not set");
         require(IMarketRegistry(marketFactory).isMarket(market), "not a market");
         isAuthorizedMarket[market] = true;
         emit MarketAuthorized(market);
@@ -114,19 +112,19 @@ contract FeeDistributor is Ownable, ReentrancyGuard {
         uint256 toRef = referrer == address(0) ? 0 : (totalFee * REF_BPS) / 10_000;
         if (toRef > 0) {
             referralBalance[referrer] += toRef;
-            totalReferralOwed         += toRef;
+            totalReferralOwed += toRef;
             emit ReferralCredited(referrer, toRef);
         }
 
-        uint256 remaining  = totalFee - toRef;
-        uint256 base       = TREASURY_BPS + LP_BPS + NFT_BPS; // 6000
+        uint256 remaining = totalFee - toRef;
+        uint256 base = TREASURY_BPS + LP_BPS + NFT_BPS; // 6000
         uint256 toTreasury = (remaining * TREASURY_BPS) / base;
-        uint256 toLP       = (remaining * LP_BPS)       / base;
-        uint256 toNFT      = remaining - toTreasury - toLP;
+        uint256 toLP = (remaining * LP_BPS) / base;
+        uint256 toNFT = remaining - toTreasury - toLP;
 
-        if (toTreasury > 0) usdc.safeTransfer(treasury,       toTreasury);
-        if (toLP       > 0) usdc.safeTransfer(liquidityPool,  toLP);
-        if (toNFT      > 0) usdc.safeTransfer(nftRewardsPool, toNFT);
+        if (toTreasury > 0) usdc.safeTransfer(treasury, toTreasury);
+        if (toLP > 0) usdc.safeTransfer(liquidityPool, toLP);
+        if (toNFT > 0) usdc.safeTransfer(nftRewardsPool, toNFT);
 
         emit FeeReceived(msg.sender, totalFee, referrer);
     }
@@ -135,7 +133,7 @@ contract FeeDistributor is Ownable, ReentrancyGuard {
         amount = referralBalance[msg.sender];
         require(amount > 0, "nothing to claim");
         referralBalance[msg.sender] = 0;
-        totalReferralOwed          -= amount;
+        totalReferralOwed -= amount;
         usdc.safeTransfer(msg.sender, amount);
         emit ReferralClaimed(msg.sender, amount);
     }
@@ -145,10 +143,12 @@ contract FeeDistributor is Ownable, ReentrancyGuard {
         require(_treasury != address(0), "zero");
         treasury = _treasury;
     }
+
     function setLiquidityPool(address _lp) external onlyOwner {
         require(_lp != address(0), "zero");
         liquidityPool = _lp;
     }
+
     function setNftRewardsPool(address _nft) external onlyOwner {
         require(_nft != address(0), "zero");
         nftRewardsPool = _nft;

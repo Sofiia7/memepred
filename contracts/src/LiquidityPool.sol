@@ -39,19 +39,19 @@ contract LiquidityPool is ERC4626, ReentrancyGuard, Pausable, Ownable {
     using Math for uint256;
 
     // ── CONSTANTS ──────────────────────────────────────────
-    uint256 public constant MIN_DEPOSIT                 = 50e6;  // 50 USDC
-    uint256 public constant GENESIS_MAX                 = 20;
-    uint256 public constant GENESIS_BOOST_BPS           = 15_000; // 1.5x
-    uint256 public constant GLOBAL_MAX_EXPOSURE_BPS     = 1_000;  // 10% of totalAssets()
-    uint256 public constant PER_MARKET_MAX_EXPOSURE_BPS = 500;    // 5% of totalAssets()
-    uint256 public constant FEE_BPS_ON_LP_WIN           = 100;    // 1% of LP-won amount
-    uint256 private constant FEE_INDEX_PRECISION        = 1e30;
+    uint256 public constant MIN_DEPOSIT = 50e6; // 50 USDC
+    uint256 public constant GENESIS_MAX = 20;
+    uint256 public constant GENESIS_BOOST_BPS = 15_000; // 1.5x
+    uint256 public constant GLOBAL_MAX_EXPOSURE_BPS = 1_000; // 10% of totalAssets()
+    uint256 public constant PER_MARKET_MAX_EXPOSURE_BPS = 500; // 5% of totalAssets()
+    uint256 public constant FEE_BPS_ON_LP_WIN = 100; // 1% of LP-won amount
+    uint256 private constant FEE_INDEX_PRECISION = 1e30;
 
     // ── IMMUTABLES ─────────────────────────────────────────
     GenesisNFT public immutable genesisNFT;
 
     // ── MARKET FACTORY ─────────────────────────────────────
-    address public marketFactory;             // set once after deploy
+    address public marketFactory; // set once after deploy
     mapping(address => bool) public isAuthorizedMarket;
 
     // ── GENESIS ────────────────────────────────────────────
@@ -68,32 +68,32 @@ contract LiquidityPool is ERC4626, ReentrancyGuard, Pausable, Ownable {
 
     // ── EXPOSURE ───────────────────────────────────────────
     uint256 public totalExposure;
-    mapping(address => uint256) public marketExposure;  // market → locked USDC
+    mapping(address => uint256) public marketExposure; // market → locked USDC
 
     // ── MATCHES (composite key) ────────────────────────────
     struct ActiveMatch {
         uint256 amount;
-        bool    lpIsDown;
-        bool    settled;
+        bool lpIsDown;
+        bool settled;
     }
     mapping(address => mapping(uint256 => ActiveMatch)) public activeMatches;
 
     // ── FEE STREAM (index-based, O(1)) ─────────────────────
-    uint256 public totalFeeWeight;       // sum of feeWeight across LPs
-    uint256 public cumFeePerWeight;      // FEE_INDEX_PRECISION-scaled
-    uint256 public totalPendingFees;     // sum of pendingFees[]
+    uint256 public totalFeeWeight; // sum of feeWeight across LPs
+    uint256 public cumFeePerWeight; // FEE_INDEX_PRECISION-scaled
+    uint256 public totalPendingFees; // sum of pendingFees[]
     mapping(address => uint256) public feeIndexSnapshot;
     mapping(address => uint256) public pendingFees;
 
     // ── EVENTS ─────────────────────────────────────────────
-    event MarketFactorySet (address indexed factory);
-    event MarketAuthorized (address indexed market);
+    event MarketFactorySet(address indexed factory);
+    event MarketAuthorized(address indexed market);
     event MarketDeauthorized(address indexed market);
-    event GenesisMinted    (address indexed lp, uint256 tokenId);
-    event MatchTaken       (address indexed market, uint256 indexed matchId, uint256 orderId, uint256 amount);
-    event MatchResult      (address indexed market, uint256 indexed matchId, bool lpWon, uint256 amount);
-    event FeeAccrued       (address indexed market, uint256 amount);
-    event FeesClaimed      (address indexed lp, uint256 amount);
+    event GenesisMinted(address indexed lp, uint256 tokenId);
+    event MatchTaken(address indexed market, uint256 indexed matchId, uint256 orderId, uint256 amount);
+    event MatchResult(address indexed market, uint256 indexed matchId, bool lpWon, uint256 amount);
+    event FeeAccrued(address indexed market, uint256 amount);
+    event FeesClaimed(address indexed lp, uint256 amount);
 
     // ── MODIFIERS ──────────────────────────────────────────
     modifier onlyAuthorizedMarket() {
@@ -183,21 +183,13 @@ contract LiquidityPool is ERC4626, ReentrancyGuard, Pausable, Ownable {
     ///      +10**offset terms are the inherited virtual-share protection and
     ///      have to be kept identical, or the two directions stop agreeing.
     function previewRedeem(uint256 shares) public view override returns (uint256) {
-        return shares.mulDiv(
-            _withdrawableAssets() + 1,
-            totalSupply() + 10 ** _decimalsOffset(),
-            Math.Rounding.Floor
-        );
+        return shares.mulDiv(_withdrawableAssets() + 1, totalSupply() + 10 ** _decimalsOffset(), Math.Rounding.Floor);
     }
 
     /// @dev Mirrors OZ's _convertToShares against the cash-only base, rounding
     ///      up so the vault never gives away a wei to rounding.
     function previewWithdraw(uint256 assets) public view override returns (uint256) {
-        return assets.mulDiv(
-            totalSupply() + 10 ** _decimalsOffset(),
-            _withdrawableAssets() + 1,
-            Math.Rounding.Ceil
-        );
+        return assets.mulDiv(totalSupply() + 10 ** _decimalsOffset(), _withdrawableAssets() + 1, Math.Rounding.Ceil);
     }
 
     /// @notice True iff the vault holds enough USDC to back every accrued
@@ -212,13 +204,13 @@ contract LiquidityPool is ERC4626, ReentrancyGuard, Pausable, Ownable {
 
         // Accrue fees up to current index BEFORE changing balances.
         if (from != address(0)) _accrueFees(from);
-        if (to   != address(0)) _accrueFees(to);
+        if (to != address(0)) _accrueFees(to);
 
         super._update(from, to, value);
 
         // Re-sync cached weight AFTER balances move.
         if (from != address(0)) _syncWeight(from);
-        if (to   != address(0)) _syncWeight(to);
+        if (to != address(0)) _syncWeight(to);
     }
 
     /// @dev Withdraws are constrained by locked exposure across all markets.
@@ -229,9 +221,9 @@ contract LiquidityPool is ERC4626, ReentrancyGuard, Pausable, Ownable {
     ///      to what this always withheld - balance minus fees minus exposure.
     function maxWithdraw(address owner_) public view override returns (uint256) {
         uint256 ownerAssets = previewRedeem(balanceOf(owner_));
-        uint256 cash        = IERC20(asset()).balanceOf(address(this));
-        uint256 reserved    = totalPendingFees + totalExposure;
-        uint256 free        = cash > reserved ? cash - reserved : 0;
+        uint256 cash = IERC20(asset()).balanceOf(address(this));
+        uint256 reserved = totalPendingFees + totalExposure;
+        uint256 free = cash > reserved ? cash - reserved : 0;
         return ownerAssets < free ? ownerAssets : free;
     }
 
@@ -330,7 +322,7 @@ contract LiquidityPool is ERC4626, ReentrancyGuard, Pausable, Ownable {
      */
     function authorizeMarket(address market) external onlyFactoryOrOwner {
         require(market != address(0), "zero market");
-        require(marketFactory != address(0),                   "factory not set");
+        require(marketFactory != address(0), "factory not set");
         require(IMarketRegistry(marketFactory).isMarket(market), "not a market");
         isAuthorizedMarket[market] = true;
         emit MarketAuthorized(market);
@@ -340,8 +332,13 @@ contract LiquidityPool is ERC4626, ReentrancyGuard, Pausable, Ownable {
     ///         Existing matches can still settle; LPs can still withdraw fees and shares.
     ///         Note that tryMatch declines rather than reverting while paused;
     ///         see the comment there for why the difference matters.
-    function pause()   external onlyOwner { _pause();   }
-    function unpause() external onlyOwner { _unpause(); }
+    function pause() external onlyOwner {
+        _pause();
+    }
+
+    function unpause() external onlyOwner {
+        _unpause();
+    }
 
     /// @dev Emergency only — owner can revoke a misbehaving market.
     function deauthorizeMarket(address market) external onlyOwner {
@@ -350,12 +347,7 @@ contract LiquidityPool is ERC4626, ReentrancyGuard, Pausable, Ownable {
     }
 
     // ── MATCHING (called by OrderbookMarket) ───────────────
-    function tryMatch(
-        uint256 orderId,
-        uint256 amount,
-        bool    userIsUp,
-        uint256 matchId
-    )
+    function tryMatch(uint256 orderId, uint256 amount, bool userIsUp, uint256 matchId)
         external
         onlyAuthorizedMarket
         nonReentrant
@@ -378,23 +370,19 @@ contract LiquidityPool is ERC4626, ReentrancyGuard, Pausable, Ownable {
         uint256 ta = totalAssets();
         if (ta == 0 || amount == 0) return 0;
 
-        uint256 globalCap   = (ta * GLOBAL_MAX_EXPOSURE_BPS)     / 10_000;
-        uint256 marketCap   = (ta * PER_MARKET_MAX_EXPOSURE_BPS) / 10_000;
-        uint256 globalAvail = globalCap > totalExposure          ? globalCap - totalExposure          : 0;
+        uint256 globalCap = (ta * GLOBAL_MAX_EXPOSURE_BPS) / 10_000;
+        uint256 marketCap = (ta * PER_MARKET_MAX_EXPOSURE_BPS) / 10_000;
+        uint256 globalAvail = globalCap > totalExposure ? globalCap - totalExposure : 0;
         uint256 marketAvail = marketCap > marketExposure[market] ? marketCap - marketExposure[market] : 0;
-        uint256 maxMatch    = globalAvail < marketAvail ? globalAvail : marketAvail;
+        uint256 maxMatch = globalAvail < marketAvail ? globalAvail : marketAvail;
 
         if (maxMatch == 0) return 0;
 
         matchedAmount = amount <= maxMatch ? amount : maxMatch;
 
-        totalExposure              += matchedAmount;
-        marketExposure[market]     += matchedAmount;
-        activeMatches[market][matchId] = ActiveMatch({
-            amount:    matchedAmount,
-            lpIsDown:  userIsUp,
-            settled:   false
-        });
+        totalExposure += matchedAmount;
+        marketExposure[market] += matchedAmount;
+        activeMatches[market][matchId] = ActiveMatch({amount: matchedAmount, lpIsDown: userIsUp, settled: false});
 
         IERC20(asset()).safeTransfer(market, matchedAmount);
 
@@ -407,38 +395,30 @@ contract LiquidityPool is ERC4626, ReentrancyGuard, Pausable, Ownable {
      *         Just unlocks exposure — market has already returned the LP stake.
      *         No P&L change; no fee accrual.
      */
-    function onMatchRefunded(uint256 matchId)
-        external
-        onlyAuthorizedMarket
-        nonReentrant
-    {
+    function onMatchRefunded(uint256 matchId) external onlyAuthorizedMarket nonReentrant {
         address market = msg.sender;
         ActiveMatch storage am = activeMatches[market][matchId];
         require(am.amount > 0, "match not found");
-        require(!am.settled,   "already settled");
+        require(!am.settled, "already settled");
         am.settled = true;
 
-        totalExposure          -= am.amount;
+        totalExposure -= am.amount;
         marketExposure[market] -= am.amount;
 
         emit MatchResult(market, matchId, false, am.amount);
     }
 
-    function onMatchSettled(uint256 matchId, bool upWon)
-        external
-        onlyAuthorizedMarket
-        nonReentrant
-    {
+    function onMatchSettled(uint256 matchId, bool upWon) external onlyAuthorizedMarket nonReentrant {
         address market = msg.sender;
         ActiveMatch storage am = activeMatches[market][matchId];
-        require(am.amount > 0,    "match not found");
-        require(!am.settled,      "already settled");
+        require(am.amount > 0, "match not found");
+        require(!am.settled, "already settled");
         am.settled = true;
 
         bool lpWon = am.lpIsDown ? !upWon : upWon;
 
         // Unlock exposure regardless of outcome.
-        totalExposure          -= am.amount;
+        totalExposure -= am.amount;
         marketExposure[market] -= am.amount;
 
         if (lpWon) {
@@ -464,9 +444,9 @@ contract LiquidityPool is ERC4626, ReentrancyGuard, Pausable, Ownable {
         if (from == to) return;
         // Accrue pending fees with the OLD weight before resyncing.
         if (from != address(0)) _accrueFees(from);
-        if (to   != address(0)) _accrueFees(to);
+        if (to != address(0)) _accrueFees(to);
         if (from != address(0)) _syncWeight(from);
-        if (to   != address(0)) _syncWeight(to);
+        if (to != address(0)) _syncWeight(to);
     }
 
     // ── FEE STREAM ─────────────────────────────────────────
@@ -503,13 +483,13 @@ contract LiquidityPool is ERC4626, ReentrancyGuard, Pausable, Ownable {
 
     function _accrueFee(uint256 amount) internal {
         if (amount == 0 || totalFeeWeight == 0) return;
-        cumFeePerWeight  += (amount * FEE_INDEX_PRECISION) / totalFeeWeight;
+        cumFeePerWeight += (amount * FEE_INDEX_PRECISION) / totalFeeWeight;
         totalPendingFees += amount;
     }
 
     function _accrueFees(address lp) internal {
         uint256 weight = _currentWeight(lp);
-        uint256 delta  = cumFeePerWeight - feeIndexSnapshot[lp];
+        uint256 delta = cumFeePerWeight - feeIndexSnapshot[lp];
         if (weight > 0 && delta > 0) {
             pendingFees[lp] += (weight * delta) / FEE_INDEX_PRECISION;
         }
@@ -530,7 +510,7 @@ contract LiquidityPool is ERC4626, ReentrancyGuard, Pausable, Ownable {
 
     function earnedFees(address lp) external view returns (uint256) {
         uint256 weight = _currentWeight(lp);
-        uint256 delta  = cumFeePerWeight - feeIndexSnapshot[lp];
+        uint256 delta = cumFeePerWeight - feeIndexSnapshot[lp];
         return pendingFees[lp] + (weight * delta) / FEE_INDEX_PRECISION;
     }
 
@@ -541,13 +521,12 @@ contract LiquidityPool is ERC4626, ReentrancyGuard, Pausable, Ownable {
         return cap > totalExposure ? cap - totalExposure : 0;
     }
 
-    function getPoolStats() external view returns (
-        uint256 totalAssetsOut,
-        uint256 available,
-        uint256 providerExposure,
-        uint256 genesisLeft
-    ) {
-        uint256 ta  = totalAssets();
+    function getPoolStats()
+        external
+        view
+        returns (uint256 totalAssetsOut, uint256 available, uint256 providerExposure, uint256 genesisLeft)
+    {
+        uint256 ta = totalAssets();
         uint256 cap = ta * GLOBAL_MAX_EXPOSURE_BPS / 10_000;
         return (
             ta,

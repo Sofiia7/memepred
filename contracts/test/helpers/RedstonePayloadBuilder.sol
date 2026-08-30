@@ -60,12 +60,11 @@ library RedstonePayloadBuilder {
      * @param timestampMs  package timestamp in MILLISECONDS, as RedStone uses
      * @param signerCount  how many distinct mock signers sign it
      */
-    function build(
-        bytes32 feedId,
-        uint256 value8dp,
-        uint256 timestampMs,
-        uint256 signerCount
-    ) internal pure returns (bytes memory payload) {
+    function build(bytes32 feedId, uint256 value8dp, uint256 timestampMs, uint256 signerCount)
+        internal
+        pure
+        returns (bytes memory payload)
+    {
         for (uint256 i = 0; i < signerCount; i++) {
             payload = bytes.concat(payload, _package(feedId, value8dp, timestampMs, signerKey(i)));
         }
@@ -78,38 +77,30 @@ library RedstonePayloadBuilder {
         // which surfaces as an arithmetic panic deep inside their parser.
         payload = bytes.concat(
             payload,
-            bytes2(uint16(signerCount)),  // data packages count
-            bytes3(0),                    // unsigned metadata byte size (none)
+            bytes2(uint16(signerCount)), // data packages count
+            bytes3(0), // unsigned metadata byte size (none)
             REDSTONE_MARKER
         );
     }
 
     /// Convenience: a payload timestamped at the current block, which is what
     /// almost every test wants.
-    function buildNow(bytes32 feedId, uint256 value8dp, uint256 signerCount)
-        internal view returns (bytes memory)
-    {
+    function buildNow(bytes32 feedId, uint256 value8dp, uint256 signerCount) internal view returns (bytes memory) {
         return build(feedId, value8dp, block.timestamp * 1000, signerCount);
     }
 
-    function _package(
-        bytes32 feedId,
-        uint256 value8dp,
-        uint256 timestampMs,
-        uint256 privateKey
-    ) private pure returns (bytes memory) {
+    function _package(bytes32 feedId, uint256 value8dp, uint256 timestampMs, uint256 privateKey)
+        private
+        pure
+        returns (bytes memory)
+    {
         // Value size before count, not after. Their own constant spells the
         // order out read backwards from the end of the package:
         // TIMESTAMP_NEGATIVE_OFFSET... = SIG_BS + DATA_POINTS_COUNT_BS +
         // DATA_POINT_VALUE_BYTE_SIZE_BS + STANDARD_SLOT_BS. Swapping the two
         // leaves the package the right length and the payload unparseable.
-        bytes memory signedMessage = abi.encodePacked(
-            feedId,
-            value8dp,
-            uint48(timestampMs),
-            VALUE_BYTE_SIZE,
-            DATA_POINTS_COUNT
-        );
+        bytes memory signedMessage =
+            abi.encodePacked(feedId, value8dp, uint48(timestampMs), VALUE_BYTE_SIZE, DATA_POINTS_COUNT);
 
         // Plain keccak256, no "\x19Ethereum Signed Message" prefix: this is what
         // RedstoneConsumerBase hashes and recovers against.

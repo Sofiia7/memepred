@@ -23,34 +23,34 @@ import "./helpers/RedstoneTest.sol";
 import "./helpers/RedstoneHarness.sol";
 
 contract LaunchBlockersTest is RedstoneTest {
-    MockUSDC      usdc;
-    address       resolver;
-    GenesisNFT    genesisNFT;
+    MockUSDC usdc;
+    address resolver;
+    GenesisNFT genesisNFT;
     LiquidityPool pool;
     MarketFactoryHarness factory;
 
-    address treasury  = makeAddr("treasury");
-    address multisig  = makeAddr("multisig-standin");
-    address safe      = makeAddr("gnosis-safe");
-    address keeper    = makeAddr("keeper");
-    address attacker  = makeAddr("attacker");
+    address treasury = makeAddr("treasury");
+    address multisig = makeAddr("multisig-standin");
+    address safe = makeAddr("gnosis-safe");
+    address keeper = makeAddr("keeper");
+    address attacker = makeAddr("attacker");
 
     bytes32 constant FEED_PEPE = bytes32("PEPE/USD");
     bytes32 constant FEED_DOGE = bytes32("DOGE/USD");
-    uint256 constant DUR       = 1 hours;
+    uint256 constant DUR = 1 hours;
 
     function setUp() public {
-        usdc       = new MockUSDC();
-        resolver   = makeAddr("resolver");
+        usdc = new MockUSDC();
+        resolver = makeAddr("resolver");
         _setPrice(FEED_PEPE, 1000e8);
         _setPrice(FEED_DOGE, 2000e8);
 
         genesisNFT = new GenesisNFT("ipfs://test/");
-        pool       = new LiquidityPool(IERC20(address(usdc)), address(genesisNFT));
+        pool = new LiquidityPool(IERC20(address(usdc)), address(genesisNFT));
         genesisNFT.setLiquidityPool(address(pool));
 
-        FeeDistributor   feeDist = new FeeDistributor(address(usdc), treasury, treasury, treasury);
-        ReferralRegistry refReg  = new ReferralRegistry();
+        FeeDistributor feeDist = new FeeDistributor(address(usdc), treasury, treasury, treasury);
+        ReferralRegistry refReg = new ReferralRegistry();
 
         factory = new MarketFactoryHarness(
             address(usdc), resolver, address(feeDist), address(refReg), multisig, address(pool)
@@ -272,8 +272,7 @@ contract LaunchBlockersTest is RedstoneTest {
     // set its own rules and then draw on pooled funds.
     function test_Pool_RefusesAMarketTheFactoryDidNotMake() public {
         OrderbookMarket rogue = new OrderbookMarketHarness(
-            address(usdc), resolver, address(pool), treasury, treasury,
-            attacker, FEED_PEPE, DUR
+            address(usdc), resolver, address(pool), treasury, treasury, attacker, FEED_PEPE, DUR
         );
 
         vm.expectRevert("not a market");

@@ -44,7 +44,7 @@ abstract contract RedstoneTest is Test {
     }
 
     function _setPrice(bytes32 feedId, uint256 value8dp) internal {
-        rsFeedId   = feedId;
+        rsFeedId = feedId;
         rsPrice8dp = value8dp;
     }
 
@@ -68,8 +68,7 @@ abstract contract RedstoneTest is Test {
         uint256 expectedPrice,
         uint256 slippageBps
     ) internal returns (uint256 orderId) {
-        (bool ok, bytes memory ret) =
-            _tryBet(mkt, who, dir, amount, referrer, expectedPrice, slippageBps);
+        (bool ok, bytes memory ret) = _tryBet(mkt, who, dir, amount, referrer, expectedPrice, slippageBps);
         require(ok, _rsReason(ret, "placeBet reverted"));
         orderId = abi.decode(ret, (uint256));
     }
@@ -93,8 +92,7 @@ abstract contract RedstoneTest is Test {
     ) internal returns (bool ok, bytes memory ret) {
         bytes memory callData = bytes.concat(
             abi.encodeWithSelector(
-                OrderbookMarket.placeBet.selector,
-                dir, amount, referrer, expectedPrice, slippageBps
+                OrderbookMarket.placeBet.selector, dir, amount, referrer, expectedPrice, slippageBps
             ),
             _payload()
         );
@@ -126,12 +124,9 @@ abstract contract RedstoneTest is Test {
         _rsWarpToNow();
         bytes memory callData = bytes.concat(
             abi.encodeWithSelector(
-                OrderbookMarket.placeBet.selector,
-                dir, amount, referrer, expectedPrice, slippageBps
+                OrderbookMarket.placeBet.selector, dir, amount, referrer, expectedPrice, slippageBps
             ),
-            RedstonePayloadBuilder.build(
-                rsFeedId, rsPrice8dp, (block.timestamp - ageSeconds) * 1000, RS_SIGNERS
-            )
+            RedstonePayloadBuilder.build(rsFeedId, rsPrice8dp, (block.timestamp - ageSeconds) * 1000, RS_SIGNERS)
         );
         vm.prank(who);
         (ok, ret) = address(mkt).call(callData);
@@ -140,43 +135,31 @@ abstract contract RedstoneTest is Test {
     // ── OracleResolver ────────────────────────────────────────────
 
     function _record(OracleResolver resolver, address keeper, uint256 value8dp) internal {
-        bytes memory callData = bytes.concat(
-            abi.encodeWithSelector(OracleResolver.recordPrice.selector, rsFeedId),
-            _payload(value8dp)
-        );
+        bytes memory callData =
+            bytes.concat(abi.encodeWithSelector(OracleResolver.recordPrice.selector, rsFeedId), _payload(value8dp));
         vm.prank(keeper);
         (bool ok, bytes memory ret) = address(resolver).call(callData);
         require(ok, _rsReason(ret, "recordPrice reverted"));
     }
 
     /// `spot8dp` is the live price the recorded TWAP is sanity-checked against.
-    function _resolveMatch(
-        OracleResolver resolver,
-        address keeper,
-        address market,
-        uint256 matchId,
-        uint256 spot8dp
-    ) internal {
+    function _resolveMatch(OracleResolver resolver, address keeper, address market, uint256 matchId, uint256 spot8dp)
+        internal
+    {
         bytes memory callData = bytes.concat(
-            abi.encodeWithSelector(OracleResolver.resolveOrderbookMatch.selector, market, matchId),
-            _payload(spot8dp)
+            abi.encodeWithSelector(OracleResolver.resolveOrderbookMatch.selector, market, matchId), _payload(spot8dp)
         );
         vm.prank(keeper);
         (bool ok, bytes memory ret) = address(resolver).call(callData);
         require(ok, _rsReason(ret, "resolveOrderbookMatch reverted"));
     }
 
-    function _resolveBatch(
-        OracleResolver resolver,
-        address keeper,
-        address market,
-        uint256 maxCount,
-        uint256 spot8dp
-    ) internal returns (uint256 settled) {
+    function _resolveBatch(OracleResolver resolver, address keeper, address market, uint256 maxCount, uint256 spot8dp)
+        internal
+        returns (uint256 settled)
+    {
         bytes memory callData = bytes.concat(
-            abi.encodeWithSelector(
-                OracleResolver.resolveOrderbookMarketBatch.selector, market, maxCount
-            ),
+            abi.encodeWithSelector(OracleResolver.resolveOrderbookMarketBatch.selector, market, maxCount),
             _payload(spot8dp)
         );
         vm.prank(keeper);
@@ -188,9 +171,7 @@ abstract contract RedstoneTest is Test {
     // ── ─────────────────────────────────────────────────────────
 
     /// Surfaces the callee's own revert string so a failure names its cause.
-    function _rsReason(bytes memory ret, string memory fallbackMsg)
-        internal pure returns (string memory)
-    {
+    function _rsReason(bytes memory ret, string memory fallbackMsg) internal pure returns (string memory) {
         if (ret.length < 68) return fallbackMsg;
         assembly { ret := add(ret, 0x04) }
         return string.concat(fallbackMsg, ": ", abi.decode(ret, (string)));

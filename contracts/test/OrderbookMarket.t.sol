@@ -13,28 +13,28 @@ import "./helpers/RedstoneHarness.sol";
 
 contract OrderbookMarketTest is RedstoneTest {
     OrderbookMarket market;
-    LiquidityPool   pool;
-    GenesisNFT      genesisNFT;
-    MockUSDC        usdc;
+    LiquidityPool pool;
+    GenesisNFT genesisNFT;
+    MockUSDC usdc;
 
     address resolver;
-    address feeDistrib    = makeAddr("feeDistrib");
-    address multisig      = makeAddr("multisig");
-    address alice         = makeAddr("alice");
-    address bob           = makeAddr("bob");
-    address lpProvider    = makeAddr("lpProvider");
-    address referrer      = makeAddr("referrer");
+    address feeDistrib = makeAddr("feeDistrib");
+    address multisig = makeAddr("multisig");
+    address alice = makeAddr("alice");
+    address bob = makeAddr("bob");
+    address lpProvider = makeAddr("lpProvider");
+    address referrer = makeAddr("referrer");
 
     uint256 constant ENTRY_PRICE = 9142e12; // normalized price
-    uint256 constant DURATION    = 15 minutes;
+    uint256 constant DURATION = 15 minutes;
 
     function setUp() public {
         resolver = makeAddr("resolver");
         // ENTRY_PRICE = 9142e12. So 914200 * 1e18 / 10^8 = 914200 * 1e10 = 9142e12
         _setPrice(bytes32("PEPE/USD"), 914200);
-        usdc       = new MockUSDC();
+        usdc = new MockUSDC();
         genesisNFT = new GenesisNFT("ipfs://test/");
-        pool       = new LiquidityPool(IERC20(address(usdc)), address(genesisNFT));
+        pool = new LiquidityPool(IERC20(address(usdc)), address(genesisNFT));
         genesisNFT.setLiquidityPool(address(pool));
 
         market = new OrderbookMarketHarness(
@@ -56,13 +56,16 @@ contract OrderbookMarketTest is RedstoneTest {
         pool.authorizeMarket(address(market));
 
         // Fund users
-        usdc.mint(alice,      1000e6);
-        usdc.mint(bob,        1000e6);
+        usdc.mint(alice, 1000e6);
+        usdc.mint(bob, 1000e6);
         usdc.mint(lpProvider, 1000e6);
 
-        vm.prank(alice);      usdc.approve(address(market), type(uint256).max);
-        vm.prank(bob);        usdc.approve(address(market), type(uint256).max);
-        vm.prank(lpProvider); usdc.approve(address(pool),   type(uint256).max);
+        vm.prank(alice);
+        usdc.approve(address(market), type(uint256).max);
+        vm.prank(bob);
+        usdc.approve(address(market), type(uint256).max);
+        vm.prank(lpProvider);
+        usdc.approve(address(pool), type(uint256).max);
     }
 
     // ── PvP MATCHING ──────────────────────────────────────
@@ -74,10 +77,10 @@ contract OrderbookMarketTest is RedstoneTest {
         uint256 bobOrderId = _bet(market, bob, OrderbookMarket.Direction.DOWN, 25e6, address(0), ENTRY_PRICE, 100);
 
         OrderbookMarket.Order memory aliceOrder = market.getOrder(aliceOrderId);
-        OrderbookMarket.Order memory bobOrder   = market.getOrder(bobOrderId);
+        OrderbookMarket.Order memory bobOrder = market.getOrder(bobOrderId);
 
-        assertEq(uint(aliceOrder.status), uint(OrderbookMarket.OrderStatus.MATCHED));
-        assertEq(uint(bobOrder.status),   uint(OrderbookMarket.OrderStatus.MATCHED));
+        assertEq(uint256(aliceOrder.status), uint256(OrderbookMarket.OrderStatus.MATCHED));
+        assertEq(uint256(bobOrder.status), uint256(OrderbookMarket.OrderStatus.MATCHED));
         assertEq(aliceOrder.matchId, bobOrder.matchId);
     }
 
@@ -91,7 +94,7 @@ contract OrderbookMarketTest is RedstoneTest {
         uint256 orderId = _bet(market, alice, OrderbookMarket.Direction.UP, 25e6, address(0), ENTRY_PRICE, 100);
 
         OrderbookMarket.Order memory order = market.getOrder(orderId);
-        assertEq(uint(order.status), uint(OrderbookMarket.OrderStatus.MATCHED));
+        assertEq(uint256(order.status), uint256(OrderbookMarket.OrderStatus.MATCHED));
 
         OrderbookMarket.Match memory m = market.getMatch(order.matchId);
         assertTrue(m.lpMatch);
@@ -110,7 +113,7 @@ contract OrderbookMarketTest is RedstoneTest {
         assertEq(usdc.balanceOf(alice) - balBefore, 25e6);
 
         OrderbookMarket.Order memory order = market.getOrder(orderId);
-        assertEq(uint(order.status), uint(OrderbookMarket.OrderStatus.REFUNDED));
+        assertEq(uint256(order.status), uint256(OrderbookMarket.OrderStatus.REFUNDED));
     }
 
     // ── SETTLE & CLAIM (PvP) ──────────────────────────────
@@ -159,19 +162,22 @@ contract OrderbookMarketTest is RedstoneTest {
 
     // ── REVERTS ───────────────────────────────────────────
     function test_PlaceBet_Reverts_BelowMin() public {
-        (bool rsOk, bytes memory rsRet) = _tryBet(market, alice, OrderbookMarket.Direction.UP, 0.5e6, address(0), ENTRY_PRICE, 100);
+        (bool rsOk, bytes memory rsRet) =
+            _tryBet(market, alice, OrderbookMarket.Direction.UP, 0.5e6, address(0), ENTRY_PRICE, 100);
         assertFalse(rsOk, "expected revert: below min");
         assertEq(_rsReason(rsRet, ""), ": below min");
     }
 
     function test_PlaceBet_Reverts_AboveMax() public {
-        (bool rsOk, bytes memory rsRet) = _tryBet(market, alice, OrderbookMarket.Direction.UP, 101e6, address(0), ENTRY_PRICE, 100);
+        (bool rsOk, bytes memory rsRet) =
+            _tryBet(market, alice, OrderbookMarket.Direction.UP, 101e6, address(0), ENTRY_PRICE, 100);
         assertFalse(rsOk, "expected revert: above max");
         assertEq(_rsReason(rsRet, ""), ": above max");
     }
 
     function test_PlaceBet_Reverts_SelfReferral() public {
-        (bool rsOk, bytes memory rsRet) = _tryBet(market, alice, OrderbookMarket.Direction.UP, 10e6, alice, ENTRY_PRICE, 100);
+        (bool rsOk, bytes memory rsRet) =
+            _tryBet(market, alice, OrderbookMarket.Direction.UP, 10e6, alice, ENTRY_PRICE, 100);
         assertFalse(rsOk, "expected revert: self referral");
         assertEq(_rsReason(rsRet, ""), ": self referral");
     }
@@ -189,7 +195,13 @@ contract OrderbookMarketTest is RedstoneTest {
      */
     function test_PlaceBet_Reverts_StalePrice() public {
         (bool rsOk, bytes memory rsRet) = _tryBetAged(
-            market, alice, OrderbookMarket.Direction.UP, 25e6, address(0), ENTRY_PRICE, 100,
+            market,
+            alice,
+            OrderbookMarket.Direction.UP,
+            25e6,
+            address(0),
+            ENTRY_PRICE,
+            100,
             market.ENTRY_MAX_PRICE_AGE() + 1
         );
         assertFalse(rsOk, "a price older than the entry window must be rejected");
@@ -198,7 +210,13 @@ contract OrderbookMarketTest is RedstoneTest {
 
     function test_PlaceBet_AcceptsAPriceInsideTheEntryWindow() public {
         (bool rsOk,) = _tryBetAged(
-            market, alice, OrderbookMarket.Direction.UP, 25e6, address(0), ENTRY_PRICE, 100,
+            market,
+            alice,
+            OrderbookMarket.Direction.UP,
+            25e6,
+            address(0),
+            ENTRY_PRICE,
+            100,
             market.ENTRY_MAX_PRICE_AGE() - 1
         );
         assertTrue(rsOk, "a price inside the entry window must be accepted");
@@ -299,13 +317,15 @@ contract OrderbookMarketTest is RedstoneTest {
     }
 
     function testFuzz_Settle_Payout(uint256 upAmount, uint256 downAmount) public {
-        upAmount   = bound(upAmount,   1e6, 100e6);
+        upAmount = bound(upAmount, 1e6, 100e6);
         downAmount = bound(downAmount, 1e6, 100e6);
 
         usdc.mint(alice, upAmount);
-        usdc.mint(bob,   downAmount);
-        vm.prank(alice); usdc.approve(address(market), type(uint256).max);
-        vm.prank(bob);   usdc.approve(address(market), type(uint256).max);
+        usdc.mint(bob, downAmount);
+        vm.prank(alice);
+        usdc.approve(address(market), type(uint256).max);
+        vm.prank(bob);
+        usdc.approve(address(market), type(uint256).max);
 
         _bet(market, alice, OrderbookMarket.Direction.UP, upAmount, address(0), ENTRY_PRICE, 100);
         _bet(market, bob, OrderbookMarket.Direction.DOWN, downAmount, address(0), ENTRY_PRICE, 100);
@@ -343,12 +363,16 @@ contract OrderbookMarketTest is RedstoneTest {
         // user expects 9000e12, but actual is 9142e12
         // diff = 142e12. spread = 142e12 * 10_000 / 9000e12 = 157 bps
         uint256 expectedPrice = 9000e12;
-        
+
         // _tryBet rather than vm.expectRevert: the low-level call is caught in
         // the helper instead of propagating, so the cheatcode would never be
         // satisfied and the test would fail for an unrelated reason.
         (bool ok, bytes memory ret) = _tryBet(
-            market, alice, OrderbookMarket.Direction.UP, 25e6, address(0),
+            market,
+            alice,
+            OrderbookMarket.Direction.UP,
+            25e6,
+            address(0),
             expectedPrice,
             150 // allow only 1.5% (150 bps), spread is 157.7
         );
@@ -359,14 +383,18 @@ contract OrderbookMarketTest is RedstoneTest {
     function test_Slippage_Success_WithinDeviation() public {
         // diff = 142 bps approx
         uint256 expectedPrice = 9000e12;
-        
+
         _bet(
-            market, alice, OrderbookMarket.Direction.UP, 25e6, address(0),
+            market,
+            alice,
+            OrderbookMarket.Direction.UP,
+            25e6,
+            address(0),
             expectedPrice,
             200 // allow 2%
         );
 
         OrderbookMarket.Order memory o = market.getOrder(1);
-        assertEq(uint(o.status), uint(OrderbookMarket.OrderStatus.PENDING)); // added to queue
+        assertEq(uint256(o.status), uint256(OrderbookMarket.OrderStatus.PENDING)); // added to queue
     }
 }

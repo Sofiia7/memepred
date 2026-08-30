@@ -19,9 +19,9 @@ import "./mocks/MockUSDC.sol";
 contract OracleResolverTest is Test {
     OracleResolverHarness resolver;
 
-    address admin  = address(this);
+    address admin = address(this);
     address keeper = makeAddr("keeper");
-    address other  = makeAddr("other");
+    address other = makeAddr("other");
 
     bytes32 constant FEED = bytes32("PEPE/USD");
 
@@ -48,10 +48,13 @@ contract OracleResolverTest is Test {
 
     function _record(bytes32 feedId, uint256 value8dp) internal {
         vm.prank(keeper);
-        (bool ok,) = address(resolver).call(bytes.concat(
-            abi.encodeWithSelector(OracleResolver.recordPrice.selector, feedId),
-            RedstonePayloadBuilder.buildNow(feedId, value8dp, 3)
-        ));
+        (bool ok,) = address(resolver)
+            .call(
+                bytes.concat(
+                    abi.encodeWithSelector(OracleResolver.recordPrice.selector, feedId),
+                    RedstonePayloadBuilder.buildNow(feedId, value8dp, 3)
+                )
+            );
         require(ok, "recordPrice reverted");
     }
 
@@ -60,51 +63,56 @@ contract OracleResolverTest is Test {
     /// before the resolve; now it is part of the same transaction.
     function _resolveMatch(address market, uint256 matchId, uint256 spot8dp) internal {
         vm.prank(keeper);
-        (bool ok,) = address(resolver).call(bytes.concat(
-            abi.encodeWithSelector(OracleResolver.resolveOrderbookMatch.selector, market, matchId),
-            RedstonePayloadBuilder.buildNow(FEED, spot8dp, 3)
-        ));
+        (bool ok,) = address(resolver)
+            .call(
+                bytes.concat(
+                    abi.encodeWithSelector(OracleResolver.resolveOrderbookMatch.selector, market, matchId),
+                    RedstonePayloadBuilder.buildNow(FEED, spot8dp, 3)
+                )
+            );
         require(ok, "resolveOrderbookMatch reverted");
     }
 
-    function _resolveBatch(address market, uint256 maxCount, uint256 spot8dp)
-        internal returns (uint256 settled)
-    {
+    function _resolveBatch(address market, uint256 maxCount, uint256 spot8dp) internal returns (uint256 settled) {
         vm.prank(keeper);
-        (bool ok, bytes memory ret) = address(resolver).call(bytes.concat(
-            abi.encodeWithSelector(OracleResolver.resolveOrderbookMarketBatch.selector, market, maxCount),
-            RedstonePayloadBuilder.buildNow(FEED, spot8dp, 3)
-        ));
+        (bool ok, bytes memory ret) = address(resolver)
+            .call(
+                bytes.concat(
+                    abi.encodeWithSelector(OracleResolver.resolveOrderbookMarketBatch.selector, market, maxCount),
+                    RedstonePayloadBuilder.buildNow(FEED, spot8dp, 3)
+                )
+            );
         require(ok, "resolveOrderbookMarketBatch reverted");
         settled = abi.decode(ret, (uint256));
     }
 
     function _resolveAll(address market, uint256 spot8dp) internal {
         vm.prank(keeper);
-        (bool ok,) = address(resolver).call(bytes.concat(
-            abi.encodeWithSelector(OracleResolver.resolveOrderbookMarket.selector, market),
-            RedstonePayloadBuilder.buildNow(FEED, spot8dp, 3)
-        ));
+        (bool ok,) = address(resolver)
+            .call(
+                bytes.concat(
+                    abi.encodeWithSelector(OracleResolver.resolveOrderbookMarket.selector, market),
+                    RedstonePayloadBuilder.buildNow(FEED, spot8dp, 3)
+                )
+            );
         require(ok, "resolveOrderbookMarket reverted");
     }
 
     /// Place a bet the way a user does: the strike rides on the calldata of the
     /// bet itself, so there is no separate "set the price first" step any more.
-    function _bet(
-        OrderbookMarket mkt,
-        address who,
-        OrderbookMarket.Direction dir,
-        uint256 amount,
-        uint256 entry8dp
-    ) internal {
+    function _bet(OrderbookMarket mkt, address who, OrderbookMarket.Direction dir, uint256 amount, uint256 entry8dp)
+        internal
+    {
         vm.prank(who);
-        (bool ok,) = address(mkt).call(bytes.concat(
-            abi.encodeWithSelector(
-                OrderbookMarket.placeBet.selector,
-                dir, amount, address(0), entry8dp * 1e10, uint256(100)
-            ),
-            RedstonePayloadBuilder.buildNow(FEED, entry8dp, 3)
-        ));
+        (bool ok,) = address(mkt)
+            .call(
+                bytes.concat(
+                    abi.encodeWithSelector(
+                        OrderbookMarket.placeBet.selector, dir, amount, address(0), entry8dp * 1e10, uint256(100)
+                    ),
+                    RedstonePayloadBuilder.buildNow(FEED, entry8dp, 3)
+                )
+            );
         require(ok, "placeBet reverted");
     }
 
@@ -146,7 +154,7 @@ contract OracleResolverTest is Test {
         // payload stamped at the current block, which is what a real feed does:
         // it keeps publishing even when the price itself has not moved.
         for (uint256 i = 0; i < 5; i++) {
-        _record(1_000_000_00);
+            _record(1_000_000_00);
             vm.warp(block.timestamp + 30);
         }
 
@@ -195,7 +203,7 @@ contract OracleResolverTest is Test {
 
         _record(value8dp);
 
-        (uint256 price, ) = resolver.priceHistory(FEED, 0);
+        (uint256 price,) = resolver.priceHistory(FEED, 0);
         assertEq(price, uint256(value8dp) * 1e10, "8dp scaled to 1e18");
         assertGt(price, 0, "normalized > 0");
     }
@@ -204,7 +212,7 @@ contract OracleResolverTest is Test {
     function test_HistoryHead_NotAffectingFreshPrices() public {
         // 3 fresh prices in the window.
         for (uint256 i = 0; i < 3; i++) {
-        _record(1e8);
+            _record(1e8);
             vm.warp(block.timestamp + 60);
         }
         // Head should still be 0 — none are stale yet.
@@ -244,27 +252,29 @@ contract OracleResolverTest is Test {
         pool.authorizeMarket(address(market));
 
         address alice = makeAddr("alice");
-        address bob   = makeAddr("bob");
+        address bob = makeAddr("bob");
         usdc.mint(alice, 100e6);
-        usdc.mint(bob,   100e6);
-        vm.prank(alice); usdc.approve(address(market), type(uint256).max);
-        vm.prank(bob);   usdc.approve(address(market), type(uint256).max);
+        usdc.mint(bob, 100e6);
+        vm.prank(alice);
+        usdc.approve(address(market), type(uint256).max);
+        vm.prank(bob);
+        usdc.approve(address(market), type(uint256).max);
 
         // Entry price locked at $1.00, carried by each bet's own calldata.
-        _bet(market, alice, OrderbookMarket.Direction.UP,   25e6, 1e8);
-        _bet(market, bob,   OrderbookMarket.Direction.DOWN, 25e6, 1e8);
+        _bet(market, alice, OrderbookMarket.Direction.UP, 25e6, 1e8);
+        _bet(market, bob, OrderbookMarket.Direction.DOWN, 25e6, 1e8);
 
         // 8 stale ticks at $1.00 spanning the first 210s of the match.
         // Refresh the mock's publishTime each tick — a real feed keeps
         // publishing even when the price itself hasn't moved.
         for (uint256 i = 0; i < 8; i++) {
-        _record(1e8);
+            _record(1e8);
             vm.warp(block.timestamp + 30);
         }
 
         // Price genuinely moves to $2.00 for the last ~90s of the match.
         for (uint256 i = 0; i < 3; i++) {
-        _record(2e8);
+            _record(2e8);
             vm.warp(block.timestamp + 30);
         }
 
@@ -276,7 +286,9 @@ contract OracleResolverTest is Test {
         // A ~60s window (duration/5) sees only the $2.00 ticks → exactly
         // $2.00. The old flat-5-minute window would have blended in the
         // $1.00 ticks and landed around $1.33 instead.
-        assertEq(m.exitPrice, 2e18, "exit TWAP must reflect the short end-of-period window, not the whole match duration");
+        assertEq(
+            m.exitPrice, 2e18, "exit TWAP must reflect the short end-of-period window, not the whole match duration"
+        );
     }
 
     // ─── RESOLVE ENTRYPOINTS (Sprint 5.5 coverage hardening) ────
@@ -371,10 +383,7 @@ contract OracleResolverTest is Test {
         assertFalse(m.settled, "left unsettled for emergencyRefundMatch");
     }
 
-    function _freshMarketWithOneMatch(uint256 duration)
-        internal
-        returns (OrderbookMarket market, uint256 matchId)
-    {
+    function _freshMarketWithOneMatch(uint256 duration) internal returns (OrderbookMarket market, uint256 matchId) {
         MockUSDC usdc = new MockUSDC();
         GenesisNFT genesisNFT = new GenesisNFT("ipfs://test/");
         LiquidityPool pool = new LiquidityPool(IERC20(address(usdc)), address(genesisNFT));
@@ -398,15 +407,17 @@ contract OracleResolverTest is Test {
         pool.authorizeMarket(address(market));
 
         address alice = makeAddr("alice");
-        address bob   = makeAddr("bob");
+        address bob = makeAddr("bob");
         usdc.mint(alice, 100e6);
-        usdc.mint(bob,   100e6);
-        vm.prank(alice); usdc.approve(address(market), type(uint256).max);
-        vm.prank(bob);   usdc.approve(address(market), type(uint256).max);
+        usdc.mint(bob, 100e6);
+        vm.prank(alice);
+        usdc.approve(address(market), type(uint256).max);
+        vm.prank(bob);
+        usdc.approve(address(market), type(uint256).max);
 
         // Entry locked at $1.00.
-        _bet(market, alice, OrderbookMarket.Direction.UP,   25e6, 1e8);
-        _bet(market, bob,   OrderbookMarket.Direction.DOWN, 25e6, 1e8);
+        _bet(market, alice, OrderbookMarket.Direction.UP, 25e6, 1e8);
+        _bet(market, bob, OrderbookMarket.Direction.DOWN, 25e6, 1e8);
 
         matchId = 1;
     }
@@ -417,11 +428,13 @@ contract OracleResolverTest is Test {
         // Carries a valid payload deliberately: without one the call would
         // revert for lacking a price rather than for lacking the role.
         vm.prank(other);
-        (bool ok,) = address(resolver).call(bytes.concat(
-            abi.encodeWithSelector(
-                OracleResolver.resolveOrderbookMatch.selector, address(market), matchId),
-            RedstonePayloadBuilder.buildNow(FEED, 1e8, 3)
-        ));
+        (bool ok,) = address(resolver)
+            .call(
+                bytes.concat(
+                    abi.encodeWithSelector(OracleResolver.resolveOrderbookMatch.selector, address(market), matchId),
+                    RedstonePayloadBuilder.buildNow(FEED, 1e8, 3)
+                )
+            );
         assertFalse(ok, "a non-keeper must not be able to settle");
     }
 
@@ -443,17 +456,19 @@ contract OracleResolverTest is Test {
     }
 
     function test_ResolveOrderbookMarketBatch_SettlesMultipleUpToMaxCount() public {
-        (OrderbookMarket market, ) = _freshMarketWithOneMatch(15 minutes);
+        (OrderbookMarket market,) = _freshMarketWithOneMatch(15 minutes);
 
         address carol = makeAddr("carol");
-        address dave  = makeAddr("dave");
+        address dave = makeAddr("dave");
         MockUSDC usdc = MockUSDC(address(market.usdc()));
         usdc.mint(carol, 100e6);
-        usdc.mint(dave,  100e6);
-        vm.prank(carol); usdc.approve(address(market), type(uint256).max);
-        vm.prank(dave);  usdc.approve(address(market), type(uint256).max);
-        _bet(market, carol, OrderbookMarket.Direction.UP,   25e6, 1e8);
-        _bet(market, dave,  OrderbookMarket.Direction.DOWN, 25e6, 1e8);
+        usdc.mint(dave, 100e6);
+        vm.prank(carol);
+        usdc.approve(address(market), type(uint256).max);
+        vm.prank(dave);
+        usdc.approve(address(market), type(uint256).max);
+        _bet(market, carol, OrderbookMarket.Direction.UP, 25e6, 1e8);
+        _bet(market, dave, OrderbookMarket.Direction.DOWN, 25e6, 1e8);
 
         vm.warp(block.timestamp + 15 minutes - 60);
         _record(1e8);
@@ -484,7 +499,7 @@ contract OracleResolverTest is Test {
     function test_RejectsPlainEther() public {
         vm.deal(address(this), 1 ether);
 
-        (bool ok, ) = address(resolver).call{value: 1 ether}("");
+        (bool ok,) = address(resolver).call{value: 1 ether}("");
 
         assertFalse(ok, "the resolver must not accept ether any more");
         assertEq(address(resolver).balance, 0);

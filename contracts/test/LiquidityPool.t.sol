@@ -12,23 +12,23 @@ import "./helpers/RedstoneTest.sol";
 import "./helpers/RedstoneHarness.sol";
 
 contract LiquidityPoolTest is RedstoneTest {
-    LiquidityPool   pool;
-    GenesisNFT      genesisNFT;
-    MockUSDC        usdc;
+    LiquidityPool pool;
+    GenesisNFT genesisNFT;
+    MockUSDC usdc;
     OrderbookMarket market;
-    address         resolver;
+    address resolver;
 
     address feeDistrib = makeAddr("feeDistrib");
-    address multisig   = makeAddr("multisig");
-    address factory;   // a MockMarketRegistry, assigned in setUp
+    address multisig = makeAddr("multisig");
+    address factory; // a MockMarketRegistry, assigned in setUp
 
     function setUp() public {
         resolver = makeAddr("resolver");
         _setPrice(bytes32("PEPE/USD"), 1000e8);
 
-        usdc       = new MockUSDC();
+        usdc = new MockUSDC();
         genesisNFT = new GenesisNFT("ipfs://test/");
-        pool       = new LiquidityPool(IERC20(address(usdc)), address(genesisNFT));
+        pool = new LiquidityPool(IERC20(address(usdc)), address(genesisNFT));
         genesisNFT.setLiquidityPool(address(pool));
 
         market = new OrderbookMarketHarness(
@@ -58,8 +58,10 @@ contract LiquidityPoolTest is RedstoneTest {
     function _addLP(string memory name, uint256 amount) internal returns (address lp) {
         lp = makeAddr(name);
         usdc.mint(lp, amount);
-        vm.prank(lp); usdc.approve(address(pool), type(uint256).max);
-        vm.prank(lp); pool.deposit(amount, lp);
+        vm.prank(lp);
+        usdc.approve(address(pool), type(uint256).max);
+        vm.prank(lp);
+        pool.deposit(amount, lp);
     }
 
     // ─── OPEN-MATCH SHARE PRICE ───────────────────────────
@@ -80,11 +82,11 @@ contract LiquidityPoolTest is RedstoneTest {
 
     /// The market returns both stakes, then reports that the pool won.
     function _settlePoolWins(uint256 id, uint256 amount) internal {
-        usdc.mint(address(market), amount);          // the user's side
+        usdc.mint(address(market), amount); // the user's side
         vm.prank(address(market));
-        usdc.transfer(address(pool), 2 * amount);    // plus the LP stake it holds
+        usdc.transfer(address(pool), 2 * amount); // plus the LP stake it holds
         vm.prank(address(market));
-        pool.onMatchSettled(id, false);              // UP lost, so the DOWN pool won
+        pool.onMatchSettled(id, false); // UP lost, so the DOWN pool won
     }
 
     function test_OpenMatch_DoesNotMoveTheSharePrice() public {
@@ -96,10 +98,7 @@ contract LiquidityPoolTest is RedstoneTest {
         assertEq(_openMatch(1, 100e6), 50e6, "capped at 5% of totalAssets");
 
         assertEq(pool.totalExposure(), 50e6, "exposure is tracked");
-        assertEq(
-            IERC20(address(usdc)).balanceOf(address(pool)), 950e6,
-            "and the cash really did leave"
-        );
+        assertEq(IERC20(address(usdc)).balanceOf(address(pool)), 950e6, "and the cash really did leave");
         assertEq(pool.totalAssets(), 1000e6, "but the price does not move for it");
     }
 
@@ -121,14 +120,15 @@ contract LiquidityPoolTest is RedstoneTest {
     function test_Deposit_Reverts_BelowMin() public {
         address lp = makeAddr("lp");
         usdc.mint(lp, 10e6);
-        vm.prank(lp); usdc.approve(address(pool), type(uint256).max);
+        vm.prank(lp);
+        usdc.approve(address(pool), type(uint256).max);
         vm.prank(lp);
         vm.expectRevert("below min deposit");
         pool.deposit(10e6, lp);
     }
 
     function test_Genesis_First20_Get_NFT() public {
-        for (uint i = 0; i < 20; i++) {
+        for (uint256 i = 0; i < 20; i++) {
             address lp = _addLP(string.concat("lp", vm.toString(i)), 50e6);
             assertTrue(pool.isGenesis(lp), "should be genesis");
             assertEq(genesisNFT.balanceOf(lp), 1, "has NFT");
@@ -145,7 +145,8 @@ contract LiquidityPoolTest is RedstoneTest {
         assertEq(pool.genesisCount(), 1);
 
         usdc.mint(lp, 50e6);
-        vm.prank(lp); pool.deposit(50e6, lp);
+        vm.prank(lp);
+        pool.deposit(50e6, lp);
         assertEq(pool.genesisCount(), 1, "no increment on repeat");
     }
 
@@ -155,7 +156,8 @@ contract LiquidityPoolTest is RedstoneTest {
         uint256 bal = usdc.balanceOf(lp);
         uint256 shares = pool.balanceOf(lp);
 
-        vm.prank(lp); pool.redeem(shares, lp, lp);
+        vm.prank(lp);
+        pool.redeem(shares, lp, lp);
         assertEq(pool.balanceOf(lp), 0);
         assertEq(usdc.balanceOf(lp) - bal, 100e6, "got back deposit");
     }
@@ -166,7 +168,8 @@ contract LiquidityPoolTest is RedstoneTest {
         // Bob takes a bet → LP matches, exposure locked
         address bob = makeAddr("bob");
         usdc.mint(bob, 25e6);
-        vm.prank(bob); usdc.approve(address(market), type(uint256).max);
+        vm.prank(bob);
+        usdc.approve(address(market), type(uint256).max);
         _bet(market, bob, OrderbookMarket.Direction.UP, 25e6, address(0), 1000 * 1e18, 100);
 
         // Now totalExposure > 0; maxWithdraw is reduced
@@ -188,7 +191,7 @@ contract LiquidityPoolTest is RedstoneTest {
         // concerned, or the registry check fires first and this stops testing
         // the caller permission it is named after.
         address newMarket = makeAddr("market2");
-        address m2        = makeAddr("market3");
+        address m2 = makeAddr("market3");
         MockMarketRegistry(factory).register(newMarket);
         MockMarketRegistry(factory).register(m2);
 
@@ -227,12 +230,13 @@ contract LiquidityPoolTest is RedstoneTest {
     function test_LP_Wins_SharePrice_Grows() public {
         address lp = _addLP("lp", 500e6);
         uint256 sharesBefore = pool.balanceOf(lp);
-        uint256 priceBefore  = pool.previewRedeem(sharesBefore);
+        uint256 priceBefore = pool.previewRedeem(sharesBefore);
 
         // Bob bets UP → LP takes DOWN
         address bob = makeAddr("bob");
         usdc.mint(bob, 25e6);
-        vm.prank(bob); usdc.approve(address(market), type(uint256).max);
+        vm.prank(bob);
+        usdc.approve(address(market), type(uint256).max);
         _bet(market, bob, OrderbookMarket.Direction.UP, 25e6, address(0), 1000 * 1e18, 100);
 
         // DOWN wins → LP wins
@@ -250,7 +254,8 @@ contract LiquidityPoolTest is RedstoneTest {
 
         address bob = makeAddr("bob");
         usdc.mint(bob, 25e6);
-        vm.prank(bob); usdc.approve(address(market), type(uint256).max);
+        vm.prank(bob);
+        usdc.approve(address(market), type(uint256).max);
         _bet(market, bob, OrderbookMarket.Direction.UP, 25e6, address(0), 1000 * 1e18, 100);
 
         // UP wins → LP loses
@@ -269,7 +274,8 @@ contract LiquidityPoolTest is RedstoneTest {
 
         address bob = makeAddr("bob");
         usdc.mint(bob, 25e6);
-        vm.prank(bob); usdc.approve(address(market), type(uint256).max);
+        vm.prank(bob);
+        usdc.approve(address(market), type(uint256).max);
         _bet(market, bob, OrderbookMarket.Direction.UP, 25e6, address(0), 1000 * 1e18, 100);
 
         vm.warp(block.timestamp + 15 minutes + 1);
@@ -280,7 +286,8 @@ contract LiquidityPoolTest is RedstoneTest {
         assertApproxEqAbs(pool.earnedFees(lp), 25e6 / 100, 1, "1% fee accrued");
 
         uint256 balBefore = usdc.balanceOf(lp);
-        vm.prank(lp); pool.claimFees();
+        vm.prank(lp);
+        pool.claimFees();
         assertApproxEqAbs(usdc.balanceOf(lp) - balBefore, 25e6 / 100, 1, "fee claimed");
     }
 
@@ -288,7 +295,9 @@ contract LiquidityPoolTest is RedstoneTest {
         // gen = first depositor (Genesis), normal = 21st (no NFT)
         address gen = _addLP("gen", 500e6);
         // Fill 19 more Genesis spots so the next is non-Genesis
-        for (uint i = 0; i < 19; i++) _addLP(string.concat("g", vm.toString(i)), 50e6);
+        for (uint256 i = 0; i < 19; i++) {
+            _addLP(string.concat("g", vm.toString(i)), 50e6);
+        }
         // 21st depositor is NOT Genesis
         address normal = _addLP("normal", 500e6);
         assertFalse(pool.isGenesis(normal));
@@ -297,14 +306,15 @@ contract LiquidityPoolTest is RedstoneTest {
         // Trigger LP win to accrue fees
         address bob = makeAddr("bob");
         usdc.mint(bob, 25e6);
-        vm.prank(bob); usdc.approve(address(market), type(uint256).max);
+        vm.prank(bob);
+        usdc.approve(address(market), type(uint256).max);
         _bet(market, bob, OrderbookMarket.Direction.UP, 25e6, address(0), 1000 * 1e18, 100);
 
         vm.warp(block.timestamp + 15 minutes + 1);
         vm.prank(resolver);
         market.settleMatch(1, 1000 * 1e18 - 100);
 
-        uint256 feeGen    = pool.earnedFees(gen);
+        uint256 feeGen = pool.earnedFees(gen);
         uint256 feeNormal = pool.earnedFees(normal);
         assertGt(feeGen, feeNormal, "Genesis earns more than normal at equal stake");
         // Genesis weight = shares * 1.5; expect ~1.5x normal
@@ -321,7 +331,8 @@ contract LiquidityPoolTest is RedstoneTest {
         // Simpler: place a bet bigger than per-market cap — see it gets capped.
         address bob = makeAddr("bob");
         usdc.mint(bob, 100e6);
-        vm.prank(bob); usdc.approve(address(market), type(uint256).max);
+        vm.prank(bob);
+        usdc.approve(address(market), type(uint256).max);
         _bet(market, bob, OrderbookMarket.Direction.UP, 100e6, address(0), 1000 * 1e18, 100);
 
         // Per-market cap = 500e6 → bet of 100e6 fully matched
@@ -350,7 +361,8 @@ contract LiquidityPoolTest is RedstoneTest {
 
         address bob = makeAddr("bob");
         usdc.mint(bob, 100e6);
-        vm.prank(bob); usdc.approve(address(market), type(uint256).max);
+        vm.prank(bob);
+        usdc.approve(address(market), type(uint256).max);
         _bet(market, bob, OrderbookMarket.Direction.UP, 100e6, address(0), 1000 * 1e18, 100);
 
         // With a single market, PER_MARKET_MAX_EXPOSURE_BPS (5%) binds before
@@ -380,15 +392,16 @@ contract LiquidityPoolTest is RedstoneTest {
 
         address bob = makeAddr("bob");
         usdc.mint(bob, 25e6);
-        vm.prank(bob); usdc.approve(address(market), type(uint256).max);
+        vm.prank(bob);
+        usdc.approve(address(market), type(uint256).max);
         _bet(market, bob, OrderbookMarket.Direction.UP, 25e6, address(0), 1000 * 1e18, 100);
 
         vm.warp(block.timestamp + 15 minutes + 1);
         vm.prank(resolver);
         market.settleMatch(1, 1000 * 1e18 - 100); // LP win
 
-        uint256 fee     = 25e6 / 100;
-        uint256 winNet  = 25e6 - fee;
+        uint256 fee = 25e6 / 100;
+        uint256 winNet = 25e6 - fee;
         // totalAssets = 500 (initial) + winNet (since fee is excluded)
         assertEq(pool.totalAssets(), 500e6 + winNet);
         assertEq(pool.totalPendingFees(), fee);
@@ -417,7 +430,8 @@ contract LiquidityPoolTest is RedstoneTest {
         pool.pause();
         address lp = makeAddr("lp");
         usdc.mint(lp, 100e6);
-        vm.prank(lp); usdc.approve(address(pool), type(uint256).max);
+        vm.prank(lp);
+        usdc.approve(address(pool), type(uint256).max);
         vm.prank(lp);
         vm.expectRevert();
         pool.deposit(100e6, lp);
@@ -430,7 +444,8 @@ contract LiquidityPoolTest is RedstoneTest {
 
         // Withdraw still works.
         uint256 shares = pool.balanceOf(lp);
-        vm.prank(lp); pool.redeem(shares, lp, lp);
+        vm.prank(lp);
+        pool.redeem(shares, lp, lp);
         assertEq(pool.balanceOf(lp), 0);
     }
 
@@ -463,7 +478,8 @@ contract LiquidityPoolTest is RedstoneTest {
 
         address bob = makeAddr("bob");
         usdc.mint(bob, 25e6);
-        vm.prank(bob); usdc.approve(address(market), type(uint256).max);
+        vm.prank(bob);
+        usdc.approve(address(market), type(uint256).max);
         uint256 bobOrderId = _bet(market, bob, OrderbookMarket.Direction.UP, 25e6, address(0), 1000 * 1e18, 100);
 
         uint256 poolBalBefore = usdc.balanceOf(address(pool));
@@ -474,7 +490,7 @@ contract LiquidityPoolTest is RedstoneTest {
         market.settleMatch(1, 1000 * 1e18 + 100);
 
         uint256 expectedTakerFee = (25e6 * 2 * market.LP_TAKER_FEE_BPS()) / 10_000;
-        uint256 expectedPayout   = (25e6 * 2) - expectedTakerFee;
+        uint256 expectedPayout = (25e6 * 2) - expectedTakerFee;
 
         OrderbookMarket.Order memory o = market.getOrder(bobOrderId);
         assertEq(o.payout, expectedPayout, "payout reduced by LP taker fee");
@@ -495,13 +511,14 @@ contract LiquidityPoolTest is RedstoneTest {
 
         address sniper = makeAddr("sniper");
         usdc.mint(sniper, 400e6);
-        vm.prank(sniper); usdc.approve(address(market), type(uint256).max);
+        vm.prank(sniper);
+        usdc.approve(address(market), type(uint256).max);
 
         // 3 x MAX_BET (100e6) = 300e6 exactly fills MAX_TRADER_LP_EXPOSURE.
         for (uint256 i = 0; i < 3; i++) {
             uint256 oid = _bet(market, sniper, OrderbookMarket.Direction.UP, 100e6, address(0), 1000 * 1e18, 100);
             OrderbookMarket.Order memory o = market.getOrder(oid);
-            assertEq(uint(o.status), uint(OrderbookMarket.OrderStatus.MATCHED), "should be LP-matched");
+            assertEq(uint256(o.status), uint256(OrderbookMarket.OrderStatus.MATCHED), "should be LP-matched");
         }
         assertEq(market.traderLpExposure(sniper), 300e6);
 
@@ -509,16 +526,25 @@ contract LiquidityPoolTest is RedstoneTest {
         // counterparty exists either, so it has to sit PENDING.
         uint256 blockedId = _bet(market, sniper, OrderbookMarket.Direction.UP, 100e6, address(0), 1000 * 1e18, 100);
         OrderbookMarket.Order memory blocked = market.getOrder(blockedId);
-        assertEq(uint(blocked.status), uint(OrderbookMarket.OrderStatus.PENDING), "capped trader must not get further LP fills");
+        assertEq(
+            uint256(blocked.status),
+            uint256(OrderbookMarket.OrderStatus.PENDING),
+            "capped trader must not get further LP fills"
+        );
         assertEq(blocked.filledAmount, 0);
 
         // A DIFFERENT trader is unaffected by sniper's cap — pool still has room.
         address carol = makeAddr("carol2");
         usdc.mint(carol, 100e6);
-        vm.prank(carol); usdc.approve(address(market), type(uint256).max);
+        vm.prank(carol);
+        usdc.approve(address(market), type(uint256).max);
         uint256 carolId = _bet(market, carol, OrderbookMarket.Direction.UP, 100e6, address(0), 1000 * 1e18, 100);
         OrderbookMarket.Order memory carolOrder = market.getOrder(carolId);
-        assertEq(uint(carolOrder.status), uint(OrderbookMarket.OrderStatus.MATCHED), "other traders unaffected by sniper's cap");
+        assertEq(
+            uint256(carolOrder.status),
+            uint256(OrderbookMarket.OrderStatus.MATCHED),
+            "other traders unaffected by sniper's cap"
+        );
     }
 
     // ─── ERC4626 shares/assets entrypoints (Sprint 5.5 coverage hardening) ─
@@ -527,7 +553,8 @@ contract LiquidityPoolTest is RedstoneTest {
     function test_Mint_SharesBasedDeposit_MintsExactSharesAndGenesis() public {
         address lp = makeAddr("lp");
         usdc.mint(lp, 1_000_000e6);
-        vm.prank(lp); usdc.approve(address(pool), type(uint256).max);
+        vm.prank(lp);
+        usdc.approve(address(pool), type(uint256).max);
 
         // Empty-vault decimalsOffset math means assets ≈ shares / 1e6 at
         // first mint; use a large share count so assets clears MIN_DEPOSIT.
@@ -542,7 +569,8 @@ contract LiquidityPoolTest is RedstoneTest {
     function test_Mint_Reverts_BelowMinDeposit() public {
         address lp = makeAddr("lp");
         usdc.mint(lp, 1000e6);
-        vm.prank(lp); usdc.approve(address(pool), type(uint256).max);
+        vm.prank(lp);
+        usdc.approve(address(pool), type(uint256).max);
 
         vm.prank(lp);
         vm.expectRevert("below min deposit");

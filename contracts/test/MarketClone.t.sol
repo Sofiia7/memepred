@@ -24,41 +24,40 @@ import "./helpers/RedstoneHarness.sol";
  * and is silently zero on every market real users actually touch.
  */
 contract MarketCloneTest is RedstoneTest {
-    MockUSDC      usdc;
-    address       resolver;
-    GenesisNFT    genesisNFT;
+    MockUSDC usdc;
+    address resolver;
+    GenesisNFT genesisNFT;
     LiquidityPool pool;
     MarketFactoryHarness factory;
 
     address treasury = makeAddr("treasury");
     address multisig = makeAddr("multisig");
-    address alice    = makeAddr("alice");
-    address bob      = makeAddr("bob");
+    address alice = makeAddr("alice");
+    address bob = makeAddr("bob");
 
     bytes32 constant FEED_PEPE = bytes32("PEPE/USD");
     bytes32 constant FEED_DOGE = bytes32("DOGE/USD");
 
     uint256 constant ENTRY_PRICE = 9142e12; // 914200 with expo -8
-    uint256 constant DUR_15M     = 15 minutes;
-    uint256 constant DUR_1H      = 1 hours;
+    uint256 constant DUR_15M = 15 minutes;
+    uint256 constant DUR_1H = 1 hours;
 
     function setUp() public {
-        usdc     = new MockUSDC();
+        usdc = new MockUSDC();
         resolver = makeAddr("resolver");
         // Priced per clone in _clone(): rsFeedId is a single register, so
         // setting both here would leave only the last one and hand every PEPE
         // market a DOGE payload.
 
         genesisNFT = new GenesisNFT("ipfs://test/");
-        pool       = new LiquidityPool(IERC20(address(usdc)), address(genesisNFT));
+        pool = new LiquidityPool(IERC20(address(usdc)), address(genesisNFT));
         genesisNFT.setLiquidityPool(address(pool));
 
-        FeeDistributor   feeDist = new FeeDistributor(address(usdc), treasury, treasury, treasury);
-        ReferralRegistry refReg  = new ReferralRegistry();
+        FeeDistributor feeDist = new FeeDistributor(address(usdc), treasury, treasury, treasury);
+        ReferralRegistry refReg = new ReferralRegistry();
 
         factory = new MarketFactoryHarness(
-            address(usdc), resolver, address(feeDist),
-            address(refReg), multisig, address(pool)
+            address(usdc), resolver, address(feeDist), address(refReg), multisig, address(pool)
         );
 
         pool.setMarketFactory(address(factory));
@@ -68,7 +67,7 @@ contract MarketCloneTest is RedstoneTest {
         factory.addFeed(FEED_DOGE);
 
         usdc.mint(alice, 1000e6);
-        usdc.mint(bob,   1000e6);
+        usdc.mint(bob, 1000e6);
     }
 
     function _clone(bytes32 feed, uint256 dur) internal returns (OrderbookMarket) {
@@ -98,7 +97,7 @@ contract MarketCloneTest is RedstoneTest {
     function test_Clone_MatchIdZeroStaysMeaningful() public {
         OrderbookMarket m = _clone(FEED_PEPE, DUR_15M);
         _approve(alice, address(m));
-        _approve(bob,   address(m));
+        _approve(bob, address(m));
 
         uint256 aliceId = _bet(m, alice, OrderbookMarket.Direction.UP, 50e6, address(0), ENTRY_PRICE, 100);
         assertEq(m.getOrder(aliceId).matchId, 0, "unmatched order must read as matchId 0");
@@ -111,12 +110,12 @@ contract MarketCloneTest is RedstoneTest {
     // ── IMMUTABLES REACH THE CLONE ────────────────────────
     function test_Clone_ReadsImplementationImmutables() public {
         OrderbookMarket m = _clone(FEED_PEPE, DUR_15M);
-        assertEq(address(m.usdc()),     address(usdc));
-        assertEq(m.resolver(),          resolver);
-        assertEq(m.liquidityPool(),     address(pool));
-        assertEq(m.multisig(),          multisig);
+        assertEq(address(m.usdc()), address(usdc));
+        assertEq(m.resolver(), resolver);
+        assertEq(m.liquidityPool(), address(pool));
+        assertEq(m.multisig(), multisig);
         // The one that gates initialize() and pauseByFactory() on every clone.
-        assertEq(m.factory(),           address(factory));
+        assertEq(m.factory(), address(factory));
     }
 
     // ── PER-INSTANCE CONFIG IS NOT SHARED ─────────────────
@@ -127,8 +126,8 @@ contract MarketCloneTest is RedstoneTest {
         assertTrue(address(a) != address(b));
         assertEq(a.feedId(), FEED_PEPE);
         assertEq(b.feedId(), FEED_DOGE);
-        assertEq(a.duration(),   DUR_15M);
-        assertEq(b.duration(),   DUR_1H);
+        assertEq(a.duration(), DUR_15M);
+        assertEq(b.duration(), DUR_1H);
     }
 
     /// Clones delegatecall shared code but must never share *storage*.
@@ -181,13 +180,12 @@ contract MarketCloneTest is RedstoneTest {
     /// still configured and locked in one step.
     function test_DirectDeploy_StillWorksAndIsLocked() public {
         OrderbookMarket m = new OrderbookMarketHarness(
-            address(usdc), resolver, address(pool), treasury,
-            address(0), multisig, FEED_PEPE, DUR_15M
+            address(usdc), resolver, address(pool), treasury, address(0), multisig, FEED_PEPE, DUR_15M
         );
-        assertEq(m.feedId(),  FEED_PEPE);
-        assertEq(m.duration(),    DUR_15M);
+        assertEq(m.feedId(), FEED_PEPE);
+        assertEq(m.duration(), DUR_15M);
         assertEq(m.nextOrderId(), 1);
-        assertEq(m.factory(),     address(this)); // deployer
+        assertEq(m.factory(), address(this)); // deployer
 
         vm.expectRevert("already initialized");
         m.initialize(FEED_DOGE, DUR_1H, multisig, 0);
@@ -208,7 +206,7 @@ contract MarketCloneTest is RedstoneTest {
     function test_Clone_FullLifecycle_PvP() public {
         OrderbookMarket m = _clone(FEED_PEPE, DUR_15M);
         _approve(alice, address(m));
-        _approve(bob,   address(m));
+        _approve(bob, address(m));
 
         uint256 aliceId = _bet(m, alice, OrderbookMarket.Direction.UP, 50e6, address(0), ENTRY_PRICE, 100);
         _bet(m, bob, OrderbookMarket.Direction.DOWN, 50e6, address(0), ENTRY_PRICE, 100);

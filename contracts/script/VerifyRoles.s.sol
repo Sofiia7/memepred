@@ -31,14 +31,14 @@ contract VerifyRoles is Script {
         address factory,
         address badges
     ) external view {
-        _checkOwner("FeeDistributor",    feeDistrib,    multisig);
-        _checkOwner("ReferralRegistry",  referralReg,   multisig);
-        _checkOwner("LiquidityPool",     liquidityPool, multisig);
-        _checkOwner("GenesisNFT",        genesisNFT,    multisig);
-        _checkOwner("MarketFactory",     factory,       multisig);
+        _checkOwner("FeeDistributor", feeDistrib, multisig);
+        _checkOwner("ReferralRegistry", referralReg, multisig);
+        _checkOwner("LiquidityPool", liquidityPool, multisig);
+        _checkOwner("GenesisNFT", genesisNFT, multisig);
+        _checkOwner("MarketFactory", factory, multisig);
 
         _checkAccessControl("OracleResolver", oracleResolver, multisig, deployer);
-        _checkAccessControl("BadgeNFT",       badges,         multisig, deployer);
+        _checkAccessControl("BadgeNFT", badges, multisig, deployer);
 
         console.log("VerifyRoles: ALL GREEN");
     }
@@ -52,12 +52,10 @@ contract VerifyRoles is Script {
         console.log("%s owner = multisig OK", label);
     }
 
-    function _checkAccessControl(
-        string memory label,
-        address       target,
-        address       expectedAdmin,
-        address       deployer
-    ) internal view {
+    function _checkAccessControl(string memory label, address target, address expectedAdmin, address deployer)
+        internal
+        view
+    {
         IAccessControl ac = IAccessControl(target);
         if (!ac.hasRole(ADMIN, expectedAdmin)) {
             console.log("%s missing ADMIN on multisig", label);

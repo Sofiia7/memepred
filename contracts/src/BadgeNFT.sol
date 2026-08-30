@@ -15,7 +15,7 @@ contract BadgeNFT is ERC1155, AccessControl {
 
     bytes32 public constant MINTER_ROLE = keccak256("MINTER_ROLE");
 
-    string public name   = "FlipTheMeme Badges";
+    string public name = "FlipTheMeme Badges";
     string public symbol = "FTMBADGE";
 
     // badgeId → metadata
@@ -35,34 +35,29 @@ contract BadgeNFT is ERC1155, AccessControl {
     }
 
     function _initBadgesA() internal {
-        _registerBadge(1,  "Beginner",     "common");
-        _registerBadge(2,  "On Fire",      "common");
-        _registerBadge(3,  "Diamond",      "rare");
-        _registerBadge(4,  "Sniper",       "rare");
-        _registerBadge(5,  "Speed",        "common");
-        _registerBadge(6,  "Whale",        "rare");
-        _registerBadge(7,  "To The Moon",  "epic");
-        _registerBadge(8,  "Oracle",       "epic");
+        _registerBadge(1, "Beginner", "common");
+        _registerBadge(2, "On Fire", "common");
+        _registerBadge(3, "Diamond", "rare");
+        _registerBadge(4, "Sniper", "rare");
+        _registerBadge(5, "Speed", "common");
+        _registerBadge(6, "Whale", "rare");
+        _registerBadge(7, "To The Moon", "epic");
+        _registerBadge(8, "Oracle", "epic");
     }
 
     function _initBadgesB() internal {
-        _registerBadge(9,  "Legend",       "legendary");
-        _registerBadge(10, "Champion",     "legendary");
-        _registerBadge(11, "Pepe Master",  "common");
-        _registerBadge(12, "Brett Fan",    "common");
-        _registerBadge(13, "Pro",          "rare");
-        _registerBadge(14, "Institutional","epic");
-        _registerBadge(15, "Connector",    "rare");
-        _registerBadge(16, "Network",      "epic");
+        _registerBadge(9, "Legend", "legendary");
+        _registerBadge(10, "Champion", "legendary");
+        _registerBadge(11, "Pepe Master", "common");
+        _registerBadge(12, "Brett Fan", "common");
+        _registerBadge(13, "Pro", "rare");
+        _registerBadge(14, "Institutional", "epic");
+        _registerBadge(15, "Connector", "rare");
+        _registerBadge(16, "Network", "epic");
     }
 
     // ── SOULBOUND ──────────────────────────────────────────
-    function _update(
-        address from,
-        address to,
-        uint256[] memory ids,
-        uint256[] memory values
-    ) internal override {
+    function _update(address from, address to, uint256[] memory ids, uint256[] memory values) internal override {
         // Разрешить только минт (from == 0) и сжигание (to == 0)
         require(from == address(0) || to == address(0), "Soulbound: non-transferable");
         super._update(from, to, ids, values);
@@ -94,8 +89,7 @@ contract BadgeNFT is ERC1155, AccessControl {
         return string(abi.encodePacked(super.uri(tokenId), tokenId.toString(), ".json"));
     }
 
-    function supportsInterface(bytes4 interfaceId)
-        public view override(ERC1155, AccessControl) returns (bool) {
+    function supportsInterface(bytes4 interfaceId) public view override(ERC1155, AccessControl) returns (bool) {
         return super.supportsInterface(interfaceId);
     }
 }

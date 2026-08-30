@@ -8,15 +8,15 @@ import "./mocks/MockMarketRegistry.sol";
 
 contract FeeDistributorTest is Test {
     FeeDistributor dist;
-    MockUSDC       usdc;
+    MockUSDC usdc;
     MockMarketRegistry registry;
 
     address treasury = makeAddr("treasury");
-    address lpSink   = makeAddr("lpSink");
-    address nftPool  = makeAddr("nftPool");
+    address lpSink = makeAddr("lpSink");
+    address nftPool = makeAddr("nftPool");
     address factory;
-    address market   = makeAddr("market");
-    address ref      = makeAddr("ref");
+    address market = makeAddr("market");
+    address ref = makeAddr("ref");
 
     function setUp() public {
         usdc = new MockUSDC();
@@ -103,9 +103,9 @@ contract FeeDistributorTest is Test {
 
         // 40% to referrer, remaining 60 split 20/20/20 of 60 ≈ 20 each
         assertEq(dist.referralBalance(ref), 40e6, "ref 40");
-        assertEq(usdc.balanceOf(treasury),  20e6, "treasury 20");
-        assertEq(usdc.balanceOf(lpSink),    20e6, "lpSink 20");
-        assertEq(usdc.balanceOf(nftPool),   20e6, "nftPool 20");
+        assertEq(usdc.balanceOf(treasury), 20e6, "treasury 20");
+        assertEq(usdc.balanceOf(lpSink), 20e6, "lpSink 20");
+        assertEq(usdc.balanceOf(nftPool), 20e6, "nftPool 20");
     }
 
     function test_DistributeFee_NoReferrer_FullSplit() public {
@@ -116,8 +116,8 @@ contract FeeDistributorTest is Test {
         // No referrer → entire 60 split across 3 sinks ≈ 20 each
         assertEq(dist.referralBalance(address(0)), 0);
         assertEq(usdc.balanceOf(treasury), 20e6);
-        assertEq(usdc.balanceOf(lpSink),   20e6);
-        assertEq(usdc.balanceOf(nftPool),  20e6);
+        assertEq(usdc.balanceOf(lpSink), 20e6);
+        assertEq(usdc.balanceOf(nftPool), 20e6);
     }
 
     function test_DistributeFee_OddAmount_NoLeak() public {
@@ -136,7 +136,8 @@ contract FeeDistributorTest is Test {
         dist.distributeFee(100e6, ref);
 
         uint256 balBefore = usdc.balanceOf(ref);
-        vm.prank(ref); dist.claimReferralRewards();
+        vm.prank(ref);
+        dist.claimReferralRewards();
         assertEq(usdc.balanceOf(ref) - balBefore, 40e6);
         assertEq(dist.referralBalance(ref), 0);
     }
