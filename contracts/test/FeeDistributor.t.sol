@@ -4,21 +4,29 @@ pragma solidity ^0.8.24;
 import "forge-std/Test.sol";
 import "../src/FeeDistributor.sol";
 import "./mocks/MockUSDC.sol";
+import "./mocks/MockMarketRegistry.sol";
 
 contract FeeDistributorTest is Test {
     FeeDistributor dist;
     MockUSDC       usdc;
+    MockMarketRegistry registry;
 
     address treasury = makeAddr("treasury");
     address lpSink   = makeAddr("lpSink");
     address nftPool  = makeAddr("nftPool");
-    address factory  = makeAddr("factory");
+    address factory;
     address market   = makeAddr("market");
     address ref      = makeAddr("ref");
 
     function setUp() public {
         usdc = new MockUSDC();
         dist = new FeeDistributor(address(usdc), treasury, lpSink, nftPool);
+
+        // A real registry rather than a bare address: authorizeMarket now asks
+        // the factory whether it created the address it is handed.
+        registry = new MockMarketRegistry();
+        registry.register(market);
+        factory = address(registry);
 
         dist.setMarketFactory(factory);
         vm.prank(factory);
@@ -39,13 +47,30 @@ contract FeeDistributorTest is Test {
     }
 
     function test_AuthorizeMarket_OnlyFactoryOrOwner() public {
+        address m2 = makeAddr("m2");
+        registry.register(m2);
+
         vm.prank(makeAddr("rogue"));
         vm.expectRevert("only factory or owner");
-        dist.authorizeMarket(makeAddr("m2"));
+        dist.authorizeMarket(m2);
 
         // owner allowed
-        dist.authorizeMarket(makeAddr("m2"));
-        assertTrue(dist.isAuthorizedMarket(makeAddr("m2")));
+        dist.authorizeMarket(m2);
+        assertTrue(dist.isAuthorizedMarket(m2));
+    }
+
+    /**
+     * The same hardening LiquidityPool.authorizeMarket got, for the same
+     * reason. distributeFee pays out of the balance already sitting here
+     * without checking that any USDC arrived with the call, so an authorized
+     * address can credit itself referral fees and push the rest to the sinks.
+     * Only the owner can authorize, so this bounds an owner-key compromise
+     * rather than closing an open door - but leaving one of three sibling
+     * contracts unguarded is how a compromise finds the cheapest way in.
+     */
+    function test_AuthorizeMarket_RejectsAnAddressTheFactoryNeverCreated() public {
+        vm.expectRevert("not a market");
+        dist.authorizeMarket(makeAddr("attacker"));
     }
 
     function test_Deauthorize_OnlyOwner() public {

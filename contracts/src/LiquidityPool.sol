@@ -9,15 +9,7 @@ import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts/utils/math/Math.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "./GenesisNFT.sol";
-
-/**
- * @dev The slice of MarketFactory this vault needs. Declared locally rather
- *      than imported because MarketFactory imports LiquidityPool, and pulling
- *      the whole contract back the other way would be circular.
- */
-interface IMarketRegistry {
-    function isMarket(address market) external view returns (bool);
-}
+import "./interfaces/IMarketRegistry.sol";
 
 /**
  * @title LiquidityPool
@@ -346,6 +338,8 @@ contract LiquidityPool is ERC4626, ReentrancyGuard, Pausable, Ownable {
 
     /// @notice Emergency pause — blocks deposits/mints and new LP matches.
     ///         Existing matches can still settle; LPs can still withdraw fees and shares.
+    ///         Note that tryMatch declines rather than reverting while paused;
+    ///         see the comment there for why the difference matters.
     function pause()   external onlyOwner { _pause();   }
     function unpause() external onlyOwner { _unpause(); }
 
@@ -365,10 +359,21 @@ contract LiquidityPool is ERC4626, ReentrancyGuard, Pausable, Ownable {
         external
         onlyAuthorizedMarket
         nonReentrant
-        whenNotPaused
         returns (uint256 matchedAmount)
     {
         address market = msg.sender;
+
+        // Declined, not reverted. This carried whenNotPaused, and the caller is
+        // OrderbookMarket._tryLpMatch - inside placeBet, with no try/catch,
+        // before the unmatched remainder is queued. So pausing the pool did not
+        // just stop the pool taking the other side of a bet: it reverted every
+        // bet the opposite queue did not fill outright, including plain maker
+        // orders on an empty book, which could no longer even be placed. An
+        // emergency switch on the pool became an emergency switch on trading
+        // itself, which is neither what this pause is for nor what the header
+        // above promises. A pool with nothing to offer already answers 0 and
+        // lets the order rest; a paused pool is the same answer.
+        if (paused()) return 0;
 
         uint256 ta = totalAssets();
         if (ta == 0 || amount == 0) return 0;

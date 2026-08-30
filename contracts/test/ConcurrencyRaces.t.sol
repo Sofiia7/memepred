@@ -500,10 +500,34 @@ contract ConcurrencyRacesTest is RedstoneTest {
         pool.pause();
 
         vm.prank(address(markets[1]));
-        vm.expectRevert();
-        pool.tryMatch(2, MARKET_CAP, true, 2);
+        assertEq(pool.tryMatch(2, MARKET_CAP, true, 2), 0, "a paused pool takes no new exposure");
 
         _settle(0, 1, stake, true);
         assertEq(pool.totalExposure(), 0, "a paused pool must still be able to settle");
+    }
+
+    /**
+     * Declining, not reverting - because the caller is placeBet.
+     *
+     * tryMatch used to carry whenNotPaused, and OrderbookMarket calls it with
+     * no try/catch, in the middle of placeBet and before the remainder is
+     * queued. So pausing the pool did not merely stop the pool taking the other
+     * side: it reverted every bet that was not filled outright by the opposite
+     * queue, including plain maker orders on an empty book, which could no
+     * longer even be placed. An emergency switch on the pool quietly became an
+     * emergency switch on the whole product - the opposite of what the pool's
+     * own documentation promises, and of what a pause is for.
+     *
+     * A pool with nothing to offer already returns 0 and lets the order rest;
+     * a paused pool is the same answer for a different reason.
+     */
+    function test_Race_PausedPool_DeclinesInsteadOfBrickingPlaceBet() public {
+        pool.pause();
+
+        vm.prank(address(markets[0]));
+        uint256 matched = pool.tryMatch(1, MARKET_CAP, true, 1);
+
+        assertEq(matched, 0, "a paused pool must decline rather than revert");
+        assertEq(pool.totalExposure(), 0, "and must take on no exposure doing it");
     }
 }

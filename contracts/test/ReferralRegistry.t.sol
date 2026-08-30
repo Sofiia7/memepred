@@ -3,9 +3,11 @@ pragma solidity ^0.8.24;
 
 import "forge-std/Test.sol";
 import "../src/ReferralRegistry.sol";
+import "./mocks/MockMarketRegistry.sol";
 
 contract ReferralRegistryTest is Test {
     ReferralRegistry registry;
+    MockMarketRegistry factory;
 
     address owner    = makeAddr("owner");
     address market   = makeAddr("market");
@@ -16,8 +18,28 @@ contract ReferralRegistryTest is Test {
     function setUp() public {
         vm.prank(owner);
         registry = new ReferralRegistry();
+
+        // A real registry rather than nothing: authorizeMarket now asks the
+        // factory whether it created the address it is handed.
+        factory = new MockMarketRegistry();
+        factory.register(market);
+        vm.prank(owner);
+        registry.setMarketFactory(address(factory));
+
         vm.prank(owner);
         registry.authorizeMarket(market);
+    }
+
+    /**
+     * Matches LiquidityPool and FeeDistributor. An authorized address can call
+     * register(victim, attacker) and pin a referral link on anyone, skimming
+     * their referral share from then on. Owner-gated, so this bounds a key
+     * compromise rather than closing an open door.
+     */
+    function test_AuthorizeMarket_RejectsAnAddressTheFactoryNeverCreated() public {
+        vm.prank(owner);
+        vm.expectRevert("not a market");
+        registry.authorizeMarket(makeAddr("attacker"));
     }
 
     function test_Register() public {

@@ -5,6 +5,7 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "./interfaces/IMarketRegistry.sol";
 
 /**
  * @title FeeDistributor
@@ -76,8 +77,21 @@ contract FeeDistributor is Ownable, ReentrancyGuard {
         emit MarketFactorySet(_factory);
     }
 
+    /**
+     * @notice Let a market push fees here.
+     * @dev    The address has to be one the factory actually created.
+     *         distributeFee pays out of the balance already held without
+     *         checking that any USDC arrived with the call, so an authorized
+     *         address can credit itself referral fees and push the rest to the
+     *         sinks. Only the owner can authorize, so this bounds an owner-key
+     *         compromise rather than closing an open door - but LiquidityPool
+     *         is guarded this way and leaving a sibling contract unguarded is
+     *         how a compromise finds the cheapest way in.
+     */
     function authorizeMarket(address market) external onlyFactoryOrOwner {
         require(market != address(0), "zero market");
+        require(marketFactory != address(0),                    "factory not set");
+        require(IMarketRegistry(marketFactory).isMarket(market), "not a market");
         isAuthorizedMarket[market] = true;
         emit MarketAuthorized(market);
     }

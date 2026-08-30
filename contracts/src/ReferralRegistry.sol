@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "./interfaces/IMarketRegistry.sol";
 
 /**
  * @title ReferralRegistry
@@ -92,9 +93,20 @@ contract ReferralRegistry is Ownable {
         emit MarketFactorySet(_factory);
     }
 
+    /**
+     * @notice Let a market record referrals.
+     * @dev    The address has to be one the factory actually created. An
+     *         authorized address can call register(victim, attacker) and pin a
+     *         referral link on anyone, skimming their referral share from then
+     *         on. Owner-gated, so this bounds an owner-key compromise rather
+     *         than closing an open door - matching LiquidityPool and
+     *         FeeDistributor, which are guarded the same way.
+     */
     function authorizeMarket(address market) external {
         require(msg.sender == marketFactory || msg.sender == owner(), "only factory or owner");
         require(market != address(0), "zero market");
+        require(marketFactory != address(0),                    "factory not set");
+        require(IMarketRegistry(marketFactory).isMarket(market), "not a market");
         authorizedMarkets[market] = true;
         emit MarketAuthorized(market);
     }
