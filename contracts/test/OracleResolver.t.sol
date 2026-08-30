@@ -156,8 +156,8 @@ contract OracleResolverTest is Test {
         assertGt(ts, 0);
     }
 
-    /// @dev If the last recorded price is older than TWAP_WINDOW (5 min),
-    ///      _getTWAP must revert via "no price data".
+    /// @dev A price older than the retention window is pruned rather than
+    ///      averaged into a settlement.
     function test_TWAP_AllStale_NotUsable() public {
         _record(1e8);
 
@@ -297,7 +297,6 @@ contract OracleResolverTest is Test {
      */
     function test_LateSettlement_UsesPriceAtSettleAt_NotAtKeeperTime() public {
         (OrderbookMarket market, uint256 matchId) = _freshMarketWithOneMatch(15 minutes);
-        bytes[] memory data = new bytes[](0);
 
         // Price at the moment the bet was actually due: $1.05 → UP wins.
         vm.warp(block.timestamp + 15 minutes);
@@ -317,6 +316,38 @@ contract OracleResolverTest is Test {
     }
 
     /**
+     * The same guarantee on the single-match entrypoint.
+     *
+     * The anchoring fix landed on the batch path only. resolveOrderbookMatch
+     * kept taking its TWAP at block.timestamp, so the exact defect the test
+     * above pins was still reachable through the other door: a keeper settling
+     * one overdue match priced it at recovery time and flipped the winner.
+     *
+     * Its co-located spread guard cannot catch this either. That guard compares
+     * the TWAP against the spot carried by the same call, and when both are
+     * read at keeper time they agree - which is precisely why the batch path
+     * needed a second, settleAt-anchored check.
+     */
+    function test_LateSingleSettlement_UsesPriceAtSettleAt_NotAtKeeperTime() public {
+        (OrderbookMarket market, uint256 matchId) = _freshMarketWithOneMatch(15 minutes);
+
+        // Price at the moment the bet was actually due: $1.05 -> UP wins.
+        vm.warp(block.timestamp + 15 minutes);
+        _record(105e6);
+
+        // Keeper is down for half an hour; the coin collapses meanwhile.
+        vm.warp(block.timestamp + 30 minutes);
+        _record(50e6);
+
+        _resolveMatch(address(market), matchId, 50e6);
+
+        OrderbookMarket.Match memory m = market.getMatch(matchId);
+        assertTrue(m.settled, "settled");
+        assertTrue(m.upWon, "UP was right at settleAt and must win regardless of keeper lateness");
+        assertGt(m.exitPrice, m.entryPrice, "exit price is the one from settleAt");
+    }
+
+    /**
      * Past HISTORY_RETENTION there is no honest price for the match's deadline.
      * Settling anyway would invent a winner, so the match is skipped and left
      * for the permissionless emergencyRefundMatch — and, importantly, the rest
@@ -324,7 +355,6 @@ contract OracleResolverTest is Test {
      */
     function test_SettlementBeyondRetention_SkipsRatherThanInventingAWinner() public {
         (OrderbookMarket market, uint256 matchId) = _freshMarketWithOneMatch(15 minutes);
-        bytes[] memory data = new bytes[](0);
 
         vm.warp(block.timestamp + 15 minutes);
         _record(105e6);
@@ -397,7 +427,6 @@ contract OracleResolverTest is Test {
 
     function test_ResolveOrderbookMatch_AnomalyCancels_NoSettle() public {
         (OrderbookMarket market, uint256 matchId) = _freshMarketWithOneMatch(15 minutes);
-        bytes[] memory data = new bytes[](0);
 
         // Record a price point inside the TWAP window (duration/5 = 3 min
         // for a 15-min market) so exitTwap ≈ $1.00.
@@ -426,7 +455,6 @@ contract OracleResolverTest is Test {
         _bet(market, carol, OrderbookMarket.Direction.UP,   25e6, 1e8);
         _bet(market, dave,  OrderbookMarket.Direction.DOWN, 25e6, 1e8);
 
-        bytes[] memory data = new bytes[](0);
         vm.warp(block.timestamp + 15 minutes - 60);
         _record(1e8);
         vm.warp(block.timestamp + 61);
@@ -437,7 +465,6 @@ contract OracleResolverTest is Test {
 
     function test_ResolveOrderbookMarket_UnboundedWrapper_SettlesAll() public {
         (OrderbookMarket market, uint256 matchId) = _freshMarketWithOneMatch(15 minutes);
-        bytes[] memory data = new bytes[](0);
         vm.warp(block.timestamp + 15 minutes - 60);
         _record(1e8);
         vm.warp(block.timestamp + 61);
@@ -498,7 +525,6 @@ contract OracleResolverTest is Test {
     // ─── anomaly-guard but had never exercised it) ──────────────────────
     function test_ResolveOrderbookMarketBatch_AnomalyCancels_NoSettle() public {
         (OrderbookMarket market, uint256 matchId) = _freshMarketWithOneMatch(15 minutes);
-        bytes[] memory data = new bytes[](0);
 
         vm.warp(block.timestamp + 15 minutes - 60);
         _record(1e8);
@@ -526,7 +552,6 @@ contract OracleResolverTest is Test {
     ///      unrelated history pruning (which only prunes after 10 minutes).
     function test_TWAP_WindowCapsForLongDurationMarket() public {
         (OrderbookMarket market, uint256 matchId) = _freshMarketWithOneMatch(24 hours);
-        bytes[] memory data = new bytes[](0);
 
         // Anomalous tick 8 minutes before settle (settle = duration + 1s) —
         // outside a capped 5-min window, inside an uncapped ~4.8h window,
@@ -550,19 +575,27 @@ contract OracleResolverTest is Test {
     }
 
     /// @dev 60s market: duration/5 = 12s, below MIN_TWAP_WINDOW (30s). Settle
-    ///      happens at duration + 1s = 61s. A tick 26s before settle (t=35)
-    ///      sits outside a raw 12s window (cutoff=49) but inside the floored
-    ///      30s window (cutoff=31) — asserting the blended average (not just
-    ///      the freshest tick) proves the floor actually widened the window.
+    ///      happens at duration + 1s = 61s, anchored at settleAt = t=60. A tick
+    ///      25s before the anchor (t=35) sits outside a raw 12s window
+    ///      (cutoff=48) but inside the floored 30s window (cutoff=30) -
+    ///      asserting the blended average (not just the freshest tick) proves
+    ///      the floor actually widened the window.
+    ///
+    ///      The two ticks are 0.6% apart rather than the 60% this test used to
+    ///      use. Both anomaly guards apply to a single-match settle now that it
+    ///      shares one implementation with the batch, and the second compares
+    ///      the window average against the last tick at or before the anchor -
+    ///      so a synthetic 5.00 -> 2.00 move over 20 seconds reads as exactly
+    ///      the oracle anomaly that guard exists to refuse. The window
+    ///      arithmetic under test is unchanged by the size of the gap.
     function test_TWAP_WindowFloorsForVeryShortDuration() public {
         (OrderbookMarket market, uint256 matchId) = _freshMarketWithOneMatch(60);
-        bytes[] memory data = new bytes[](0);
 
-        vm.warp(block.timestamp + 35); // t=35: 26s before the eventual t=61 settle
-        _record(5e8);
+        vm.warp(block.timestamp + 35); // t=35: 25s before the t=60 anchor
+        _record(3.51e8);
 
-        vm.warp(block.timestamp + 20); // t=55: 6s before settle
-        _record(2e8);
+        vm.warp(block.timestamp + 20); // t=55: 5s before the anchor
+        _record(3.49e8);
 
         vm.warp(block.timestamp + 6); // t=61 = duration + 1s
         // Fresh spot matching the expected blended TWAP.
@@ -573,21 +606,29 @@ contract OracleResolverTest is Test {
         assertEq(m.exitPrice, 3.5e18, "floored 30s window must include both ticks, not just the freshest one");
     }
 
-    /// @dev Resolving a match whose feed has literally never had a price
-    ///      recorded must revert with "no price data" rather than settling
-    ///      on a bogus zero/uninitialized TWAP.
-    function test_Resolve_Reverts_NoPriceDataEverRecorded() public {
+    /// @dev Resolving a match whose feed has never had a price recorded must
+    ///      not settle it on a bogus zero TWAP. It reports the match as
+    ///      unpriceable and leaves it alone; once SETTLE_GRACE lapses anyone
+    ///      can call the permissionless emergencyRefundMatch and both sides get
+    ///      their stake back.
+    ///
+    ///      This used to assert a "no price data" revert, and it asserted it
+    ///      falsely: vm.expectRevert does not catch a revert swallowed by a
+    ///      low-level .call, so the test kept passing after the single-match
+    ///      path stopped reverting at all. Asserting the state and the event
+    ///      cannot pass vacuously the same way.
+    function test_Resolve_SkipsMatchWhoseFeedHasNoPriceData() public {
         (OrderbookMarket market, uint256 matchId) = _freshMarketWithOneMatch(15 minutes);
-        bytes[] memory data = new bytes[](0);
         vm.warp(block.timestamp + 15 minutes + 1);
 
-        vm.prank(keeper);
-        vm.expectRevert(bytes("no price data"));
-        (bool ok,) = address(resolver).call(bytes.concat(
-            abi.encodeWithSelector(OracleResolver.resolveOrderbookMatch.selector, address(market), matchId),
-            RedstonePayloadBuilder.buildNow(FEED, 1e8, 3)
-        ));
-        ok; // silence unused; expectRevert already asserted the failure
+        vm.expectEmit(true, true, false, false, address(resolver));
+        emit OracleResolver.MatchUnpriceable(address(market), matchId, 0);
+
+        _resolveMatch(address(market), matchId, 1e8);
+
+        OrderbookMarket.Match memory m = market.getMatch(matchId);
+        assertFalse(m.settled, "must not settle without a price for the deadline");
+        assertEq(m.exitPrice, 0, "no exit price may be invented");
     }
 
     // Required for ETH-receiving tests.

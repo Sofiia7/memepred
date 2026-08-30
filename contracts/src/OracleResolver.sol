@@ -137,20 +137,7 @@ contract OracleResolver is AccessControl, PrimaryProdDataServiceConsumerBase {
         uint256 matchId
     ) external onlyRole(KEEPER_ROLE) {
         OrderbookMarket m = OrderbookMarket(market);
-        bytes32 feedId = m.feedId();
-
-        // TWAP exit price, windowed to this market's own duration.
-        uint256 exitTwap = _getTWAP(feedId, _twapWindowFor(m.duration()));
-
-        // Anomaly check against the price carried by this very call.
-        uint256 spotPrice = _normalizePrice(getOracleNumericValueFromTxMsg(feedId));
-        if (_spread(exitTwap, spotPrice) > MAX_SPREAD_BPS) {
-            emit MarketRefunded(market, "oracle spread too high");
-            return;
-        }
-
-        m.settleMatch(matchId, exitTwap);
-        emit MarketResolved(market, exitTwap > m.getMatch(matchId).entryPrice, m.getMatch(matchId).entryPrice, exitTwap);
+        _settleOne(m, m.feedId(), _twapWindowFor(m.duration()), matchId);
     }
 
     /**
@@ -186,55 +173,71 @@ contract OracleResolver is AccessControl, PrimaryProdDataServiceConsumerBase {
         uint256 window = _twapWindowFor(m.duration());
         uint256[] memory ready = m.getReadySettlements(0, maxCount);
 
-        // Each match is priced at its OWN settleAt. A single batch-wide exit
-        // price was wrong twice: matches in one market have different settleAt
-        // values, and the price was read at keeper time rather than at the
-        // moment the bet was actually due.
         for (uint256 i = 0; i < ready.length; i++) {
-            uint256 settleAt = m.getMatch(ready[i]).settleAt;
-            (uint256 exitTwap, uint256 spotAtAnchor, bool ok) =
-                _getTWAPAt(feedId, window, settleAt);
-
-            if (!ok) {
-                // No recorded price anywhere near this match's deadline —
-                // usually a keeper outage longer than HISTORY_RETENTION. Skip
-                // it rather than inventing a winner; once SETTLE_GRACE lapses
-                // anyone can call emergencyRefundMatch and both sides get their
-                // stake back.
-                emit MatchUnpriceable(market, ready[i], settleAt);
-                continue;
-            }
-
-            // Two anomaly checks, because they catch different things.
-            //
-            // (a) Internal consistency: the average over the window versus the
-            //     last tick at or before settleAt. Meaningful at any age.
-            if (_spread(exitTwap, spotAtAnchor) > MAX_SPREAD_BPS) {
-                emit MarketRefunded(market, "oracle spread too high");
-                continue;
-            }
-            // (b) History versus live reality: the original guard, which is what
-            //     catches stale or poisoned history. Only applied when we are
-            //     settling promptly — for a match that came due hours ago the
-            //     recorded price and the current spot legitimately differ, and
-            //     comparing them would block every overdue settlement. Kept
-            //     tight (MAX_PRICE_AGE) so a memecoin's ordinary 2% drift over a
-            //     few minutes doesn't trip it on the happy path.
-            if (block.timestamp <= settleAt + MAX_PRICE_AGE) {
-                // The live price is the one carried by this call's own
-                // calldata, verified against three of five RedStone signers.
-                if (_spread(exitTwap, _normalizePrice(getOracleNumericValueFromTxMsg(feedId)))
-                        > MAX_SPREAD_BPS) {
-                    emit MarketRefunded(market, "oracle spread too high");
-                    continue;
-                }
-            }
-
-            m.settleMatch(ready[i], exitTwap);
-            settled++;
-            emit MarketResolved(market, exitTwap > m.getMatch(ready[i]).entryPrice,
-                                m.getMatch(ready[i]).entryPrice, exitTwap);
+            if (_settleOne(m, feedId, window, ready[i])) settled++;
         }
+    }
+
+    /**
+     * @dev Settle one match, priced at its OWN settleAt. Returns false when the
+     *      match was skipped rather than settled.
+     *
+     *      Single home for the rule on purpose. This logic used to be inline in
+     *      the batch loop while resolveOrderbookMatch carried its own copy, and
+     *      the copy kept reading the price at block.timestamp long after the
+     *      batch was fixed - so the same wrong-winner bug stayed reachable
+     *      through the other entrypoint. Two implementations of one rule drift;
+     *      this one cannot.
+     */
+    function _settleOne(
+        OrderbookMarket m,
+        bytes32 feedId,
+        uint256 window,
+        uint256 matchId
+    ) internal returns (bool) {
+        address market   = address(m);
+        uint256 settleAt = m.getMatch(matchId).settleAt;
+        (uint256 exitTwap, uint256 spotAtAnchor, bool ok) =
+            _getTWAPAt(feedId, window, settleAt);
+
+        if (!ok) {
+            // No recorded price anywhere near this match's deadline - usually a
+            // keeper outage longer than HISTORY_RETENTION. Skip it rather than
+            // inventing a winner; once SETTLE_GRACE lapses anyone can call
+            // emergencyRefundMatch and both sides get their stake back.
+            emit MatchUnpriceable(market, matchId, settleAt);
+            return false;
+        }
+
+        // Two anomaly checks, because they catch different things.
+        //
+        // (a) Internal consistency: the average over the window versus the last
+        //     tick at or before settleAt. Meaningful at any age.
+        if (_spread(exitTwap, spotAtAnchor) > MAX_SPREAD_BPS) {
+            emit MarketRefunded(market, "oracle spread too high");
+            return false;
+        }
+        // (b) History versus live reality: the original guard, which is what
+        //     catches stale or poisoned history. Only applied when we are
+        //     settling promptly - for a match that came due hours ago the
+        //     recorded price and the current spot legitimately differ, and
+        //     comparing them would block every overdue settlement. Kept tight
+        //     (MAX_PRICE_AGE) so a memecoin's ordinary 2% drift over a few
+        //     minutes doesn't trip it on the happy path.
+        if (block.timestamp <= settleAt + MAX_PRICE_AGE) {
+            // The live price is the one carried by this call's own calldata,
+            // verified against three of five RedStone signers.
+            if (_spread(exitTwap, _normalizePrice(getOracleNumericValueFromTxMsg(feedId)))
+                    > MAX_SPREAD_BPS) {
+                emit MarketRefunded(market, "oracle spread too high");
+                return false;
+            }
+        }
+
+        m.settleMatch(matchId, exitTwap);
+        emit MarketResolved(market, exitTwap > m.getMatch(matchId).entryPrice,
+                            m.getMatch(matchId).entryPrice, exitTwap);
+        return true;
     }
 
     // ── TWAP ───────────────────────────────────────────────
@@ -248,11 +251,11 @@ contract OracleResolver is AccessControl, PrimaryProdDataServiceConsumerBase {
         return scaled;
     }
 
-    function _getTWAP(bytes32 feedId, uint256 window) internal view returns (uint256) {
-        (uint256 twap, , bool ok) = _getTWAPAt(feedId, window, block.timestamp);
-        require(ok, "no price data");
-        return twap;
-    }
+    // _getTWAP - the block.timestamp-anchored helper - is deliberately gone
+    // rather than left unused. Anchoring at keeper time is the bug this whole
+    // area exists to prevent, and a convenience wrapper that does it is an
+    // invitation to reintroduce it. Settlement anchors at settleAt, via
+    // _getTWAPAt below.
 
     /**
      * @dev TWAP over the window ENDING AT `anchor`, plus the last price at or
