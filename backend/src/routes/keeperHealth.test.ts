@@ -107,6 +107,52 @@ describe('GET /health/deep', () => {
     expect(body).not.toContain('snapshot')
     await app.close()
   })
+
+  /**
+   * The gap this probe was built to close, still open until now.
+   *
+   * Every existing red condition is about the keeper's ability to *act*: gas,
+   * nonce, liveness. A keeper with a full tank and a clean nonce whose
+   * settlements simply revert in simulation trips none of them - resolveKeeper
+   * logs "settle would revert, skipping" and moves on. The USDC invariant does
+   * not drift either, because nothing settled on-chain, so the ledger still
+   * agrees with the chain. Result: matches sit unsettled indefinitely behind a
+   * 200. That is the same shape as the outage this file's header describes.
+   */
+  it('goes red when matches are long overdue for settlement', async () => {
+    const app = await build({ 'watchdog:state': snapshot({ settlementsOverdueSecs: 2 * 3600 }) })
+    const res = await app.inject({ url: '/health/deep' })
+
+    expect(res.statusCode).toBe(503)
+    expect(res.json().reason).toBe('settlements-stalled')
+    await app.close()
+  })
+
+  it('warns before going red, while a settlement backlog is still plausibly a delay', async () => {
+    const app = await build({ 'watchdog:state': snapshot({ settlementsOverdueSecs: 20 * 60 }) })
+    const res = await app.inject({ url: '/health/deep' })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json().warn).toContain('settlements-overdue')
+    await app.close()
+  })
+
+  it('stays quiet about a settlement running a couple of minutes behind', async () => {
+    const app = await build({ 'watchdog:state': snapshot({ settlementsOverdueSecs: 120 }) })
+    const res = await app.inject({ url: '/health/deep' })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json().warn).toBeUndefined()
+    await app.close()
+  })
+
+  it('does not go red on a snapshot published before this field existed', async () => {
+    const app = await build({ 'watchdog:state': snapshot({ settlementsOverdueSecs: undefined }) })
+    const res = await app.inject({ url: '/health/deep' })
+
+    expect(res.statusCode).toBe(200)
+    await app.close()
+  })
 })
 
 /**

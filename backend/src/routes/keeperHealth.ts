@@ -35,6 +35,19 @@ const STALE_THRESHOLD = 5 * 60_000 // 5 min
 /** Escalations at one nonce before it counts as an outage rather than a retry. */
 const NONCE_WEDGED_LEVEL = 3
 
+/**
+ * How far past its deadline the oldest unsettled match may run.
+ *
+ * Settlement lags its deadline by design - the resolve loop is periodic, and a
+ * match that came due between ticks is simply waiting. Past the warn mark that
+ * stops being a plausible reading of a working keeper; past the red mark
+ * nothing is settling at all. Both sit well inside the contract's 24h
+ * SETTLE_GRACE, so the alert arrives while the matches can still be settled
+ * rather than only refunded.
+ */
+const SETTLEMENTS_WARN_SECS = 15 * 60
+const SETTLEMENTS_DOWN_SECS = 60 * 60
+
 interface Snapshot {
   resolverEthWei:    string
   resolverEthAlert:  'ok' | 'warn' | 'critical' | 'unknown'
@@ -46,6 +59,12 @@ interface Snapshot {
   gasThrottleReason?: string | null
   stuckNonce?:       number | null
   escalationLevel?:  number
+  /**
+   * Seconds the oldest unsettled-but-due match has been waiting, 0 when there
+   * is no backlog. Optional so a snapshot published before this existed still
+   * parses as healthy rather than as an outage.
+   */
+  settlementsOverdueSecs?: number
   lastTick:          number
 }
 
@@ -64,6 +83,7 @@ type Code =
   | 'keeper-out-of-gas'
   | 'nonce-wedged'
   | 'resolver-eth-critical'
+  | 'settlements-stalled'
 
 /**
  * Green-but-degraded. A monitor that only distinguishes up from down learns
@@ -71,7 +91,8 @@ type Code =
  * days earlier and are safe to publish for the same reason `code` is - they
  * name a condition, never a balance or an address.
  */
-type Warn = 'keeper-eth-low' | 'resolver-eth-low' | 'feed-degraded' | 'gas-throttled' | 'nonce-escalating'
+type Warn = 'keeper-eth-low' | 'resolver-eth-low' | 'feed-degraded' | 'gas-throttled'
+          | 'nonce-escalating' | 'settlements-overdue'
 
 interface Verdict {
   ok:         boolean
@@ -117,21 +138,31 @@ export async function evaluateKeeperHealth(get: Reader, now: number): Promise<Ve
   const invariantRaw = await get(INVARIANT_KEY)
   const invariant    = invariantRaw ? JSON.parse(invariantRaw) : null
 
-  if (stale || crit || keeperCrit || nonceWedged || invariant) {
+  // Every other red condition here is about the keeper's ability to act - gas,
+  // nonce, liveness. A keeper with a full tank and a clean nonce whose
+  // settlements revert in simulation trips none of them, and the USDC
+  // invariant does not drift either because nothing settled on-chain. Without
+  // this, matches sit unsettled indefinitely behind a 200.
+  const overdue          = snap.settlementsOverdueSecs ?? 0
+  const settlementsDead  = overdue >= SETTLEMENTS_DOWN_SECS
+
+  if (stale || crit || keeperCrit || nonceWedged || invariant || settlementsDead) {
     return {
       ok: false,
       code:
-        invariant    ? 'usdc-invariant-drift'
-        : stale       ? 'watchdog-stale'
-        : keeperCrit  ? 'keeper-out-of-gas'
-        : nonceWedged ? 'nonce-wedged'
-        :               'resolver-eth-critical',
+        invariant       ? 'usdc-invariant-drift'
+        : stale           ? 'watchdog-stale'
+        : keeperCrit      ? 'keeper-out-of-gas'
+        : nonceWedged     ? 'nonce-wedged'
+        : settlementsDead ? 'settlements-stalled'
+        :                   'resolver-eth-critical',
       reason:
-        invariant    ? `usdc invariant drift $${invariant.drift?.toFixed?.(2) ?? '?'}`
-        : stale       ? `watchdog stale ${Math.round(age / 1000)}s`
-        : keeperCrit  ? `keeper wallet out of gas (${snap.keeperAddress ?? 'unknown'}) - nothing is being settled`
-        : nonceWedged ? `nonce ${snap.stuckNonce} wedged after ${snap.escalationLevel} fee escalations - no writes are landing`
-        :               'resolver eth critical',
+        invariant       ? `usdc invariant drift $${invariant.drift?.toFixed?.(2) ?? '?'}`
+        : stale           ? `watchdog stale ${Math.round(age / 1000)}s`
+        : keeperCrit      ? `keeper wallet out of gas (${snap.keeperAddress ?? 'unknown'}) - nothing is being settled`
+        : nonceWedged     ? `nonce ${snap.stuckNonce} wedged after ${snap.escalationLevel} fee escalations - no writes are landing`
+        : settlementsDead ? `oldest match ${Math.round(overdue / 60)} min past its settleAt - settlement is not running`
+        :                   'resolver eth critical',
       snapshot: snap,
       invariant,
       ageMs:    age,
@@ -144,6 +175,7 @@ export async function evaluateKeeperHealth(get: Reader, now: number): Promise<Ve
   if (Object.values(snap.feedStatus ?? {}).some(f => f.failStreak > 0)) warn.push('feed-degraded')
   if (snap.gasThrottled) warn.push('gas-throttled')
   if ((snap.escalationLevel ?? 0) > 0) warn.push('nonce-escalating')
+  if (overdue >= SETTLEMENTS_WARN_SECS) warn.push('settlements-overdue')
 
   return { ok: true, warn, snapshot: snap, ageMs: age }
 }

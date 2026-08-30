@@ -30,6 +30,7 @@ import { CONTRACTS, SUPPORTED_FEED_IDS } from '../config.js'
 import { fetchPayload, bytes32ToFeedId } from '../lib/redstone.js'
 import { nextFailStreak, STALE_FAIL_LIMIT, type FeedPing } from './feedStreak.js'
 import { redis } from '../db/redis.js'
+import { pg } from '../db/pg.js'
 import { getKeeperWalletClient, escalationState } from './keeperWallet.js'
 import { gasGuard } from './gasGuardInstance.js'
 
@@ -127,7 +128,31 @@ export const watchdogState = {
   // so it reads as an outage rather than as silence.
   stuckNonce:      null as number | null,
   escalationLevel: 0,
+  // Settlements that revert in simulation leave the keeper looking perfectly
+  // healthy: gas fine, nonce fine, and the USDC invariant does not drift
+  // because nothing settled on-chain. Published so a settlement path that has
+  // quietly stopped reads as an outage.
+  settlementsOverdueSecs: 0,
   lastTick:        0,
+}
+
+/**
+ * How far past its deadline the oldest unsettled match is, in seconds.
+ *
+ * Reads `stale_settlements`, a view that has existed since migration 003 for
+ * exactly this purpose and until now had no reader anywhere in the codebase.
+ */
+async function checkSettlementBacklog() {
+  try {
+    const { rows } = await pg.query<{ oldest: number | null }>(
+      'SELECT MAX(overdue_secs) AS oldest FROM stale_settlements'
+    )
+    watchdogState.settlementsOverdueSecs = Number(rows[0]?.oldest ?? 0)
+  } catch (err) {
+    // Leave the previous reading rather than reporting a clean board we did not
+    // observe. A database we cannot reach is not evidence that settlement works.
+    console.error('[watchdog] settlement backlog query failed:', err)
+  }
 }
 
 export async function oracleWatchdogTick() {
@@ -145,6 +170,7 @@ export async function oracleWatchdogTick() {
     checkResolverEthBalance(),
     checkKeeperEthBalance(),
     checkFeedsAndAutoPause(),
+    checkSettlementBacklog(),
   ])
 
   // Publish snapshot for the backend health endpoint.
@@ -163,6 +189,7 @@ export async function oracleWatchdogTick() {
         gasThrottleReason: watchdogState.gasThrottleReason,
         stuckNonce:        watchdogState.stuckNonce,
         escalationLevel:   watchdogState.escalationLevel,
+        settlementsOverdueSecs: watchdogState.settlementsOverdueSecs,
         lastTick:          watchdogState.lastTick,
       }),
     )

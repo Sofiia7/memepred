@@ -114,7 +114,7 @@ Watch one of these instead:
 
 | URL | goes red when |
 |---|---|
-| `https://api.flipthememe.com/health/deep` | keeper out of gas, watchdog snapshot stale (5 min), USDC invariant drift |
+| `https://api.flipthememe.com/health/deep` | keeper out of gas, wedged nonce, watchdog snapshot stale (5 min), USDC invariant drift, or the oldest match more than an hour past its settleAt |
 | `https://flipthememe-watchdog.sofiaseremeteva.workers.dev/` | any of the above, **or** the API or frontend is down, **or** the watchdog itself stopped ticking |
 
 The second is the Cloudflare cron Worker in `workers/watchdog.ts`. It checks all
