@@ -2,7 +2,11 @@
 FROM node:20-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json* ./
-RUN npm install --omit=dev=false
+# `--omit=dev=false` was not a flag npm understands; it was ignored, so this
+# installed everything anyway and shipped devDependencies into the runtime
+# image. Say what was meant. `npm ci` when a lockfile is present, so an image
+# rebuild cannot quietly pick up different versions than the one before it.
+RUN if [ -f package-lock.json ]; then npm ci --include=dev; else npm install --include=dev; fi
 COPY . .
 RUN npm run build || npx tsc -p tsconfig.json
 

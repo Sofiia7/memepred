@@ -67,6 +67,9 @@ services:
       REDSTONE_GATEWAY_URL:  ${REDSTONE_GATEWAY_URL:-https://oracle-gateway-1.a.redstone.finance}
       CHAIN_ID:           ${CHAIN_ID:-84532}
       WORKER_SECRET:      ${WORKER_SECRET}
+      # Read by src/index.ts. Never reached the container before, so the CORS
+      # allowlist silently stayed on its built-in default, localhost included.
+      ALLOWED_ORIGINS:    ${ALLOWED_ORIGINS}
       USDC_ADDRESS:       ${USDC_ADDRESS}
       MARKET_FACTORY:     ${MARKET_FACTORY}
       ORACLE_RESOLVER:    ${ORACLE_RESOLVER}
@@ -100,7 +103,10 @@ services:
       REFERRAL_REGISTRY:         ${REFERRAL_REGISTRY}
       LIQUIDITY_POOL:            ${LIQUIDITY_POOL}
       KEEPER_PRIVATE_KEY:        ${KEEPER_PRIVATE_KEY}
-      BADGE_MINTER_PRIVATE_KEY:  ${BADGE_MINTER_PRIVATE_KEY}
+      # badgeService reads BADGE_MINTER_KEY; this was passed under a third
+      # name that nothing looks up, so the container held a hot-wallet key it
+      # could not use and the service would have found none.
+      BADGE_MINTER_KEY:          ${BADGE_MINTER_KEY}
       INDEXER_START_BLOCK:       ${INDEXER_START_BLOCK}
       CHAIN_ID:                  ${CHAIN_ID:-84532}
 

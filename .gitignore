@@ -8,7 +8,7 @@
 !package.json
 !tsconfig.json
 !openclaw.json
-!pnpm-lock.json
+!pnpm-lock.yaml
 !.github/**/*.json
 !subgraph/**/*.json
 !frontend/**/*.json

@@ -99,7 +99,7 @@ jobs:
           cache: pnpm
 
       - name: pnpm install
-        run: pnpm install --frozen-lockfile=false
+        run: pnpm install --frozen-lockfile
 
       - name: typecheck
         working-directory: backend
@@ -130,7 +130,7 @@ jobs:
           cache: pnpm
 
       - name: pnpm install
-        run: pnpm install --frozen-lockfile=false
+        run: pnpm install --frozen-lockfile
 
       - name: typecheck
         working-directory: frontend
@@ -181,7 +181,7 @@ jobs:
           cache: pnpm
 
       - name: pnpm install
-        run: pnpm install --frozen-lockfile=false
+        run: pnpm install --frozen-lockfile
 
       - name: graph codegen
         working-directory: subgraph
@@ -206,13 +206,18 @@ jobs:
         with:
           node-version-file: '.nvmrc'
 
-      - name: backend audit
-        working-directory: backend
-        run: npm audit --audit-level=high || true
+      - uses: pnpm/action-setup@v4
+        with: { version: '${{ env.PNPM_VERSION }}' }
 
-      - name: frontend audit
-        working-directory: frontend
-        run: npm audit --audit-level=high || true
+      # This job used to run `npm audit` with no install step and no committed
+      # npm lockfile, so npm exited ENOLEC every time and `|| true` swallowed
+      # it. Permanently green, auditing nothing - the repo's only automated
+      # supply-chain check had never actually run. It needs the install.
+      - name: install (for the lockfile audit reads)
+        run: pnpm install --frozen-lockfile
+
+      - name: audit the workspace
+        run: pnpm audit --audit-level high || true
 
   # ─────────────────────────────────────────────────────────────
   # Aggregator job — required-status target for branch protection
