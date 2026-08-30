@@ -20,6 +20,7 @@ import { CONTRACTS } from '../config.js'
 import { fetchPayload, withPayload, bytes32ToFeedId } from '../lib/redstone.js'
 import { getKeeperWalletClient, sendKeeperTx } from './keeperWallet.js'
 import { gasGuard, recordReceipt } from './gasGuardInstance.js'
+import { BATCH_FROM_SELECTOR, codeHasSelector } from './resolverAbi.js'
 
 const chain = process.env.CHAIN_ID === '8453' ? base : baseSepolia
 
@@ -36,6 +37,18 @@ const ORACLE_RESOLVER_BATCH_ABI = [
     inputs: [
       { name: 'market',   type: 'address' },
       { name: 'offset',   type: 'uint256' },
+      { name: 'maxCount', type: 'uint256' },
+    ],
+    outputs: [{ name: 'settled', type: 'uint256' }],
+  },
+  {
+    // The pre-pagination entrypoint, still what is deployed today. Kept so the
+    // keeper can ship ahead of the contract redeploy instead of waiting on it.
+    name: 'resolveOrderbookMarketBatch',
+    type: 'function',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'market',   type: 'address' },
       { name: 'maxCount', type: 'uint256' },
     ],
     outputs: [{ name: 'settled', type: 'uint256' }],
@@ -121,6 +134,28 @@ async function fetchOraclePayload(feedId: `0x${string}`): Promise<string> {
   return fetchPayload(symbol)
 }
 
+/**
+ * Whether the deployed resolver has the paginating entrypoint.
+ *
+ * Cached for the life of the process: the answer only changes on a redeploy,
+ * and the keeper restarts for those.
+ */
+let paginates: boolean | undefined
+
+async function resolverPaginates(): Promise<boolean> {
+  if (paginates !== undefined) return paginates
+  const code = await publicClient.getCode({ address: CONTRACTS.ORACLE_RESOLVER as Address })
+  paginates = codeHasSelector(code, BATCH_FROM_SELECTOR)
+  if (!paginates) {
+    console.warn(
+      '[resolver] deployed resolver predates resolveOrderbookMarketBatchFrom - ' +
+      'settling from the queue head only. A match that cannot settle will hold ' +
+      'up the ones behind it until the contracts are redeployed.',
+    )
+  }
+  return paginates
+}
+
 export async function settlePendingMarkets() {
   const wallet = getKeeperWalletClient()
   if (!wallet) return
@@ -140,6 +175,7 @@ export async function settlePendingMarkets() {
       const feedId = await publicClient.readContract({
         address: market, abi: MARKET_VIEW_ABI, functionName: 'feedId',
       })
+      const canPaginate = await resolverPaginates()
 
       // Where this tick is reading from, counted past the queue head.
       //
@@ -155,17 +191,23 @@ export async function settlePendingMarkets() {
         const ready = await publicClient.readContract({
           address: market, abi: MARKET_VIEW_ABI,
           functionName: 'getReadySettlements',
-          args: [offset, BigInt(MAX_PER_TX)],
+          args: [canPaginate ? offset : 0n, BigInt(MAX_PER_TX)],
         })
         if (ready.length === 0) break
 
         const payload = await fetchOraclePayload(feedId as `0x${string}`)
         const settleCallData = withPayload(
-          encodeFunctionData({
-            abi:          ORACLE_RESOLVER_BATCH_ABI,
-            functionName: 'resolveOrderbookMarketBatchFrom',
-            args:         [market, offset, BigInt(MAX_PER_TX)],
-          }),
+          canPaginate
+            ? encodeFunctionData({
+                abi:          ORACLE_RESOLVER_BATCH_ABI,
+                functionName: 'resolveOrderbookMarketBatchFrom',
+                args:         [market, offset, BigInt(MAX_PER_TX)],
+              })
+            : encodeFunctionData({
+                abi:          ORACLE_RESOLVER_BATCH_ABI,
+                functionName: 'resolveOrderbookMarketBatch',
+                args:         [market, BigInt(MAX_PER_TX)],
+              }),
           payload,
         )
 
@@ -199,13 +241,25 @@ export async function settlePendingMarkets() {
           // successful settle of `ready.length` matches every time.
           wouldSettle = decodeFunctionResult({
             abi:          ORACLE_RESOLVER_BATCH_ABI,
-            functionName: 'resolveOrderbookMarketBatchFrom',
+            functionName: canPaginate
+              ? 'resolveOrderbookMarketBatchFrom'
+              : 'resolveOrderbookMarketBatch',
             data:         sim.data ?? '0x',
           }) as bigint
         } catch (simErr: any) {
           console.warn(
             `[resolver] ${market}: settle would revert, skipping ` +
             `(${simErr?.shortMessage ?? simErr?.message ?? 'unknown'})`,
+          )
+          break
+        }
+
+        if (wouldSettle === 0n && !canPaginate) {
+          // No way to step past this window on the deployed resolver. Stop
+          // rather than re-send a batch that settles nothing MAX_LOOPS times.
+          console.warn(
+            `[resolver] ${market}: ${ready.length} ready match(es) cannot settle yet ` +
+            `and this resolver cannot page past them`,
           )
           break
         }
