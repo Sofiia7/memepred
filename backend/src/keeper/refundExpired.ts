@@ -4,6 +4,7 @@ const chain = process.env.CHAIN_ID === '8453' ? base : baseSepolia
 import { pg } from '../db/pg.js'
 import { getKeeperWalletClient, sendKeeperTx } from './keeperWallet.js'
 import { gasGuard, recordReceipt } from './gasGuardInstance.js'
+import { isRefundable } from './refundEligibility.js'
 
 const ORDERBOOK_MARKET_ABI = [
   {
@@ -11,18 +12,24 @@ const ORDERBOOK_MARKET_ABI = [
     type: 'function',
     stateMutability: 'view',
     inputs: [{ name: 'orderId', type: 'uint256' }],
+    // The full 11-field Order struct. This was still the pre-multi-fill
+    // 8-field shape, which decodes every field after `amount` from the wrong
+    // slot - the frontend hit the same thing and was fixed; this copy was not.
     outputs: [{
       name: '',
       type: 'tuple',
       components: [
-        { name: 'trader',    type: 'address' },
-        { name: 'direction', type: 'uint8'   },
-        { name: 'amount',    type: 'uint256' },
-        { name: 'referrer',  type: 'address' },
-        { name: 'status',    type: 'uint8'   },
-        { name: 'placedAt',  type: 'uint256' },
-        { name: 'matchId',   type: 'uint256' },
-        { name: 'payout',    type: 'uint256' }
+        { name: 'trader',             type: 'address' },
+        { name: 'direction',          type: 'uint8'   },
+        { name: 'amount',             type: 'uint256' },
+        { name: 'filledAmount',       type: 'uint256' },
+        { name: 'referrer',           type: 'address' },
+        { name: 'status',             type: 'uint8'   },
+        { name: 'placedAt',           type: 'uint256' },
+        { name: 'matchId',            type: 'uint256' },
+        { name: 'pendingSettlements', type: 'uint256' },
+        { name: 'payout',             type: 'uint256' },
+        { name: 'unmatchedRefunded',  type: 'bool'    }
       ]
     }]
   },
@@ -49,15 +56,29 @@ const ORDERBOOK_MARKET_ABI = [
   }
 ] as const
 
-const ORDER_STATUS_PENDING = 0
-
 const publicClient = createPublicClient({
   chain,
   transport: http(process.env.BASE_RPC_URL)
 })
 
 /**
- * Scan pending orders on active markets and refund expired ones.
+ * How far back to keep looking for unreturned stake after a market closes.
+ *
+ * An order becomes refundable at placedAt + MATCH_TIMEOUT (5 min), which for a
+ * 5-minute market always falls *after* close_time - and closeExpiredMarkets
+ * flips the row to CLOSED within 30s of that. Scanning `status = 'OPEN'` alone
+ * therefore never saw a 5-minute market's expired orders at all, and 5-minute
+ * markets are most of them. The contract puts no deadline on refundExpired, so
+ * the only reason to stop looking is cost; a day is far past the point where a
+ * user would have used the button in the UI themselves.
+ */
+const REFUND_LOOKBACK = '24 hours'
+
+/** Orders scanned per market per tick. Truncation is logged, never silent. */
+const MAX_SCAN_PER_MARKET = 500n
+
+/**
+ * Scan orders on recent markets and return stake that never found a match.
  * Called every 5 minutes by the keeper.
  */
 export async function refundExpiredOrders() {
@@ -67,9 +88,9 @@ export async function refundExpiredOrders() {
     return
   }
 
-  // Get active market addresses from DB
   const result = await pg.query(
-    "SELECT DISTINCT market_address FROM markets WHERE status = 'OPEN'"
+    `SELECT DISTINCT market_address FROM markets
+      WHERE status = 'OPEN' OR close_time > NOW() - INTERVAL '${REFUND_LOOKBACK}'`
   )
 
   for (const row of result.rows) {
@@ -89,8 +110,17 @@ export async function refundExpiredOrders() {
         functionName: 'MATCH_TIMEOUT'
       })
 
-      // Check recent orders (last 100)
-      const startId = nextOrderId > 100n ? nextOrderId - 100n : 1n
+      const startId = nextOrderId > MAX_SCAN_PER_MARKET
+        ? nextOrderId - MAX_SCAN_PER_MARKET
+        : 1n
+      if (startId > 1n) {
+        console.warn(
+          `refundExpired: ${marketAddress} has ${nextOrderId - 1n} orders, ` +
+          `scanning the newest ${MAX_SCAN_PER_MARKET}; ` +
+          `orders 1..${startId - 1n} are left to the refund button in the UI`
+        )
+      }
+
       for (let orderId = startId; orderId < nextOrderId; orderId++) {
         try {
           const order = await publicClient.readContract({
@@ -100,11 +130,7 @@ export async function refundExpiredOrders() {
             args:         [orderId]
           })
 
-          // If PENDING and expired
-          if (
-            order.status === ORDER_STATUS_PENDING &&
-            now > BigInt(order.placedAt) + matchTimeout
-          ) {
+          if (isRefundable(order, now, matchTimeout)) {
             console.log(`Refunding expired order #${orderId} on ${marketAddress}`)
             // Critical: this is returning a user's own stake after their order
             // failed to match. Gas price is not a reason to hold onto it.
@@ -128,7 +154,12 @@ export async function refundExpiredOrders() {
             }
           }
         } catch (err) {
-          // Order might not exist or already refunded
+          // Deliberately not silent. An empty catch here is what would have
+          // hidden the stale getOrder ABI: every read throwing, the whole
+          // refund path dead, and nothing in the logs to say so. Short message
+          // only, since this runs per order per market every 5 minutes.
+          const msg = err instanceof Error ? err.message.split('\n')[0] : String(err)
+          console.warn(`  order #${orderId} on ${marketAddress}: ${msg}`)
         }
       }
     } catch (err) {
