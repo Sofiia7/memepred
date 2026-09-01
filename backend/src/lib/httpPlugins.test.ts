@@ -215,3 +215,49 @@ describe('user-presence hook', () => {
     await app.close()
   })
 })
+
+/**
+ * Monitoring must never look like a visitor.
+ *
+ * The keeper drops market creation to the long durations when nobody is
+ * around, and creation is the dominant cost this project has - the whole idle
+ * backoff exists for it. A probe that marks presence every two minutes undoes
+ * it silently and around the clock.
+ *
+ * That is exactly what happened: /health/edge was added as a watchdog target
+ * on 2026-08-30 and not added to the ignore list, so the keeper spent the
+ * night creating 41 to 69 markets an hour at zero users. The indexer's watch
+ * list reached 1402 addresses, eth_getLogs started being rejected for size,
+ * and the keeper logged 4,500 RPC errors an hour.
+ *
+ * A prefix rule rather than another entry in a set, because this is the second
+ * probe to defeat the backoff and the list is only correct until someone adds
+ * /health/something-else.
+ */
+describe('user presence', () => {
+  const probes = ['/health', '/health/deep', '/health/edge', '/api/keeper/health', '/api/geo', '/api/geo/config']
+
+  it.each(probes)('does not count %s as somebody being here', async (url) => {
+    const app = await build()
+    await app.inject({ url, headers: { 'x-worker-secret': SECRET } })
+
+    expect(markActivity).not.toHaveBeenCalled()
+    await app.close()
+  })
+
+  it('counts anything else under /health as monitoring too', async () => {
+    const app = await build()
+    await app.inject({ url: '/health/whatever-comes-next', headers: { 'x-worker-secret': SECRET } })
+
+    expect(markActivity).not.toHaveBeenCalled()
+    await app.close()
+  })
+
+  it('still counts a real product request', async () => {
+    const app = await build()
+    await app.inject({ url: '/api/markets', headers: { 'x-worker-secret': SECRET } })
+
+    expect(markActivity).toHaveBeenCalledTimes(1)
+    await app.close()
+  })
+})

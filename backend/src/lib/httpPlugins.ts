@@ -19,20 +19,35 @@ export const DEFAULT_ORIGINS = [
 ]
 
 // ── USER-PRESENCE SIGNAL ───────────────────────────────────
-// Stamps "a human is here" so the keeper can drop its on-chain price push from
-// every 30s to a slow heartbeat while nobody is around (see lib/activity.ts
-// and keeper/onchainPriceRecorder.ts).
-//
-// Health and monitoring endpoints are excluded deliberately: an uptime checker
-// polling every two minutes would otherwise keep the product permanently
-// "busy" and quietly undo the entire saving.
-export const PRESENCE_IGNORED = new Set([
-  '/health',
-  '/health/deep',
+// Stamps "a human is here" so the keeper can drop its price pushes and market
+// creation to an idle cadence while nobody is around (see lib/activity.ts,
+// keeper/onchainPriceRecorder.ts and keeper/idleMatrix.ts).
+const PRESENCE_IGNORED_EXACT = new Set([
   '/api/keeper/health',
   '/api/geo',
   '/api/geo/config',
 ])
+
+/**
+ * Whether a request should count as a human being on the site.
+ *
+ * Everything under /health is monitoring, by prefix rather than by listing the
+ * paths. The list form was correct until someone added a probe to it, and on
+ * 2026-08-30 someone did: /health/edge went in as a watchdog target and not
+ * into the ignore list, so a check every two minutes told the backend a user
+ * was present around the clock. The keeper never dropped to its idle cadence
+ * and spent the night creating 41 to 69 markets an hour at zero users - market
+ * creation being the single largest cost this project has. The indexer's watch
+ * list grew to 1402 addresses, eth_getLogs began being rejected for size, and
+ * the keeper logged 4,500 RPC errors an hour into a log that rotates every few
+ * hours, taking the diagnostic history with it.
+ *
+ * A prefix cannot be forgotten by the next probe.
+ */
+export function marksPresence(path: string): boolean {
+  if (path === '/health' || path.startsWith('/health/')) return false
+  return !PRESENCE_IGNORED_EXACT.has(path)
+}
 
 /**
  * Paths served to callers that did not come through the Cloudflare Worker.
@@ -100,7 +115,7 @@ export async function registerHttpPlugins(app: FastifyInstance, opts: HttpPlugin
 
   app.addHook('onRequest', async (req) => {
     if (req.method === 'OPTIONS') return
-    if (PRESENCE_IGNORED.has(req.url.split('?')[0])) return
+    if (!marksPresence(req.url.split('?')[0])) return
     await opts.markActivity()
   })
 }

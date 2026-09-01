@@ -88,9 +88,28 @@ export async function refundExpiredOrders() {
     return
   }
 
+  // Only markets the indexer says still hold an order that could be refunded.
+  //
+  // The time window alone matched 1331 markets in production, because the
+  // keeper rolls a new market per feed per duration continuously - so this loop
+  // was making about 2,600 RPC calls every five minutes to rediscover that
+  // there was nothing to refund, and the public Base RPC started rejecting
+  // requests. With the EXISTS clause the same board matched zero.
+  //
+  // The trade: this trusts the DB's view of which orders are live, so an
+  // OrderPlaced the indexer missed would not be auto-refunded. That is
+  // acceptable because refundExpired is permissionless on-chain and the order
+  // page offers the button directly - the keeper doing it is a convenience,
+  // not the only route to the money.
   const result = await pg.query(
-    `SELECT DISTINCT market_address FROM markets
-      WHERE status = 'OPEN' OR close_time > NOW() - INTERVAL '${REFUND_LOOKBACK}'`
+    `SELECT DISTINCT m.market_address
+       FROM markets m
+      WHERE (m.status = 'OPEN' OR m.close_time > NOW() - INTERVAL '${REFUND_LOOKBACK}')
+        AND EXISTS (
+          SELECT 1 FROM orders o
+           WHERE o.market_address = m.market_address
+             AND o.status IN ('PENDING', 'MATCHED')
+        )`
   )
 
   for (const row of result.rows) {
