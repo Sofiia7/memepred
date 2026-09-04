@@ -1,4 +1,5 @@
 import { bytes32ToFeedId } from '../lib/redstone.js'
+import { poolTotals } from './poolTotals.js'
 /**
  * indexer — Sprint 3.2
  *
@@ -118,6 +119,50 @@ async function markResolvedMarkets(addresses: Address[]) {
       AND NOT EXISTS (SELECT 1 FROM matches x WHERE x.market_address = m.market_address
                                                AND x.settled = FALSE)
   `, [addresses.map((a) => a.toLowerCase())])
+}
+
+/**
+ * Project the orders of a market back onto `markets.up_pool` / `down_pool`.
+ *
+ * Those two columns have existed since 001_init.sql, when markets were to be
+ * synced from The Graph, and nothing ever replaced that writer: the only
+ * `UPDATE markets` statements in the backend are the two status flips. So they
+ * read 0 for every market, always. That is not cosmetic - priceRecorder copies
+ * them into `prob_snapshots` each tick and /api/candles/:market/prob-history
+ * serves the result, so the odds history chart is a flat 50% line drawn from a
+ * table of zeros, even on a market with money on both sides.
+ *
+ * Recomputed from the orders rather than accumulated per event: a projection
+ * that adds and subtracts drifts the moment one log is missed or replayed,
+ * while this one is idempotent and self-healing. Markets are passed in
+ * explicitly - every address touched by this batch - so a market whose last
+ * order was refunded is written back to 0 instead of keeping a stale total.
+ */
+async function syncMarketPools(addresses: Address[]) {
+  if (addresses.length === 0) return
+  const lower = [...new Set(addresses.map((a) => a.toLowerCase()))]
+
+  const r = await pg.query(`
+    SELECT market_address, direction, amount_usdc, filled_amount, status, unmatched_refunded
+    FROM orders WHERE market_address = ANY($1::text[])
+  `, [lower])
+
+  const totals = poolTotals(r.rows.map((o: any) => ({
+    marketAddress:     o.market_address,
+    direction:         o.direction,
+    amountUsdc:        Number(o.amount_usdc),
+    filledAmount:      Number(o.filled_amount),
+    status:            o.status,
+    unmatchedRefunded: o.unmatched_refunded,
+  })))
+
+  for (const addr of lower) {
+    const p = totals.get(addr) ?? { up: 0, down: 0 }
+    await pg.query(
+      'UPDATE markets SET up_pool = $1, down_pool = $2 WHERE market_address = $3',
+      [p.up, p.down, addr],
+    )
+  }
 }
 
 /** getLogs takes an address array, but nodes cap how many they will accept. */
@@ -386,6 +431,10 @@ async function indexMarketEvents(toBlock: bigint) {
     if (settled.length > 0) {
       await markResolvedMarkets([...new Set(settled.map((l) => l.address as Address))])
     }
+
+    // Any of these events can move committed money, and a refund can move it
+    // back, so recompute every market this batch touched.
+    await syncMarketPools(all.map((l) => l.address as Address))
 
     await setCursor(stream, end)
   }
