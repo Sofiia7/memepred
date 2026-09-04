@@ -35,6 +35,7 @@ import {
 } from 'viem'
 import { baseSepolia } from 'viem/chains'
 import { privateKeyToAccount, mnemonicToAccount } from 'viem/accounts'
+import { topUpAmount } from './topUpPlan.js'
 import { writeFileSync, appendFileSync, mkdirSync, existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
@@ -50,6 +51,17 @@ const RUN_MS       = parseDuration(DURATION_STR)
 const LOG_FILE     = arg('--log', `logs/soak-${Date.now()}.jsonl`)
 const MIN_BET_USDC = Number(arg('--min-bet', '1'))
 const MAX_BET_USDC = Number(arg('--max-bet', '100'))
+
+// Funding floors and targets. These used to be four literals inline in
+// fundIfNeeded (0.005/0.01 ETH, 20/100 USDC), which is what made `--bots 50`
+// read as "needs 0.5 ETH and 5,000 USDC of faucet" and kept the soak from ever
+// running. The ETH target is ~1,600 transactions at Base Sepolia's 0.006 gwei;
+// the USDC target follows the bet size so a bot is always able to afford a few
+// concurrent positions and never asks for stake it cannot bet.
+const ETH_FLOOR    = parseEther(arg('--eth-floor',  '0.0005'))
+const ETH_TARGET   = parseEther(arg('--eth-target', '0.002'))
+const USDC_FLOOR   = parseUnits(arg('--usdc-floor',  String(MAX_BET_USDC)),     6)
+const USDC_TARGET  = parseUnits(arg('--usdc-target', String(MAX_BET_USDC * 3)), 6)
 
 function parseDuration(s: string): number {
   const m = /^(\d+)\s*(s|m|h|d|ms)$/i.exec(s.trim())
@@ -144,6 +156,25 @@ function mkBot(i: number): Bot {
 }
 
 // ── METRICS ───────────────────────────────────────────────────
+/**
+ * The `OrderbookMarket.getOrder` fields this harness reads.
+ *
+ * This read used to be `as any`, which is worse here than it looks: TypeScript
+ * types `any - any` as `number`, so `amount - filledAmount` came out a number
+ * and the bigint accumulator it feeds silently stopped being checked. The
+ * values are real bigints at runtime, so nothing was broken - but nothing was
+ * verified either, and until `scripts/` joined the workspace nothing typechecked
+ * this file at all.
+ */
+interface OnchainOrder {
+  status:            number
+  amount:            bigint
+  filledAmount:      bigint
+  payout:            bigint
+  placedAt:          bigint
+  unmatchedRefunded: boolean
+}
+
 interface Metrics {
   startTs: number
   placeBetOk: number
@@ -184,19 +215,21 @@ async function fundIfNeeded(bot: Bot) {
   const faucet = privateKeyToAccount(FAUCET_KEY)
   const faucetClient = createWalletClient({ account: faucet, chain: baseSepolia, transport: http(RPC) })
 
-  if (ethBal < parseEther('0.005')) {
-    const hash = await faucetClient.sendTransaction({ to: bot.address, value: parseEther('0.01') })
+  const ethTopUp = topUpAmount(ethBal, ETH_FLOOR, ETH_TARGET)
+  if (ethTopUp > 0n) {
+    const hash = await faucetClient.sendTransaction({ to: bot.address, value: ethTopUp })
     await publicClient.waitForTransactionReceipt({ hash })
-    log('fund_eth', { bot: bot.index, hash })
+    log('fund_eth', { bot: bot.index, wei: ethTopUp.toString(), hash })
   }
 
-  if (usdcBal < parseUnits('20', 6)) {
+  const usdcTopUp = topUpAmount(usdcBal as bigint, USDC_FLOOR, USDC_TARGET)
+  if (usdcTopUp > 0n) {
     const hash = await faucetClient.writeContract({
       address: USDC, abi: ERC20_ABI, functionName: 'transfer',
-      args: [bot.address, parseUnits('100', 6)],
+      args: [bot.address, usdcTopUp],
     })
     await publicClient.waitForTransactionReceipt({ hash })
-    log('fund_usdc', { bot: bot.index, hash })
+    log('fund_usdc', { bot: bot.index, base: usdcTopUp.toString(), hash })
   }
 }
 
@@ -284,7 +317,7 @@ async function actSweepOrders(bot: Bot) {
     try {
       const o = await publicClient.readContract({
         address: pick.market, abi: MARKET_ABI, functionName: 'getOrder', args: [id],
-      }) as any
+      }) as unknown as OnchainOrder
       // SETTLED with positive payout → claim
       if (o.status === 2 && o.payout > 0n) {
         const hash = await bot.client.writeContract({
