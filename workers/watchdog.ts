@@ -37,6 +37,22 @@ export interface Env {
   ALERT_EMAIL_FROM?:   string
   /** Shared secret for GET /test-alert. Without it that route is disabled. */
   TEST_KEY?:           string
+  /**
+   * Host of the API to watch, without a scheme - e.g. `api.flipthememe.com`.
+   *
+   * Configurable because there is now more than one deployment, and a monitor
+   * hardcoded to one of them reports the other as healthy by never looking at
+   * it. Unset keeps the Base production host, so an existing worker keeps
+   * watching exactly what it watched before.
+   */
+  API_HOST?:           string
+  /** Host of the frontend to watch. Same reasoning as API_HOST. */
+  SITE_HOST?:          string
+  /**
+   * Name of the deployment, for the alert body. "keeper down" is not actionable
+   * when two keepers exist and the message does not say which.
+   */
+  DEPLOYMENT?:         string
   EMAIL?:              { send(msg: unknown): Promise<unknown> }
 }
 
@@ -75,20 +91,36 @@ interface Check {
   hard: boolean
 }
 
-const CHECKS: Check[] = [
-  // The deep probe: keeper alive, watchdog snapshot fresh, no USDC drift.
-  { name: 'keeper',   url: 'https://api.flipthememe.com/health/deep', hard: true },
-  // The API process itself. Separates "backend is down" from "keeper is down"
-  // in the alert body, which is the difference between restarting a container
-  // and topping up a wallet.
-  { name: 'api',      url: 'https://api.flipthememe.com/health',      hard: true },
-  // The edge-to-origin secret pairing. Both probes above are edge-exempt, so a
-  // secret that drifted would leave them green while every product route
-  // answered 403 - the API would be down for every real user and no monitor
-  // would say so.
-  { name: 'edge',     url: 'https://api.flipthememe.com/health/edge', hard: true },
-  { name: 'frontend', url: 'https://flipthememe.com/',                hard: true },
-]
+const DEFAULT_API_HOST = 'api.flipthememe.com'
+const DEFAULT_SITE_HOST = 'flipthememe.com'
+
+/**
+ * What this worker watches, built from its own configuration.
+ *
+ * These were four hardcoded URLs, which was right while there was one
+ * deployment and became a hazard the moment there were two: a second chain's
+ * backend would have had no monitor at all, and the worker watching the first
+ * would have gone on reporting green for it. One worker per deployment, each
+ * with its own API_HOST, is the shape that scales without duplicating this file.
+ */
+function checksFor(env: Env): Check[] {
+  const api = env.API_HOST ?? DEFAULT_API_HOST
+  const site = env.SITE_HOST ?? DEFAULT_SITE_HOST
+  return [
+    // The deep probe: keeper alive, watchdog snapshot fresh, no balance drift.
+    { name: 'keeper',   url: `https://${api}/health/deep`, hard: true },
+    // The API process itself. Separates "backend is down" from "keeper is down"
+    // in the alert body, which is the difference between restarting a container
+    // and topping up a wallet.
+    { name: 'api',      url: `https://${api}/health`,      hard: true },
+    // The edge-to-origin secret pairing. Both probes above are edge-exempt, so
+    // a secret that drifted would leave them green while every product route
+    // answered 403 - the API would be down for every real user and no monitor
+    // would say so.
+    { name: 'edge',     url: `https://${api}/health/edge`, hard: true },
+    { name: 'frontend', url: `https://${site}/`,           hard: true },
+  ]
+}
 
 interface Result {
   name:   string
@@ -242,9 +274,10 @@ function utcDay(ts: number): string {
 
 async function tick(env: Env, now: number): Promise<State> {
   const prev: State = JSON.parse((await env.WATCHDOG.get(STATE_KEY)) ?? 'null') ?? EMPTY
-  const results = await Promise.all(CHECKS.map(runCheck))
+  const checks = checksFor(env)
+  const results = await Promise.all(checks.map(runCheck))
 
-  const broken = results.filter(r => !r.ok && CHECKS.find(c => c.name === r.name)?.hard)
+  const broken = results.filter(r => !r.ok && checks.find(c => c.name === r.name)?.hard)
   const down   = broken.length > 0
   const detail = down ? broken.map(r => `${r.name}: ${r.detail}`).join('; ') : 'all green'
   const warns  = [...new Set(results.flatMap(r => r.warn))]
@@ -360,8 +393,9 @@ async function tick(env: Env, now: number): Promise<State> {
     if (prev.lastHeartbeatDay !== '') {
       await notify(
         env,
-        'FlipTheMeme daily check - all green',
-        `${CHECKS.length} checks passing.\n\nIf this stops arriving, the watchdog is dead - not the silence.`,
+        `FlipTheMeme daily check${env.DEPLOYMENT ? ` (${env.DEPLOYMENT})` : ''} - all green`,
+        `${checks.length} checks passing against ${env.API_HOST ?? DEFAULT_API_HOST}.\n\n` +
+          'If this stops arriving, the watchdog is dead - not the silence.',
       )
     }
     next.lastHeartbeatDay = utcDay(now)

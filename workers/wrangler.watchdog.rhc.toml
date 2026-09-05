@@ -1,0 +1,37 @@
+# The watchdog for the Robinhood Chain deployment.
+#
+# A copy rather than a second route on the same worker: the alert body is the
+# whole product of a monitor, and "keeper down" is not actionable when two
+# keepers exist and the message does not say which. Separate workers also mean
+# separate KV state, so one deployment's outage cannot reset the other's streak.
+#
+#   wrangler deploy -c wrangler.watchdog.rhc.toml
+#
+# Before it can run, two things are needed that are decisions rather than code:
+# somewhere for the rhc backend to be reachable from the internet, and a KV
+# namespace of its own (`wrangler kv namespace create WATCHDOG_RHC`).
+name = "flipthememe-watchdog-rhc"
+main = "watchdog.ts"
+compatibility_date = "2024-09-01"
+workers_dev = true
+
+[vars]
+# Fill these in once the rhc backend has a public host.
+# API_HOST   = "api-rhc.flipthememe.com"
+# SITE_HOST  = "rhc.flipthememe.com"
+DEPLOYMENT = "robinhood-chain"
+
+[triggers]
+# Every 2 minutes; two consecutive misses page, so an outage surfaces in ~4 min.
+crons = ["*/2 * * * *"]
+
+[[kv_namespaces]]
+binding = "WATCHDOG"
+# Its own namespace: sharing one would let the two deployments overwrite each
+# other's failure streaks and daily heartbeat.
+id = "REPLACE_ME"
+
+# Optional alert channels - set whichever you use, the Worker skips the rest:
+#   wrangler secret put TELEGRAM_BOT_TOKEN -c wrangler.watchdog.rhc.toml
+#   wrangler secret put TELEGRAM_CHAT_ID   -c wrangler.watchdog.rhc.toml
+#   wrangler secret put ALERT_WEBHOOK_URL  -c wrangler.watchdog.rhc.toml

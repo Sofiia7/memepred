@@ -9,6 +9,18 @@ main = "watchdog.ts"
 compatibility_date = "2024-09-01"
 workers_dev = true
 
+# What this worker watches. Unset means the Base production hosts, so an
+# existing deployment keeps watching exactly what it watched before.
+#
+# One worker per deployment: a second chain's backend needs its own copy of this
+# file with its own name, API_HOST and KV namespace. A single worker pointed at
+# two hosts would page without saying which is down, and the alert body is the
+# whole product of a monitor.
+[vars]
+# API_HOST   = "api.flipthememe.com"
+# SITE_HOST  = "flipthememe.com"
+# DEPLOYMENT = "base"
+
 [triggers]
 # Every 2 minutes; two consecutive misses page, so an outage surfaces in ~4 min.
 crons = ["*/2 * * * *"]
