@@ -89,8 +89,28 @@ contract OrderbookMarket is ReentrancyGuard, Pausable, PrimaryProdDataServiceCon
     }
 
     // ── CONSTANTS ──────────────────────────────────────────
-    uint256 public constant MIN_BET = 1e6; // 1 USDC
-    uint256 public constant MAX_BET = 100e6; // 100 USDC, remove after audit
+    /**
+     * Stake bounds. Functions rather than constants so a subclass settling in
+     * another currency can restate the same economic limits in that currency's
+     * decimals - these are 6-decimal USDC amounts, and 1e6 means one dollar
+     * here and one attoWETH-ish nothing anywhere else.
+     *
+     * The values are unchanged and the ABI is unchanged with them: the getter
+     * Solidity generates for a public constant is already `view`, with this
+     * name, no inputs and a uint256 out, so no caller on or off chain can tell
+     * these apart from what they replaced.
+     *
+     * The cost is that an internal read becomes a jump instead of a push.
+     * That is the only edit this branch makes to a contract Base runs, so it is
+     * measured rather than assumed - see docs/rhc/measurements/README.md.
+     */
+    function MIN_BET() public view virtual returns (uint256) {
+        return 1e6; // 1 USDC
+    }
+
+    function MAX_BET() public view virtual returns (uint256) {
+        return 100e6; // 100 USDC, remove after audit
+    }
     uint256 public constant MATCH_TIMEOUT = 5 minutes; // PENDING → refundExpired
     uint256 public constant SETTLE_GRACE = 24 hours; // MATCHED → emergencyRefundMatch
 
@@ -149,7 +169,10 @@ contract OrderbookMarket is ReentrancyGuard, Pausable, PrimaryProdDataServiceCon
     // which naturally resets this), independent of the pool's own global/
     // per-market exposure caps. Bounds the damage from an address repeatedly
     // hitting the LP at a favorable/stale price.
-    uint256 public constant MAX_TRADER_LP_EXPOSURE = 300e6; // 3x MAX_BET
+    /// @dev 3x MAX_BET. Virtual for the same reason MAX_BET is; see there.
+    function MAX_TRADER_LP_EXPOSURE() public view virtual returns (uint256) {
+        return 300e6;
+    }
 
     // ── FEE ────────────────────────────────────────────────
     /// @notice Protocol fee for this market, in bps. Snapshotted from the
@@ -350,8 +373,8 @@ contract OrderbookMarket is ReentrancyGuard, Pausable, PrimaryProdDataServiceCon
         internal
         returns (uint256 orderId)
     {
-        require(amount >= MIN_BET, "below min");
-        require(amount <= MAX_BET, "above max");
+        require(amount >= MIN_BET(), "below min");
+        require(amount <= MAX_BET(), "above max");
         require(referrer != msg.sender, "self referral");
         require(expectedPrice > 0, "expectedPrice zero");
 
@@ -451,7 +474,7 @@ contract OrderbookMarket is ReentrancyGuard, Pausable, PrimaryProdDataServiceCon
         if (o.filledAmount == o.amount) {
             o.status = OrderStatus.MATCHED;
             emit OrderFilled(orderId, o.filledAmount);
-        } else if (o.filledAmount > 0 && (o.amount - o.filledAmount) < MIN_BET) {
+        } else if (o.filledAmount > 0 && (o.amount - o.filledAmount) < MIN_BET()) {
             // Sub-MIN_BET dust on a partially-filled order: refund the dust now.
             uint256 dust = o.amount - o.filledAmount;
             o.unmatchedRefunded = true;
@@ -475,7 +498,8 @@ contract OrderbookMarket is ReentrancyGuard, Pausable, PrimaryProdDataServiceCon
     function _tryLpMatch(uint256 orderId, Order storage o, Direction dir, uint256 currentPrice) internal {
         uint256 remaining = o.amount - o.filledAmount;
         uint256 traderUsed = traderLpExposure[o.trader];
-        uint256 traderRoom = MAX_TRADER_LP_EXPOSURE > traderUsed ? MAX_TRADER_LP_EXPOSURE - traderUsed : 0;
+        uint256 cap = MAX_TRADER_LP_EXPOSURE();
+        uint256 traderRoom = cap > traderUsed ? cap - traderUsed : 0;
         uint256 lpRequest = remaining < traderRoom ? remaining : traderRoom;
         if (lpRequest == 0) return;
 
@@ -834,7 +858,7 @@ contract OrderbookMarket is ReentrancyGuard, Pausable, PrimaryProdDataServiceCon
      */
     uint256 private constant REDSTONE_DECIMALS_TO_WAD = 1e10; // 1e18 / 1e8
 
-    function _getCurrentPrice() internal view returns (uint256) {
+    function _getCurrentPrice() internal view virtual returns (uint256) {
         uint256 price = getOracleNumericValueFromTxMsg(feedId) * REDSTONE_DECIMALS_TO_WAD;
         require(price > 0, "non-positive price");
         return price;
