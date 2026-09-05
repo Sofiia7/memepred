@@ -12,6 +12,7 @@
  *   PHASE=pvp    npx tsx scripts/rhc-live-cycle.mts   # the whole cycle
  *   PHASE=batch  npx tsx scripts/rhc-live-cycle.mts   # marginal settlement gas, live
  *   PHASE=lp     npx tsx scripts/rhc-live-cycle.mts   # fund the LP vault so it can take a side
+ *   PHASE=fee    npx tsx scripts/rhc-live-cycle.mts   # propose a protocol fee, or apply a ripe one
  *
  * Preflight is the default and it signs nothing. It reports every balance and
  * every gate the factory will apply, naming what is missing and by how much,
@@ -537,6 +538,75 @@ LP vault ${LP_VAULT}`)
   console.log(`   LP can now take up to ${eth(after / 10n)} across the protocol, ${eth(after / 20n)} on one market`)
 }
 
+/**
+ * Drive the protocol fee through its timelock.
+ *
+ * `feeBps` is 0, and `FeeAccrued` has never fired on any of the six markets:
+ * with no fee there is nothing to accrue, so the fee split, the distributor and
+ * the LP fee index are all untouched on this chain. Third hole of the same kind
+ * as the refund path and the LP side, and the only way through it is the
+ * governance route, which takes two days by design.
+ *
+ * The route itself is worth exercising for its own sake. This timelock used to
+ * live on the market clone, where it could never be reached - no clone survives
+ * 48 hours, the longest market runs 24 and is replaced at duration/2 - so the
+ * fee was permanently stuck at zero and the mechanism was decorative. It was
+ * moved onto the factory, which is permanent. That fix has never been proven on
+ * a chain, because proving it costs two days of waiting.
+ *
+ * Idempotent: proposes when nothing is pending, applies when the clock has run,
+ * and otherwise reports how long is left. Run it twice, two days apart.
+ *
+ * The value is a test value. What the fee should be on mainnet is a decision
+ * about the product, not something to be settled by a soak script.
+ */
+async function fee() {
+  const ABI = parseAbi([
+    'function feeBps() view returns (uint256)',
+    'function pendingFeeBps() view returns (uint256)',
+    'function feeChangeAvailableAt() view returns (uint256)',
+    'function FEE_MAX() view returns (uint256)',
+    'function proposeNewFee(uint256)',
+    'function applyNewFee()',
+  ])
+  const read = async (fn: 'feeBps' | 'pendingFeeBps' | 'feeChangeAvailableAt' | 'FEE_MAX') =>
+    pub.readContract({ address: FACTORY, abi: ABI, functionName: fn })
+
+  const [current, pending, availableAt, max] = await Promise.all([
+    read('feeBps'), read('pendingFeeBps'), read('feeChangeAvailableAt'), read('FEE_MAX'),
+  ])
+  const want = BigInt(process.env.FEE_BPS ?? '100')
+  const now = BigInt(Math.floor(Date.now() / 1000))
+
+  console.log(`
+factory ${FACTORY}`)
+  console.log(`   feeBps ${current} (max ${max}), pending ${pending}`)
+
+  if (availableAt === 0n) {
+    if (want > max) throw new Error(`FEE_BPS ${want} exceeds FEE_MAX ${max}`)
+    await wait(await A.wallet.writeContract({
+      address: FACTORY, abi: ABI, functionName: 'proposeNewFee', args: [want],
+    }), `proposeNewFee(${want})`)
+    const at = await read('feeChangeAvailableAt')
+    console.log(`   applyNewFee becomes callable at ${new Date(Number(at) * 1000).toISOString()}`)
+    console.log(`   then: PHASE=fee npx tsx scripts/rhc-live-cycle.mts`)
+    return
+  }
+
+  if (now < availableAt) {
+    const left = Number(availableAt - now) / 3600
+    console.log(`   proposal of ${pending} bps is in its timelock, ${left.toFixed(2)} h left`)
+    console.log(`   callable at ${new Date(Number(availableAt) * 1000).toISOString()}`)
+    return
+  }
+
+  await wait(await A.wallet.writeContract({
+    address: FACTORY, abi: ABI, functionName: 'applyNewFee',
+  }), 'applyNewFee')
+  console.log(`   feeBps ${current} -> ${await read('feeBps')}`)
+  console.log(`   markets created from here on carry it; open positions keep the terms they opened under`)
+}
+
 const markets = await preflight()
 
 if (!phase) {
@@ -547,6 +617,8 @@ if (!phase) {
   await grace()
 } else if (phase === 'refund') {
   await refund()
+} else if (phase === 'fee') {
+  await fee()
 } else if (phase === 'lp') {
   await lp()
 } else if (phase === 'unpause') {
