@@ -20,7 +20,7 @@
  *   explicitly and their markets read from getActiveMarkets.
  *
  * Usage:
- *   npx tsx scripts/rhc-bot-harness.ts --bots 8 --duration 48h --tick 20s
+ *   cd backend && npx tsx scripts/rhc-bot-harness.mts --bots 3 --duration 48h --tick 600s
  *
  * Env (from .env.rhc):
  *   MARKET_FACTORY, ORACLE_RESOLVER, USDC_ADDRESS (the stake token)
@@ -28,13 +28,20 @@
  *   PRIVATE_KEY               the faucet: holds the stake token and gas
  *   BOT_MNEMONIC              BIP-39 seed; bots are addresses 0..N-1
  */
+import { config } from 'dotenv'
+import { fileURLToPath } from 'node:url'
+import { resolve } from 'node:path'
+// The soak runs against a profile of its own, so it loads that file rather
+// than the repo-root .env, whose contract addresses point at Base.
+config({ path: resolve(fileURLToPath(new URL('.', import.meta.url)), '../..', process.env.RHC_ENV_FILE ?? '.env.rhc') })
+
 import {
   createPublicClient, createWalletClient, http, parseEther, formatEther,
   type Address, type Hex,
 } from 'viem'
 import { privateKeyToAccount, mnemonicToAccount } from 'viem/accounts'
 import { defineChain } from 'viem'
-import { topUpAmount } from './topUpPlan.js'
+import { topUpAmount } from '../../scripts/topUpPlan.js'
 import { writeFileSync, appendFileSync, mkdirSync, existsSync } from 'node:fs'
 import { dirname } from 'node:path'
 
