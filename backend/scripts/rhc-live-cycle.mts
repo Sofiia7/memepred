@@ -11,6 +11,7 @@
  *   PHASE=refund npx tsx scripts/rhc-live-cycle.mts   # claim it a day later
  *   PHASE=pvp    npx tsx scripts/rhc-live-cycle.mts   # the whole cycle
  *   PHASE=batch  npx tsx scripts/rhc-live-cycle.mts   # marginal settlement gas, live
+ *   PHASE=lp     npx tsx scripts/rhc-live-cycle.mts   # fund the LP vault so it can take a side
  *
  * Preflight is the default and it signs nothing. It reports every balance and
  * every gate the factory will apply, naming what is missing and by how much,
@@ -50,6 +51,7 @@ const pub = createPublicClient({ chain, transport: http(rpc) })
 // ORACLE_RESOLVER at the Base deployment, and a real rhc backend would run with
 // an env file of its own where the plain names are the right ones.
 const FACTORY = (process.env.RHC_MARKET_FACTORY ?? process.env.MARKET_FACTORY) as Address
+const LP_VAULT = process.env.LIQUIDITY_POOL as Address
 const RESOLVER = (process.env.RHC_ORACLE_RESOLVER ?? process.env.ORACLE_RESOLVER) as Address
 const WETH = process.env.RHC_WETH_ADDRESS as Address
 const POOL = process.env.RHC_FIXTURE_POOL as Address
@@ -473,6 +475,68 @@ A got back ${formatEther(after.A - before.A)} WETH`)
 
 // ── MAIN ───────────────────────────────────────────────────
 const phase = process.env.PHASE
+/**
+ * Put assets in the LP vault so it can take the other side of a bet.
+ *
+ * The soak ran nine hours and matched forty-one times, every one of them
+ * trader against trader: `is_lp_match` was false in all of them, because
+ * `LiquidityPool.tryMatch` answers 0 while `totalAssets()` is 0. So layer 2 of
+ * `_tryMatch` - the whole LP side of the protocol - had never executed on this
+ * chain, which is the same shape of hole as the refund path and just as easy to
+ * miss, since nothing errors: the order simply rests on the book instead.
+ *
+ * Sized deliberately small. Exposure is capped at 10% of totalAssets globally
+ * and 5% per market, so 2 WETH allows 0.2 of open LP exposure across the
+ * protocol and 0.1 on any one market - forty and twenty stakes at MIN_BET. That
+ * is enough for the path to run often, and too little for the pool to become
+ * every bot's counterparty and turn the soak into something else.
+ *
+ * Note in passing: `MIN_DEPOSIT` is `50e6`, written as 50 USDC. On an
+ * eighteen-decimal chain that is 0.00000000005 WETH, so the minimum-deposit
+ * gate does not exist here. The inflation attack it partly guarded against is
+ * still covered by `_decimalsOffset() = 6`, which is chain-agnostic, so this is
+ * a constant that stopped meaning anything rather than an open door.
+ */
+async function lp() {
+  if (!LP_VAULT) throw new Error('LIQUIDITY_POOL is not set')
+  const ERC20 = parseAbi([
+    'function balanceOf(address) view returns (uint256)',
+    'function approve(address,uint256) returns (bool)',
+    'function allowance(address,address) view returns (uint256)',
+  ])
+  const VAULT = parseAbi([
+    'function totalAssets() view returns (uint256)',
+    'function deposit(uint256,address) returns (uint256)',
+    'function balanceOf(address) view returns (uint256)',
+  ])
+
+  const amount = parseEther(process.env.LP_DEPOSIT ?? '2')
+  const before = await pub.readContract({ address: LP_VAULT, abi: VAULT, functionName: 'totalAssets' })
+  const held = await pub.readContract({ address: WETH, abi: ERC20, functionName: 'balanceOf', args: [A.account.address] })
+  console.log(`
+LP vault ${LP_VAULT}`)
+  console.log(`   totalAssets ${eth(before)}, depositing ${eth(amount)}`)
+  if (held < amount) throw new Error(`deployer holds ${eth(held)}, needs ${eth(amount)}`)
+
+  const allowed = await pub.readContract({
+    address: WETH, abi: ERC20, functionName: 'allowance', args: [A.account.address, LP_VAULT],
+  })
+  if (allowed < amount) {
+    await wait(await A.wallet.writeContract({
+      address: WETH, abi: ERC20, functionName: 'approve', args: [LP_VAULT, amount],
+    }), 'approve WETH to vault')
+  }
+
+  await wait(await A.wallet.writeContract({
+    address: LP_VAULT, abi: VAULT, functionName: 'deposit', args: [amount, A.account.address],
+  }), 'deposit')
+
+  const after = await pub.readContract({ address: LP_VAULT, abi: VAULT, functionName: 'totalAssets' })
+  const shares = await pub.readContract({ address: LP_VAULT, abi: VAULT, functionName: 'balanceOf', args: [A.account.address] })
+  console.log(`   totalAssets ${eth(before)} -> ${eth(after)}, shares held ${shares}`)
+  console.log(`   LP can now take up to ${eth(after / 10n)} across the protocol, ${eth(after / 20n)} on one market`)
+}
+
 const markets = await preflight()
 
 if (!phase) {
@@ -483,6 +547,8 @@ if (!phase) {
   await grace()
 } else if (phase === 'refund') {
   await refund()
+} else if (phase === 'lp') {
+  await lp()
 } else if (phase === 'unpause') {
   await unpause()
 } else if (phase === 'market') {
