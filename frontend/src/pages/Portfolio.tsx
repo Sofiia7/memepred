@@ -1,4 +1,5 @@
 import { useAccount } from 'wagmi'
+import { CURRENCY_SYMBOL } from '../lib/contracts'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { type Address } from 'viem'
@@ -236,7 +237,7 @@ export function Portfolio() {
       />
       <StatStrip
         items={[
-          { k: 'Volume', v: `$${profile.totalVolume.toFixed(0)}`, u: 'USDC' },
+          { k: 'Volume', v: `$${profile.totalVolume.toFixed(0)}`, u: CURRENCY_SYMBOL },
           { k: 'Streak', v: `🔥 ${profile.currentStreak}`, u: `max ${profile.maxStreak}` },
         ]}
       />

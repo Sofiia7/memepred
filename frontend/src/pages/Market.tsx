@@ -83,8 +83,13 @@ export function Market() {
 
       <StatStrip
         items={[
-          { k: 'UP queue', v: `$${(Number(upDepth) / 1e6).toFixed(2)}`, u: 'USDC', tone: 'up' },
-          { k: 'DOWN queue', v: `$${(Number(downDepth) / 1e6).toFixed(2)}`, u: 'USDC', tone: 'dn' },
+          // getPendingDepth returns the two queues' LENGTHS, not their value:
+          // `return (pendingUpQueue.length, pendingDownQueue.length)`. This
+          // was rendered as `$${length / 1e6} USDC`, so a queue holding three
+          // real orders showed as $0.00 - the number was never money, and
+          // dividing it by a currency's decimals made it neither.
+          { k: 'UP queue', v: Number(upDepth), u: Number(upDepth) === 1 ? 'order' : 'orders', tone: 'up' },
+          { k: 'DOWN queue', v: Number(downDepth), u: Number(downDepth) === 1 ? 'order' : 'orders', tone: 'dn' },
         ]}
       />
 

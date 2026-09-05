@@ -404,3 +404,37 @@ input[type=number]{-moz-appearance:textfield}
 .risk-fine a{color:var(--text-dim);text-decoration:underline;text-underline-offset:2px}
 .risk-accept{background:var(--warn);color:#1a1206}
 .risk-accept:hover{background:#ffc266}
+
+/* ── Pool feed ─────────────────────────────────────────────
+   Only rendered where markets are backed by a pool. A row is deliberately
+   quieter than a market card: this is a browse surface, and most of what it
+   lists cannot be traded yet. */
+.pool-filters{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap}
+.pool-filter{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;
+  padding:5px 10px;border-radius:6px;border:1px solid var(--line);background:var(--surface);
+  color:var(--text-dim);cursor:pointer}
+.pool-filter:hover{border-color:var(--line-2);color:var(--text)}
+.pool-filter.on{border-color:var(--up);color:var(--up);background:var(--up-soft)}
+
+.pool-list{display:flex;flex-direction:column;gap:8px}
+.pool-row{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:11px 13px;
+  backdrop-filter:var(--glass-blur);-webkit-backdrop-filter:var(--glass-blur);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}
+.pool-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
+.pool-sym{font-weight:700;font-size:14px;color:#fff;letter-spacing:-.01em;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pool-status{font-family:var(--mono);font-size:9px;letter-spacing:.14em;text-transform:uppercase;flex:none}
+
+.pool-meta{font-family:var(--mono);font-size:10px;color:var(--text-dim);margin-top:5px;
+  display:flex;flex-wrap:wrap;gap:5px;align-items:center}
+.pool-meta .sep{color:var(--text-faint)}
+
+.pool-markets{display:flex;gap:5px;margin-top:8px;flex-wrap:wrap}
+.pool-dur{font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.08em;
+  padding:3px 7px;border-radius:5px;background:var(--up-soft);color:var(--up)}
+
+/* The reason is the content of the row when there is nothing to trade, so it
+   is set as a sentence rather than squeezed into a chip. */
+.pool-reason{font-size:11px;color:var(--text-faint);margin-top:8px;line-height:1.45}
+
+.pool-note{font-size:11px;color:var(--text-faint);line-height:1.5;margin-top:16px;padding:0 2px}

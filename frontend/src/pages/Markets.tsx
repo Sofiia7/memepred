@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { CURRENCY_SYMBOL } from '../lib/contracts'
 import { useMarkets, type Market } from '../hooks/useMarkets'
 import { useMarketStats, symbolFromStats } from '../hooks/useMarketStats'
 import { ScreenTitle, StatStrip } from '../components/ui/AppShell'
@@ -57,7 +58,7 @@ export function Markets() {
 
       <StatStrip
         items={[
-          { k: '24h Volume', v: volText, u: 'USDC' },
+          { k: '24h Volume', v: volText, u: CURRENCY_SYMBOL },
           { k: 'Active', v: String(symbols.length), u: 'symbols' },
         ]}
       />

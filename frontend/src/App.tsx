@@ -4,6 +4,7 @@ import { checkGeo } from './lib/geocheck'
 import { signalAppReady } from './lib/miniapp'
 import { captureReferralCode } from './lib/referral'
 import { Markets } from './pages/Markets'
+import { Pools } from './pages/Pools'
 import { Market } from './pages/Market'
 import { OrderPage } from './pages/Order'
 import { Leaderboard } from './pages/Leaderboard'
@@ -41,6 +42,7 @@ export function App() {
       <AppShell>
         <Routes>
           <Route path="/" element={<Markets />} />
+          <Route path="/pools" element={<Pools />} />
           <Route path="/market/:address" element={<Market />} />
           <Route path="/order/:address/:orderId" element={<OrderPage />} />
           <Route path="/leaderboard" element={<Leaderboard />} />
