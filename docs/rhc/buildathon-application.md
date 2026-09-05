@@ -64,11 +64,21 @@ globally.
 at settlement are `observe()` TWAPs read straight from the token's Uniswap v3 pool. No feed
 to wait for, no keeper pushing prices, no whitelist of supported assets. Any pool that
 clears an on-chain liquidity gate can have a market, permissionlessly. We measured the
-catch on live Robinhood Chain pools: new v3 pools ship with `observationCardinality = 1`,
-so `observe()` reverts `OLD` and then returns a spot tick rather than a TWAP. Our factory
-calls `increaseObservationCardinalityNext(60)` once per pool (1,352,756 gas, about $6 at
-current congestion pricing), after which a 30-second to 5-minute TWAP is free to read
-forever.
+catch on live Robinhood Chain pools, and it has two halves. New pools ship with
+`observationCardinality = 1` - 288 of the 292 WETH pools created in a day we scanned - so
+`observe()` reverts `OLD`. Growing the ring costs 6,732,246 gas once per pool, after which
+the TWAP is free to read forever.
+
+The second half is the one worth knowing. Uniswap writes at most one observation **per
+second**, not per block, so ring slots buy seconds rather than blocks. On an 82ms chain
+that inverts the intuition: we measured 2.88 seconds of history per slot on live pools,
+which makes 60 slots worth 173 seconds against the 180 a 15-minute market's exit window
+needs, and 60 seconds flat if the pool is trading every second. And a full ring is not the
+same as real history - Uniswap raises `cardinality` to `cardinalityNext` in a single step
+on the first write after payment, so a pool can report 300 slots while holding two seconds
+of prices. Our factory therefore gates on 300 slots **and** on the pool actually answering
+`observe()` for that market's own window, which has a pleasant side effect: a young pool
+earns its 60-second market before it earns its 15-minute one.
 
 **No rounds, and no market schedule.** Our market contract has no close time: a match's
 settlement clock starts when it is matched, not when a window ends. So one contract per
@@ -88,8 +98,10 @@ with 9.5% slippage, "1%, and here is the constant that stops us raising it" is t
 ## Why Robinhood Chain, specifically
 
 - 99.5% of the chain's DEX volume goes through one Uniswap deployment, so a single oracle
-  surface covers the whole market. 138 new v3 pools a day, 75% with liquidity, is a steady
-  supply of markets without us listing anything.
+  surface covers the whole market. Our own 24-hour scan of the v3 factory: **496 pools
+  created, 292 paired with WETH, 169 of those with liquidity** - a steady supply of markets
+  without us listing anything. The median graduated pool holds 1.5 ETH and the launchpad's
+  standard graduation sits at 12.45, which is what our depth gate is calibrated against.
 - The users are here and already in ETH: launchpad curves are ETH-denominated, pools are
   token/ETH, one Telegram bot alone routes $445M a day. Betting in ETH removes the
   bridge-and-swap step that kills conversion.
@@ -107,8 +119,9 @@ flipthememe.com:
 - **Contracts:** EIP-1167 cloned markets, orderbook matching with partial fills,
   TWAP settlement with two independent spread anomaly checks and emergency refunds,
   ERC-4626 LP vault with exposure caps, fee distributor with referral split, badge NFTs.
-  Timelocked fee changes, bounded emergency pause, multisig-gated admin. **276 Foundry
-  tests.**
+  Timelocked fee changes, bounded emergency pause, multisig-gated admin. **338 Foundry
+  tests**, of which 276 are the Base suite and pass unchanged - the Robinhood Chain build
+  is additive, not a fork.
 - **Backend and keeper:** event indexer, market spawner, settlement keeper with nonce
   escalation and a gas budget, an invariant monitor reconciling on-chain balances against
   the database, watchdog with deep health checks. **222 unit tests.**
@@ -124,23 +137,58 @@ our own contract carefully during this buildathon's design work showed the marke
 close time at all, so the rollover was a keeper policy rather than a requirement. Removing
 it is most of the rebuild.
 
+What the soak taught us is worth saying too, because it is the part most projects leave
+out. Running the thing found eight defects that no test had, and every one of them lived in
+code written for Base. The soak harness had been fetching prices from an oracle that was
+replaced months ago and passing an address where a signer was expected, so it had never
+placed a single bet - which is why this protocol had six orders in its entire history and
+not one match carried to payout. The indexer divided amounts by the wrong currency's
+decimals; the invariant monitor did the same and reported a trillion-fold drift; a
+partially filled order never left `PENDING`, so its payout dropped out of the accounting;
+and the watchdog, asking a price gateway for a symbol decoded out of a pool address, paused
+every market on the chain. That last one is the good news inside the bad: the emergency
+stop worked exactly as designed, for the first time on a live chain.
+
 ## What we will ship during the buildathon (Sept 14 - Oct 4)
 
-**Week 1, contracts.** Resolver reads Uniswap v3 `observe()` instead of a push feed;
-markets denominated in WETH with new min and max bet; `createMarket(pool, duration)`
-becomes permissionless behind on-chain gates (min liquidity, cardinality >= 60, allowed fee
-tiers). Measure settlement gas, single and batched, because it sets the minimum bet. Fork
-tests against real Robinhood Chain pools. Deploy to testnet 46630.
+Weeks 1 and 2 are already done, ahead of the window. What follows is what was actually
+built and what is left, not a plan.
 
-**Week 2, services.** Keeper watches the v3 factory's `PoolCreated` over WebSocket, applies
-the gate, enables cardinality, spawns one market per token. Rollover and price-push loops
-are deleted. Indexer derives symbols from pool tokens. Frontend: 18-decimal ETH, a live
-feed of graduating pools. A 48-hour bot-driven soak on 46630.
+**Week 1, contracts - done.** `PoolOracleResolver` reads Uniswap v3 `observe()` instead of
+a push feed. `PoolOrderbookMarket` stakes WETH, and its minimum bet is derived rather than
+chosen: the protocol may take at most 1% of a pot that is twice one stake, settlement costs
+137,926 gas of marginal work per match measured on chain, so break-even is 50x the gas
+price and the floor lands at 0.005 ETH. `createMarket(pool, duration)` is permissionless
+behind on-chain gates, one test per gate. Deployed to testnet 46630.
+
+The one thing we could not do as planned: **fork tests against real pools are impossible on
+the public RPC**, which keeps 8.4 minutes of state - we binary-searched it. What stands in
+their place is a pool mock that integrates the tick over time and reverts `OLD` at the ring
+boundary, plus our vendored `TickMath` checked against **224 `(tick, sqrtPriceX96)` pairs
+read off live mainnet pools** - pairs that Uniswap's own deployed code produced, so
+agreement is evidence rather than self-consistency.
+
+**Week 2, services - done.** The keeper watches `PoolCreated` by polling rather than over a
+websocket, and that turned out to be the better fit: the watcher needs a durable cursor
+either way, and once it has one a subscription only saves latency it does not need, since a
+pool is not tradeable the second it exists. The rollover and price-push loops do not start
+on this profile at all. On chain, unaided:
+
+    [poolWatcher] 1 new WETH pools
+    [poolWatcher] 0xc916... READY: depth 50.000 ETH, cardinality 300
+    [poolWatcher] 0xc916... created 60s market
+    [poolWatcher] 0xc916... created 300s market
+    [poolWatcher] 0xc916... created 900s market
+
+The soak is running now. Bets, partial fills, matches, settlements, claims and refunds have
+all happened on chain, and the invariant monitor reconciles the contracts' balances against
+the database to **zero drift**.
 
 **Week 3, mainnet and submission.** Deploy to chain 4663 with a 0.04 ETH per-bet cap (the
 same "small money until audited" posture we run today), propose the 1% fee early enough for
 the 48-hour timelock to mature before submission, watchdog on the new endpoints, demo
-video, submission.
+video, submission. The deploy script refuses to run against 4663 without handing every role
+to the multisig, so the testnet convenience cannot become a launch mistake.
 
 ## Track
 
@@ -157,7 +205,9 @@ codebase, tests and ops above are the output of that setup over six months.
 - Keeper and health status: https://api.flipthememe.com/api/keeper/health
 - Repository: https://github.com/Sofiia7/memepred (private today, access on request /
   will be opened for judging)
-- Design note written for this buildathon: `docs/robinhood-chain-pivot.md`
+- Design note: `docs/rhc/pivot-design.md`; specification: `docs/rhc/TZ.md`
+- Every number above, with its method and raw data: `docs/rhc/measurements/`
+- Deployed addresses on testnet 46630: `docs/rhc/DEPLOYMENTS.md`
 
 ## What the prize and the Founder House would be used for
 
@@ -168,9 +218,14 @@ and settlement path so the cap can come off.
 ## Risks we state plainly
 
 Thin memecoin pools can be moved inside a short TWAP window. We mitigate with
-cardinality-60 TWAPs rather than spot, spread-anomaly refunds, LP exposure caps, and a
-per-market open-interest cap tied to the pool's own liquidity, and we say so in the UI.
+300-slot TWAPs rather than spot, spread-anomaly refunds, LP exposure caps, and a per-market
+open-interest cap tied to the pool's own liquidity, and we say so in the UI - in the
+blocking disclosure a user has to acknowledge before their first bet, not in a footnote.
 Uniswap v4 pools hold most of the chain's volume and expose no oracle, because a pool's
 hook is fixed at creation and the incumbent launchpad's hook records no observations; v3
-is phase one and v4 needs either a launchpad-side hook or a keeper-computed TWAP. Settlement
-gas on this chain is not yet measured and sets the minimum viable bet.
+is phase one and v4 needs either a launchpad-side hook or a keeper-computed TWAP.
+
+Settlement gas is now measured and it is less forgiving than we assumed: batching removes
+19%, not the several-fold we had expected, because the cost is per-match storage writes.
+That sets a $12 minimum bet at today's gas, and Robinhood's gas subsidy ends in late
+September - during this buildathon - which is the one known event that moves it.

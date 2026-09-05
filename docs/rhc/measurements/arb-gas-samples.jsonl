@@ -1905,3 +1905,4 @@
 {"t":"2026-09-05T20:26:44.394Z","block":55405394,"perL2Tx":"0","perL1CalldataByte":"0","perStorageAllocation":"8232960000000","perArbGasBase":"20000000","perArbGasCongestion":"391648000","perArbGasTotal":"411648000"}
 {"t":"2026-09-05T20:27:45.208Z","block":55405990,"perL2Tx":"0","perL1CalldataByte":"0","perStorageAllocation":"11569880000000","perArbGasBase":"20000000","perArbGasCongestion":"558494000","perArbGasTotal":"578494000"}
 {"t":"2026-09-05T20:28:45.917Z","block":55406587,"perL2Tx":"0","perL1CalldataByte":"0","perStorageAllocation":"10530560000000","perArbGasBase":"20000000","perArbGasCongestion":"506528000","perArbGasTotal":"526528000"}
+{"t":"2026-09-05T20:29:46.215Z","block":55407186,"perL2Tx":"0","perL1CalldataByte":"0","perStorageAllocation":"8047200000000","perArbGasBase":"20000000","perArbGasCongestion":"382360000","perArbGasTotal":"402360000"}
