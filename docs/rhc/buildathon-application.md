@@ -85,9 +85,12 @@ settlement clock starts when it is matched, not when a window ends. So one contr
 token lives indefinitely, created once, and a trader never waits for the next round. This
 also removes the entire recurring cost: there is no rollover to pay for and no price to
 push. The only variable expense left is settlement gas, which is proportional to matches,
-which is proportional to revenue. On a chain where execution gas is ~1.8 gwei and rising
-with congestion, moving cost from the calendar to the trade is the difference between a
-business and a burn.
+which is proportional to revenue. Execution gas here is priced by congestion and has to be
+read from the `ArbGasInfo` precompile rather than `eth_gasPrice` - the latter under-reports
+by about four times, which we found by measuring both. Over a 24-hour sample of 1,900
+points the real price sat at a p50 of 0.398 gwei and a p90 of 0.453, with rare four-minute
+spikes to 3.06 and no daily cycle at all. Moving cost from the calendar to the trade is the
+difference between a business and a burn.
 
 **Fees you can verify.** The protocol fee is capped at 1% of the pot by a contract
 constant, taken only on settlement, changeable only through a 48-hour timelock that emits
@@ -124,7 +127,7 @@ flipthememe.com:
   is additive, not a fork.
 - **Backend and keeper:** event indexer, market spawner, settlement keeper with nonce
   escalation and a gas budget, an invariant monitor reconciling on-chain balances against
-  the database, watchdog with deep health checks. **222 unit tests.**
+  the database, watchdog with deep health checks. **253 unit tests.**
 - **Frontend:** React, wagmi, viem, mobile-first, Coinbase Smart Wallet and MetaMask.
 - **Ops:** dockerised stack on a VPS behind a Cloudflare Worker edge (geo-block with an
   OFAC layer), external cron watchdog, Telegram alerting, database backups, dependency
