@@ -1,6 +1,6 @@
 import { CHAIN_PROFILE } from '../chainProfile.js'
 /**
- * oracleWatchdog — Sprint 2.5 + 2.6
+ * oracleWatchdog - Sprint 2.5 + 2.6
  *
  * Responsibilities, one loop:
  *
@@ -34,6 +34,7 @@ import {
 import { privateKeyToAccount } from 'viem/accounts'
 import { CONTRACTS, SUPPORTED_FEED_IDS } from '../config.js'
 import { fetchPayload, bytes32ToFeedId, GatewayUnreachableError } from '../lib/redstone.js'
+import { POOL_MARKET_FACTORY_ABI } from '../lib/poolFactoryAbi.js'
 import { nextFailStreak, isSystemicOutage, STALE_FAIL_LIMIT, type FeedPing } from './feedStreak.js'
 import { redis } from '../db/redis.js'
 import { pg } from '../db/pg.js'
@@ -41,7 +42,7 @@ import { getKeeperWalletClient, escalationState } from './keeperWallet.js'
 import { gasGuard } from './gasGuardInstance.js'
 
 const REDIS_KEY = 'watchdog:state'
-const REDIS_TTL_SEC = 300 // state expires if keeper dies — surfaces as stale
+const REDIS_TTL_SEC = 300 // state expires if keeper dies - surfaces as stale
 
 const chain = CHAIN_PROFILE.chain
 const publicClient = createPublicClient({
@@ -78,7 +79,7 @@ const KEEPER_ETH_WARN_WEI = BigInt(process.env.KEEPER_ETH_WARN_WEI ?? '300000000
 const KEEPER_ETH_CRIT_WEI = BigInt(process.env.KEEPER_ETH_CRIT_WEI ?? '500000000000000')
 /** Page (treat as critical) below this. Default: 0.005 ETH. */
 const ETH_CRIT_WEI    = BigInt(process.env.RESOLVER_ETH_CRIT_WEI    ?? '5000000000000000')
-/** Per-feed cool-down after pausing — don't spam pause txs. */
+/** Per-feed cool-down after pausing - don't spam pause txs. */
 const PAUSE_COOLDOWN_MS = Number(process.env.PAUSE_COOLDOWN_MS ?? String(15 * 60_000))
 
 const MARKET_FACTORY_ABI = [
@@ -116,7 +117,7 @@ const MARKET_FACTORY_ABI = [
 const failStreak  = new Map<string, number>()
 const lastPauseAt = new Map<string, number>()
 
-/** Last snapshot — exposed so /api/keeper/health can surface it. */
+/** Last snapshot - exposed so /api/keeper/health can surface it. */
 export const watchdogState = {
   resolverEthWei: 0n,
   resolverEthAlert: 'unknown' as 'ok' | 'warn' | 'critical' | 'unknown',
@@ -208,9 +209,9 @@ export async function oracleWatchdogTick() {
   }
 }
 
-// ── 2.5 — Resolver ETH balance ────────────────────────────────
+// ── 2.5 - Resolver ETH balance ────────────────────────────────
 /**
- * The keeper EOA's own balance — the thing that actually pays for every
+ * The keeper EOA's own balance - the thing that actually pays for every
  * settlement, market rollover and price push.
  *
  * Nothing watched it before. On 2026-07-26 the wallet fell 12 gwei short of its
@@ -231,7 +232,7 @@ async function checkKeeperEthBalance() {
 
     if (bal < KEEPER_ETH_CRIT_WEI) {
       watchdogState.keeperEthAlert = 'critical'
-      console.error(`[watchdog] CRITICAL: keeper wallet ${account.address} = ${formatEther(bal)} ETH — settlements, market creation and price pushes are all failing`)
+      console.error(`[watchdog] CRITICAL: keeper wallet ${account.address} = ${formatEther(bal)} ETH - settlements, market creation and price pushes are all failing`)
     } else if (bal < KEEPER_ETH_WARN_WEI) {
       watchdogState.keeperEthAlert = 'warn'
       console.warn(`[watchdog] WARN: keeper wallet ${account.address} = ${formatEther(bal)} ETH`)
@@ -267,7 +268,7 @@ async function checkResolverEthBalance() {
   }
 }
 
-// ── 2.6 — Stale-oracle auto-pause ─────────────────────────────
+// ── 2.6 - Stale-oracle auto-pause ─────────────────────────────
 async function checkFeedsAndAutoPause() {
   if (!CONTRACTS.MARKET_FACTORY) return
 
@@ -368,7 +369,7 @@ async function maybePauseFeed(feedId: string, streak: number) {
 
   const wallet = getKeeperWalletClient()
   if (!wallet) {
-    console.warn(`[watchdog] feed ${feedId} stale x${streak} but KEEPER_PRIVATE_KEY not set — cannot pause`)
+    console.warn(`[watchdog] feed ${feedId} stale x${streak} but KEEPER_PRIVATE_KEY not set - cannot pause`)
     return
   }
 

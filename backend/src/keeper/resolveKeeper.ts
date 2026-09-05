@@ -1,6 +1,6 @@
 import { CHAIN_PROFILE } from '../chainProfile.js'
 /**
- * resolveKeeper — Sprint 2.1
+ * resolveKeeper - Sprint 2.1
  *
  * Walks OPEN markets and batch-settles their ready matches via
  * OracleResolver.resolveOrderbookMarketBatchFrom, capping per-tx settlements so
@@ -88,12 +88,12 @@ const MAX_LOOPS   = Number(process.env.RESOLVE_MAX_LOOPS  ?? '8')
 /**
  * Markets that have at least one match actually ready to settle.
  *
- * Sprint 5.6 — was `WHERE status = 'OPEN'`, which could never settle anything.
+ * Sprint 5.6 - was `WHERE status = 'OPEN'`, which could never settle anything.
  *
  * A market's close_time is open_time + duration: the point after which it
  * stops accepting new bets. A match's settle_at is matched_at + duration.
  * Since every match is created after its market opened, settle_at is ALWAYS
- * later than close_time — by exactly however long the market had been open
+ * later than close_time - by exactly however long the market had been open
  * when the match formed. Meanwhile marketCreator.closeExpiredMarkets() flips
  * the row to 'CLOSED' at close_time. So by the time any match became ready,
  * its market had already left the set this query returned, and the keeper
@@ -101,13 +101,13 @@ const MAX_LOOPS   = Number(process.env.RESOLVE_MAX_LOOPS  ?? '8')
  * could only be emergency-refunded.
  *
  * Confirmed on-chain 2026-07-25: market opened 18:00:42, closed 18:05:42,
- * its only match matched at 18:02:48 and was due at 18:07:48 — two minutes
+ * its only match matched at 18:02:48 and was due at 18:07:48 - two minutes
  * after the market stopped being 'OPEN'.
  *
  * The correct predicate has nothing to do with whether a market still takes
  * bets: settle the markets that own an unsettled, due match. The upper bound
  * skips matches already past SETTLE_GRACE, where the contract reverts with
- * "settlement window expired" — those are refundExpired's job, and retrying
+ * "settlement window expired" - those are refundExpired's job, and retrying
  * them would burn gas forever.
  */
 const SETTLE_GRACE_HOURS = Number(process.env.SETTLE_GRACE_HOURS ?? '24')
@@ -164,7 +164,7 @@ export async function settlePendingMarkets() {
   const markets = await pendingMarkets()
   for (const market of markets) {
     try {
-      // Skim once before doing any tx work — avoid paying RPC for nothing.
+      // Skim once before doing any tx work - avoid paying RPC for nothing.
       const initialReady = await publicClient.readContract({
         address: market, abi: MARKET_VIEW_ABI,
         functionName: 'getReadySettlements',
@@ -195,24 +195,29 @@ export async function settlePendingMarkets() {
         })
         if (ready.length === 0) break
 
-        const payload = await fetchOraclePayload(feedId as `0x${string}`)
-        const settleCallData = withPayload(
-          canPaginate
-            ? encodeFunctionData({
-                abi:          ORACLE_RESOLVER_BATCH_ABI,
-                functionName: 'resolveOrderbookMarketBatchFrom',
-                args:         [market, offset, BigInt(MAX_PER_TX)],
-              })
-            : encodeFunctionData({
-                abi:          ORACLE_RESOLVER_BATCH_ABI,
-                functionName: 'resolveOrderbookMarketBatch',
-                args:         [market, BigInt(MAX_PER_TX)],
-              }),
-          payload,
-        )
+        const encoded = canPaginate
+          ? encodeFunctionData({
+              abi:          ORACLE_RESOLVER_BATCH_ABI,
+              functionName: 'resolveOrderbookMarketBatchFrom',
+              args:         [market, offset, BigInt(MAX_PER_TX)],
+            })
+          : encodeFunctionData({
+              abi:          ORACLE_RESOLVER_BATCH_ABI,
+              functionName: 'resolveOrderbookMarketBatch',
+              args:         [market, BigInt(MAX_PER_TX)],
+            })
+
+        // PoolOracleResolver reads the pool itself, so there is no payload to
+        // append - and fetching one would fail first anyway: feedId is a pool
+        // address there, and fetchOraclePayload decodes it as UTF-8 to get a
+        // RedStone symbol, which would ask the gateway for a feed made of
+        // address bytes.
+        const settleCallData = CHAIN_PROFILE.oraclePayloadInCalldata
+          ? withPayload(encoded, await fetchOraclePayload(feedId as `0x${string}`))
+          : encoded
 
         // Simulate first. Gas is pinned at 1.8M below, so a revert burns the
-        // entire 1.8M — and this loop runs every 60s and retries MAX_LOOPS
+        // entire 1.8M - and this loop runs every 60s and retries MAX_LOOPS
         // times, because `ready` is still non-empty after a failed settle.
         // That turns one recurring revert into ~14.4M wasted gas per minute,
         // indefinitely. Measured on Sepolia at ~0.0044 ETH/hour before this
@@ -222,7 +227,7 @@ export async function settlePendingMarkets() {
         // benign revert here, so a failed simulation genuinely means "don't
         // send". The common real cause is a young deployment whose
         // OracleResolver.priceHistory has too few points for _getTWAP to cover
-        // the window — legitimate, transient, and exactly what should not cost
+        // the window - legitimate, transient, and exactly what should not cost
         // 1.8M gas a minute to rediscover.
         let wouldSettle: bigint
         try {
@@ -293,7 +298,7 @@ export async function settlePendingMarkets() {
         const receipt = await publicClient.waitForTransactionReceipt({ hash })
         await recordReceipt(receipt, 'critical')
 
-        // waitForTransactionReceipt resolves for reverted transactions too —
+        // waitForTransactionReceipt resolves for reverted transactions too -
         // it waits for inclusion, not for success. Without this check the loop
         // logged "settled N" for a transaction that settled nothing, then
         // retried it MAX_LOOPS times.

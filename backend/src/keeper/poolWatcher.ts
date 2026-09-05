@@ -33,6 +33,7 @@ import { CONTRACTS } from '../config.js'
 import { getKeeperWalletClient, sendKeeperTx } from './keeperWallet.js'
 import { gasGuard, recordReceipt } from './gasGuardInstance.js'
 import { decidePool, formatEth, type AdmissionPolicy, type PoolObservation } from './poolAdmission.js'
+import { POOL_MARKET_FACTORY_ABI } from '../lib/poolFactoryAbi.js'
 
 const STREAM = 'rhc:pool_created'
 
@@ -57,21 +58,6 @@ const ERC20_ABI = [
   { name: 'symbol', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'string' }] },
 ] as const
 
-export const POOL_MARKET_FACTORY_ABI = [
-  { name: 'createMarket', type: 'function', stateMutability: 'nonpayable',
-    inputs: [{ name: 'pool', type: 'address' }, { name: 'duration', type: 'uint256' }],
-    outputs: [{ name: 'market', type: 'address' }] },
-  { name: 'wethDepth', type: 'function', stateMutability: 'view',
-    inputs: [{ name: 'pool', type: 'address' }], outputs: [{ type: 'uint256' }] },
-  { name: 'canServeWindow', type: 'function', stateMutability: 'view',
-    inputs: [{ name: 'pool', type: 'address' }, { name: 'window', type: 'uint256' }], outputs: [{ type: 'bool' }] },
-  { name: 'twapWindowFor', type: 'function', stateMutability: 'pure',
-    inputs: [{ name: 'duration', type: 'uint256' }], outputs: [{ type: 'uint256' }] },
-  { name: 'feedIdFor', type: 'function', stateMutability: 'pure',
-    inputs: [{ name: 'pool', type: 'address' }], outputs: [{ type: 'bytes32' }] },
-  { name: 'getActiveMarkets', type: 'function', stateMutability: 'view',
-    inputs: [{ name: 'feedId', type: 'bytes32' }], outputs: [{ type: 'address[]' }] },
-] as const
 
 const client = createPublicClient({ chain: CHAIN_PROFILE.chain, transport: http(CHAIN_PROFILE.rpcUrl) })
 

@@ -10,6 +10,7 @@ describe('resolveChainProfile', () => {
     expect(p.rollsOverMarkets).toBe(true)
     expect(p.watchesPools).toBe(false)
     expect(p.usesArbGasInfo).toBe(false)
+    expect(p.oraclePayloadInCalldata).toBe(true)
   })
 
   it('describes rhc as the chain measurements say it behaves', () => {
@@ -24,6 +25,10 @@ describe('resolveChainProfile', () => {
     expect(p.watchesPools).toBe(true)
     // eth_gasPrice under-reports by ~4x here; ArbGasInfo is the real price.
     expect(p.usesArbGasInfo).toBe(true)
+    // No signed payload on the calldata, which is what lets placeBet be an
+    // ordinary transaction - and what stops the watchdog asking a RedStone
+    // gateway for a symbol decoded out of a pool address.
+    expect(p.oraclePayloadInCalldata).toBe(false)
   })
 
   it('accepts surrounding whitespace and any casing', () => {

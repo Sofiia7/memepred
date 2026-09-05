@@ -79,6 +79,19 @@ export interface ChainProfile {
   rollsOverMarkets: boolean
 
   /**
+   * Whether a price rides on the calldata of every call that needs one.
+   *
+   * True on base: a RedStone payload is appended to placeBet, recordPrice and
+   * every settlement, which is why none of those can be an ordinary
+   * writeContract. False on rhc, where the resolver reads the pool itself.
+   *
+   * Separate from pushesPricesOnChain even though the two agree today: one is
+   * about a keeper loop, the other about how any call is encoded, and a future
+   * pull oracle that needs no recorder would tell them apart.
+   */
+  oraclePayloadInCalldata: boolean
+
+  /**
    * Whether the keeper watches PoolCreated and onboards pools itself.
    * The rhc counterpart to a multisig-managed feed whitelist.
    */
@@ -114,6 +127,7 @@ const BASE_PROFILE: ChainProfile = {
   currencyDecimals: 6,
   currencySymbol: 'USDC',
   pushesPricesOnChain: true,
+  oraclePayloadInCalldata: true,
   rollsOverMarkets: true,
   watchesPools: false,
   usesArbGasInfo: false,
@@ -131,6 +145,7 @@ const RHC_PROFILE: ChainProfile = {
   currencyDecimals: 18,
   currencySymbol: 'WETH',
   pushesPricesOnChain: false,
+  oraclePayloadInCalldata: false,
   rollsOverMarkets: false,
   watchesPools: true,
   usesArbGasInfo: true,
