@@ -2,7 +2,7 @@ import { CHAIN_PROFILE } from '../chainProfile.js'
 import { bytes32ToFeedId } from '../lib/redstone.js'
 import { poolTotals } from './poolTotals.js'
 /**
- * indexer — Sprint 3.2
+ * indexer - Sprint 3.2
  *
  * Reads OrderbookMarket / MarketFactory / ReferralRegistry events from the
  * RPC and projects them into the orderbook DB schema (orders / matches /
@@ -85,7 +85,7 @@ async function markIngested(tx: string, logIndex: number): Promise<boolean> {
  *
  * This used to be `status IN ('OPEN','RESOLVED')`, which was wrong twice over.
  * Nothing in the backend has ever written 'RESOLVED' (grep it), so the filter
- * was really just `status = 'OPEN'` — and marketCreator.closeExpiredMarkets()
+ * was really just `status = 'OPEN'` - and marketCreator.closeExpiredMarkets()
  * flips a market to 'CLOSED' the moment close_time passes. But a match settles
  * at matchedAt + duration, which is always AFTER close_time, so MatchSettled,
  * Claimed and OrderRefunded all fire once the market has already dropped out of
@@ -98,7 +98,7 @@ async function markIngested(tx: string, logIndex: number): Promise<boolean> {
  * settleAt) + SETTLE_GRACE (24h, after which only emergencyRefundMatch works).
  * An hour of slack absorbs clock skew and a late keeper. Orders that are still
  * holding money are included regardless of age, because Claimed has no deadline
- * at all — a user can come back a year later.
+ * at all - a user can come back a year later.
  */
 async function activeMarkets(): Promise<Address[]> {
   const r = await pg.query(`
@@ -287,14 +287,14 @@ async function indexMarketEvents(toBlock: bigint) {
   for (let start = from; start <= toBlock; start += CHUNK) {
     const end = start + CHUNK - 1n > toBlock ? toBlock : start + CHUNK - 1n
 
-    // Sprint 5.6: was seven separate getLogs calls in a Promise.all — same
+    // Sprint 5.6: was seven separate getLogs calls in a Promise.all - same
     // address set, same block range, differing only in topic0. Collapsed into
     // one request with an array of events, which the node answers as a single
     // topic0-OR filter.
     //
     // This is the dominant RPC cost of the whole system: the indexer ticks
     // every 45s, so seven calls was ~17k eth_getLogs/day ≈ 38.9M Alchemy CU a
-    // month — just over the 30M free tier, for data that fits in one query.
+    // month - just over the 30M free tier, for data that fits in one query.
     // Batched it's ~5.5k/day and the free tier covers it several times over.
     // It also removed the `over rate limit` errors the public node was
     // returning, since seven parallel calls hit the per-second cap directly.
@@ -323,7 +323,7 @@ async function indexMarketEvents(toBlock: bigint) {
         : Number(a.blockNumber! - b.blockNumber!))
 
     // Partition by event name. Order within each bucket is preserved from the
-    // node's response, which is block- then log-index-ordered — the same
+    // node's response, which is block- then log-index-ordered - the same
     // ordering the per-event calls produced, so downstream handling is
     // unchanged.
     const byName = (n: string) => all.filter((l) => (l as any).eventName === n)
