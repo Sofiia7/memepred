@@ -7,7 +7,7 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "../src/PoolOrderbookMarket.sol";
 import "../src/PoolMarketFactory.sol";
 import "../src/PoolOracleResolver.sol";
-import "../src/LiquidityPool.sol";
+import "../src/PoolLiquidityPool.sol";
 import "../src/GenesisNFT.sol";
 import "../src/FeeDistributor.sol";
 import "../src/ReferralRegistry.sol";
@@ -106,7 +106,13 @@ contract DeployRhc is Script {
         ReferralRegistry referralReg = new ReferralRegistry();
         PoolOracleResolver resolver = new PoolOracleResolver(e.weth);
         GenesisNFT genesisNFT = new GenesisNFT("ipfs://bafybeiez6a6hshxe22lkwhvbpjuiiw5ml4gup3sb2spc6nufiflrxbmcjm/");
-        LiquidityPool liquidityPool = new LiquidityPool(IERC20(e.weth), address(genesisNFT));
+        // PoolLiquidityPool, not LiquidityPool. The only difference is
+        // MIN_DEPOSIT: upstream it is 50e6, meant as fifty USDC, which on an
+        // eighteen-decimal stake token is 0.00000000005 and no floor at all.
+        // That floor is the entire price of the twenty Genesis NFTs, each worth
+        // 1.5x fee weight forever - without it they cost a gwei for the set.
+        // See PoolLiquidityPool.t.sol, which runs the sweep on both.
+        PoolLiquidityPool liquidityPool = new PoolLiquidityPool(IERC20(e.weth), address(genesisNFT));
         PoolMarketFactory factory = new PoolMarketFactory(
             e.weth,
             e.v3Factory,
@@ -125,7 +131,7 @@ contract DeployRhc is Script {
         console.log("FeeDistributor:", address(feeDistrib));
         console.log("ReferralRegistry:", address(referralReg));
         console.log("GenesisNFT:", address(genesisNFT));
-        console.log("LiquidityPool:", address(liquidityPool));
+        console.log("PoolLiquidityPool:", address(liquidityPool));
         console.log("BadgeNFT:", address(badges));
 
         // ── 2. Wire (while the deployer is still owner) ──────

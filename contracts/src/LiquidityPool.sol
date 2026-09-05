@@ -39,7 +39,6 @@ contract LiquidityPool is ERC4626, ReentrancyGuard, Pausable, Ownable {
     using Math for uint256;
 
     // ── CONSTANTS ──────────────────────────────────────────
-    uint256 public constant MIN_DEPOSIT = 50e6; // 50 USDC
     uint256 public constant GENESIS_MAX = 20;
     uint256 public constant GENESIS_BOOST_BPS = 15_000; // 1.5x
     uint256 public constant GLOBAL_MAX_EXPOSURE_BPS = 1_000; // 10% of totalAssets()
@@ -113,6 +112,32 @@ contract LiquidityPool is ERC4626, ReentrancyGuard, Pausable, Ownable {
         Ownable(msg.sender)
     {
         genesisNFT = GenesisNFT(_genesisNFT);
+    }
+
+    /**
+     * @notice Smallest deposit the vault accepts, in the stake token's units.
+     *
+     * @dev    A function rather than a constant so a chain whose stake token is
+     *         not six-decimal USDC can state its own floor. `50e6` reads as
+     *         fifty dollars and is fifty dollars on Base; on an eighteen-decimal
+     *         token it is 0.00000000005 of it, which is no floor at all.
+     *
+     *         That matters here more than a dust deposit usually would.
+     *         `deposit` mints one of the twenty Genesis NFTs to `receiver` on
+     *         their first deposit, and a Genesis LP carries GENESIS_BOOST_BPS -
+     *         1.5x fee weight - permanently. The minimum is what makes claiming
+     *         all twenty cost 1,000 USDC instead of nothing, so wherever it
+     *         rounds to dust one actor can take every Genesis NFT with twenty
+     *         throwaway addresses, then deposit real capital into them and earn
+     *         1.5x on it forever, diluting every honest LP for the life of the
+     *         vault.
+     *
+     *         `view` and not `pure` so the external signature is unchanged from
+     *         the public constant this replaces: MIN_DEPOSIT() returning
+     *         uint256, same selector, same ABI.
+     */
+    function MIN_DEPOSIT() public view virtual returns (uint256) {
+        return 50e6; // 50 USDC
     }
 
     // ── ERC4626 OVERRIDES ──────────────────────────────────
@@ -239,7 +264,7 @@ contract LiquidityPool is ERC4626, ReentrancyGuard, Pausable, Ownable {
         whenNotPaused
         returns (uint256 shares)
     {
-        require(assets >= MIN_DEPOSIT, "below min deposit");
+        require(assets >= MIN_DEPOSIT(), "below min deposit");
 
         bool firstTime = !hasBeenLP[receiver];
         bool getGenesis = firstTime && genesisCount < GENESIS_MAX;
@@ -266,7 +291,7 @@ contract LiquidityPool is ERC4626, ReentrancyGuard, Pausable, Ownable {
         returns (uint256 assets)
     {
         assets = previewMint(shares);
-        require(assets >= MIN_DEPOSIT, "below min deposit");
+        require(assets >= MIN_DEPOSIT(), "below min deposit");
 
         bool firstTime = !hasBeenLP[receiver];
         bool getGenesis = firstTime && genesisCount < GENESIS_MAX;
