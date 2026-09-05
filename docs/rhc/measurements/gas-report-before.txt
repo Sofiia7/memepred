@@ -1,0 +1,843 @@
+No files changed, compilation skipped
+
+Ran 21 tests for test/LaunchBlockers.t.sol:LaunchBlockersTest
+[PASS] test_Factory_KnowsWhichMarketsItMade() (gas: 406874)
+[PASS] test_Fee_CannotApplyEarly() (gas: 109562)
+[PASS] test_Fee_DoesNotChangeUnderAnAlreadyOpenMarket() (gas: 524602)
+[PASS] test_Fee_OnlyOwnerCanPropose() (gas: 34347)
+[PASS] test_Fee_ReachesMarketsCreatedAfterIt() (gas: 539536)
+[PASS] test_Fee_StillCappedAtOnePercent() (gas: 37304)
+[PASS] test_Fee_TimelockLivesLongEnoughToApply() (gas: 130514)
+[PASS] test_Multisig_CanMoveToASafe() (gas: 52851)
+[PASS] test_Multisig_CannotBeZeroed() (gas: 31960)
+[PASS] test_Multisig_NewMarketsAnswerToTheNewAdmin() (gas: 482994)
+[PASS] test_Multisig_NewMarketsIgnoreTheOldAdmin() (gas: 456710)
+[PASS] test_Multisig_OnlyOwnerCanMoveIt() (gas: 34782)
+[PASS] test_Pause_IsScopedToTheBadFeed() (gas: 443943)
+[PASS] test_Pause_OwnerCanResumeTheFeed() (gas: 464879)
+[PASS] test_Pause_StopsTheKeeperFromRollingAFreshMarket() (gas: 91476)
+[PASS] test_Pause_SurvivesTheNextKeeperTick() (gas: 508220)
+[PASS] test_Pause_TheKeeperCanTripItButNotClearIt() (gas: 99385)
+[PASS] test_Pool_RefusesAMarketTheFactoryDidNotMake() (gas: 4325119)
+[PASS] test_Pool_RefusesEvenWhenTheOwnerAsks() (gas: 47850)
+[PASS] test_Pool_RefusesToAuthorizeAnEOA() (gas: 42453)
+[PASS] test_Pool_StillAuthorizesRealMarkets() (gas: 399061)
+Suite result: ok. 21 passed; 0 failed; 0 skipped; finished in 52.63ms (16.76ms CPU time)
+
+Ran 13 tests for test/GenesisNFT.t.sol:GenesisNFTTest
+[PASS] test_Mint_NotifiesPoolHook() (gas: 195095)
+[PASS] test_Mint_OnlyPool() (gas: 36518)
+[PASS] test_Mint_Reverts_AfterMaxSupply() (gas: 2323211)
+[PASS] test_Mint_Success() (gas: 195302)
+[PASS] test_SetBaseURI_OnlyOwner() (gas: 34661)
+[PASS] test_SetBaseURI_UpdatesTokenURI() (gas: 215884)
+[PASS] test_SetLiquidityPool_IsOneShot() (gas: 41367)
+[PASS] test_SetLiquidityPool_OnlyOwner() (gas: 36207)
+[PASS] test_SetLiquidityPool_RejectsZero() (gas: 1421691)
+[PASS] test_TokenURI_ConcatenatesBaseURIAndId() (gas: 185465)
+[PASS] test_TokenURI_Reverts_NonexistentToken() (gas: 12677)
+[PASS] test_Transfer_NotifiesPoolHook() (gas: 269066)
+[PASS] test_Transfer_SucceedsEvenIfPoolHookReverts() (gas: 268931)
+Suite result: ok. 13 passed; 0 failed; 0 skipped; finished in 55.58ms (24.18ms CPU time)
+
+Ran 8 tests for test/RedstoneOracle.t.sol:RedstoneOracleTest
+[PASS] test_AcceptsPayloadInsideTheWindow() (gas: 35104)
+[PASS] test_PriceIsEightDecimals() (gas: 35114)
+[PASS] test_ReadsLiveDogePrice() (gas: 35146)
+[PASS] test_ReadsLivePepePrice() (gas: 35049)
+[PASS] test_RejectsCallWithNoPayload() (gas: 10001)
+[PASS] test_RejectsPayloadForADifferentFeed() (gas: 31858)
+[PASS] test_RejectsStalePayload() (gas: 34858)
+[PASS] test_ThresholdIsThreeOfFive() (gas: 5573)
+Suite result: ok. 8 passed; 0 failed; 0 skipped; finished in 11.66ms (10.90ms CPU time)
+
+Ran 16 tests for test/ConcurrencyRaces.t.sol:ConcurrencyRacesTest
+[PASS] test_DepositAndImmediateExitDuringOpenMatch_IsALoss() (gas: 505773)
+[PASS] test_DepositDuringOpenMatch_IsAFairBetNotAFreeOption() (gas: 1092699)
+Logs:
+  downside taken, USDC: 2500.000000
+  upside taken,   USDC: 2474.999999
+
+[PASS] test_ExitingBeforeALoss_GainsNothingOverStaying() (gas: 869323)
+Logs:
+  dodged, USDC: 97500.000000
+  stayed, USDC: 97500.000000
+
+[PASS] test_ExitingDuringOpenMatchForfeitsTheOutcome() (gas: 789348)
+Logs:
+  gap between identical LPs, USDC: 9949.999999
+
+[PASS] test_Race_AllMatchesSettle_ExposureReturnsToZero() (gas: 1035607)
+[PASS] test_Race_DepositBetweenMatches_RaisesCapButStaysBounded() (gas: 891705)
+[PASS] test_Race_DoubleSettleSameMatch_Reverts() (gas: 307534)
+[PASS] test_Race_LastMatchInBlockIsTruncatedNotReverted() (gas: 543826)
+[PASS] test_Race_ManyInterleavedMatches_NeverBreachCaps() (gas: 1917868)
+[PASS] test_Race_PauseBetweenMatchAndSettle_StillSettles() (gas: 318262)
+[PASS] test_Race_PausedPool_DeclinesInsteadOfBrickingPlaceBet() (gas: 67947)
+[PASS] test_Race_RefundAfterSettle_Reverts() (gas: 295259)
+[PASS] test_Race_ThreeMarketsSameBlock_ShareOneGlobalCap() (gas: 418987)
+[PASS] test_Race_WithdrawBetweenMatches_CannotStrandOpenExposure() (gas: 427359)
+[PASS] test_Race_WithdrawShrinksCap_NoNewHeadroomAppears() (gas: 337668)
+[PASS] test_SharePrice_HoldsWhileAMatchIsOpen() (gas: 378276)
+Suite result: ok. 16 passed; 0 failed; 0 skipped; finished in 70.08ms (33.46ms CPU time)
+
+Ran 15 tests for test/BadgeNFT.t.sol:BadgeNFTTest
+[PASS] test_AddMinter_OnlyAdmin() (gas: 91829)
+[PASS] test_Badge_Metadata_AllRegistered() (gas: 239122)
+[PASS] test_Badge_Rarities() (gas: 65707)
+[PASS] test_BatchTransfer_Reverts_Soulbound() (gas: 164305)
+[PASS] test_Deployer_Is_Admin() (gas: 13289)
+[PASS] test_MintBadge_AllRegisteredIds() (gas: 1212223)
+[PASS] test_MintBadge_EmitsEvent() (gas: 75435)
+[PASS] test_MintBadge_Reverts_AlreadyHas() (gas: 103053)
+[PASS] test_MintBadge_Reverts_NonMinter() (gas: 36820)
+[PASS] test_MintBadge_Reverts_UnknownId() (gas: 39507)
+[PASS] test_MintBadge_Success() (gas: 75882)
+[PASS] test_RemoveMinter_OnlyAdmin() (gas: 67732)
+[PASS] test_SupportsInterface() (gas: 23366)
+[PASS] test_Transfer_Reverts_Soulbound() (gas: 100084)
+[PASS] test_URI_Suffix() (gas: 27115)
+Suite result: ok. 15 passed; 0 failed; 0 skipped; finished in 81.10ms (53.81ms CPU time)
+
+Ran 13 tests for test/MarketClone.t.sol:MarketCloneTest
+[PASS] test_Clone_CannotBeReinitialized() (gas: 444748)
+[PASS] test_Clone_FullLifecycle_PvP() (gas: 1670864)
+[PASS] test_Clone_IdCountersStartAtOne() (gas: 424827)
+[PASS] test_Clone_InitializeRejectsNonFactory() (gas: 444105)
+[PASS] test_Clone_MatchIdZeroStaysMeaningful() (gas: 1545557)
+[PASS] test_Clone_PauseByFactoryWorks() (gas: 617966)
+[PASS] test_Clone_PerInstanceConfigIsIsolated() (gas: 823061)
+[PASS] test_Clone_ReadsImplementationImmutables() (gas: 451526)
+[PASS] test_Clone_StorageIsIsolatedBetweenMarkets() (gas: 1223650)
+[PASS] test_DirectDeploy_StillWorksAndIsLocked() (gas: 4336145)
+[PASS] test_Gas_CreateMarketStaysCheap() (gas: 386304)
+Logs:
+  createMarket gas: 384006
+
+[PASS] test_Implementation_CannotBeInitialized() (gas: 40744)
+[PASS] test_Implementation_IsDistinctFromEveryClone() (gas: 416909)
+Suite result: ok. 13 passed; 0 failed; 0 skipped; finished in 81.68ms (46.61ms CPU time)
+
+Ran 6 tests for test/Integration.t.sol:IntegrationTest
+[PASS] test_MarketAuthorizedOn_All_Three() (gas: 29711)
+[PASS] test_PlaceBet_ReferralStable_OnSecondBet() (gas: 894774)
+[PASS] test_PlaceBet_RegistersReferral() (gas: 587089)
+[PASS] test_PlaceBet_ZeroReferrer_Skips_Register() (gas: 493780)
+[PASS] test_Settle_NoReferrer_FullSplitToSinks() (gas: 1404911)
+[PASS] test_Settle_PushesFee_ToFeeDistributor_Split() (gas: 1623549)
+Suite result: ok. 6 passed; 0 failed; 0 skipped; finished in 81.93ms (46.71ms CPU time)
+
+Ran 12 tests for test/OracleResolverRedstone.t.sol:OracleResolverRedstoneTest
+[PASS] test_AppendsSuccessivePrices() (gas: 289848)
+[PASS] test_KeepsFeedsApart() (gas: 292412)
+[PASS] test_NeedsNoPaymentFromTheCaller() (gas: 146092)
+[PASS] test_NormalisesAPriceAboveADollar() (gas: 160713)
+[PASS] test_NormalisesASubCentPrice() (gas: 160622)
+[PASS] test_NormalisesEightDecimalsToEighteen() (gas: 160627)
+[PASS] test_RecordsThePriceCarriedByTheCall() (gas: 148709)
+[PASS] test_RecordsWithoutAnyEtherAtAll() (gas: 143848)
+[PASS] test_RefusesACallCarryingNoSignedPrice() (gas: 38902)
+[PASS] test_RefusesAPayloadForADifferentFeed() (gas: 71276)
+[PASS] test_RejectsTooFewSigners() (gas: 60893)
+[PASS] test_StillKeeperOnly() (gas: 50644)
+Suite result: ok. 12 passed; 0 failed; 0 skipped; finished in 97.09ms (65.89ms CPU time)
+
+Ran 19 tests for test/FeeDistributor.t.sol:FeeDistributorTest
+[PASS] test_AuthorizeMarket_OnlyFactoryOrOwner() (gas: 145652)
+[PASS] test_AuthorizeMarket_RejectsAnAddressTheFactoryNeverCreated() (gas: 41713)
+[PASS] test_ClaimReferralRewards() (gas: 364787)
+[PASS] test_ClaimReferralRewards_Reverts_Nothing() (gas: 38967)
+[PASS] test_Constructor_Reverts_ZeroAddress() (gas: 213513)
+[PASS] test_Deauthorize_OnlyOwner() (gas: 60836)
+[PASS] test_DistributeFee_NoReferrer_FullSplit() (gas: 265524)
+[PASS] test_DistributeFee_OddAmount_NoLeak() (gas: 257861)
+[PASS] test_DistributeFee_Reverts_Unauthorized() (gas: 157841)
+[PASS] test_DistributeFee_Reverts_ZeroFee() (gas: 42258)
+[PASS] test_DistributeFee_WithReferrer() (gas: 323907)
+[PASS] test_SetLiquidityPool_OnlyOwner() (gas: 45782)
+[PASS] test_SetMarketFactory_OnceOnly() (gas: 1147048)
+[PASS] test_SetNftRewardsPool_OnlyOwner() (gas: 45757)
+[PASS] test_SetTreasury_OnlyOwner() (gas: 74379)
+[PASS] test_SweepDust_ExcludesReferralOwed() (gas: 340215)
+[PASS] test_SweepDust_OnlyOwner() (gas: 33766)
+[PASS] test_SweepDust_ReturnsZero_WhenNoDust() (gas: 36404)
+[PASS] test_SweepDust_SweepsOnlyExcessBeyondReferralOwed() (gas: 400541)
+Suite result: ok. 19 passed; 0 failed; 0 skipped; finished in 25.90ms (22.70ms CPU time)
+
+Ran 9 tests for test/ReferralRegistry.t.sol:ReferralRegistryTest
+[PASS] test_AuthorizeMarket_RejectsAnAddressTheFactoryNeverCreated() (gas: 44177)
+[PASS] test_GenerateCode() (gas: 92150)
+[PASS] test_GenerateCode_OnlyOnce() (gas: 104582)
+[PASS] test_GenerateCode_Reverts_NotSelf() (gas: 34719)
+[PASS] test_Register() (gas: 120620)
+[PASS] test_Register_NoSelfReferral() (gas: 39656)
+[PASS] test_Register_OnlyAuthorized() (gas: 39570)
+[PASS] test_Register_OnlyOnce() (gas: 142855)
+[PASS] test_RevokeMarket() (gas: 65377)
+Suite result: ok. 9 passed; 0 failed; 0 skipped; finished in 5.67ms (2.61ms CPU time)
+
+Ran 11 tests for test/RedstonePayloadBuilder.t.sol:RedstonePayloadBuilderTest
+[PASS] test_AcceptsMoreSignersThanTheThreshold() (gas: 64704)
+[PASS] test_BuildNowStampsTheCurrentBlockInMilliseconds() (gas: 23761)
+[PASS] test_ByteLayoutMatchesTheLiveGateway() (gas: 11679)
+[PASS] test_CanExpressAnyPrice() (gas: 173883)
+[PASS] test_ConsumerAcceptsABuiltPayload() (gas: 43490)
+[PASS] test_ConsumerReadsBackTheTimestampWeWrote() (gas: 23542)
+[PASS] test_EndsWithTheRedstoneMarker() (gas: 16445)
+[PASS] test_FeedIdIsRespected() (gas: 40438)
+[PASS] test_PackageCountChangesLengthBy142() (gas: 23775)
+[PASS] test_RejectsFewerSignersThanTheThreshold() (gas: 31627)
+[PASS] test_SignersAreDistinct() (gas: 4740)
+Suite result: ok. 11 passed; 0 failed; 0 skipped; finished in 104.11ms (73.07ms CPU time)
+
+Ran 33 tests for test/LiquidityPool.t.sol:LiquidityPoolTest
+[PASS] test_AuthorizeMarket_OnlyFactoryOrOwner() (gas: 255796)
+[PASS] test_AvailableForMatching_ReflectsGlobalCap() (gas: 446370)
+[PASS] test_Deauthorize_OnlyOwner() (gas: 60861)
+[PASS] test_Deposit_MintsShares() (gas: 453601)
+[PASS] test_Deposit_Reverts_BelowMin() (gas: 160943)
+[PASS] test_Exposure_Per_Market_Cap() (gas: 1187970)
+[PASS] test_FeeStream_GenesisBoost_Vs_Normal() (gas: 7731087)
+[PASS] test_Genesis_First20_Get_NFT() (gas: 7279417)
+[PASS] test_Genesis_Status_StableOnRepeatDeposit() (gas: 594149)
+[PASS] test_GetPoolStats() (gas: 449117)
+[PASS] test_IsFullyBacked_TrueWhenNoPendingFees() (gas: 443538)
+[PASS] test_LPDilution_BoundedByGlobalExposureCap() (gas: 1258369)
+[PASS] test_LPMatch_TakerFee_On_UserWin_ReducesPayoutFundsPool() (gas: 1352556)
+[PASS] test_LP_Loses_SharePrice_Drops() (gas: 1348886)
+[PASS] test_LP_Win_AccruesFee_To_LP() (gas: 1430604)
+[PASS] test_LP_Wins_SharePrice_Grows() (gas: 1359436)
+[PASS] test_MaxRedeem_MatchesFullBalance_WhenNoExposure() (gas: 462901)
+[PASS] test_Mint_Reverts_BelowMinDeposit() (gas: 174077)
+[PASS] test_Mint_SharesBasedDeposit_MintsExactSharesAndGenesis() (gas: 467066)
+[PASS] test_OpenMatch_DoesNotMoveTheSharePrice() (gas: 639133)
+[PASS] test_OpenMatch_StillReservesTheStakeAgainstWithdrawals() (gas: 610716)
+[PASS] test_Pause_Blocks_Deposit() (gas: 189024)
+[PASS] test_Pause_Blocks_LPMatch_AllowsWithdraw() (gas: 540382)
+[PASS] test_Pause_OnlyOwner() (gas: 64991)
+[PASS] test_SetMarketFactory_OnceOnly() (gas: 2968047)
+[PASS] test_Shares_Are_Soulbound() (gas: 470596)
+[PASS] test_TotalAssets_Excludes_PendingFees() (gas: 1337465)
+[PASS] test_TraderLpExposureCap_LimitsSingleAddressSniping() (gas: 3301987)
+[PASS] test_TryMatch_Reverts_UnauthorizedMarket() (gas: 34658)
+[PASS] test_Unpause_RestoresDeposit() (gas: 494770)
+[PASS] test_Withdraw_AssetBasedWithdraw_ReturnsExactAssets() (gas: 556306)
+[PASS] test_Withdraw_Blocked_By_Exposure() (gas: 1181138)
+[PASS] test_Withdraw_FullAmount_NoExposure() (gas: 527392)
+Suite result: ok. 33 passed; 0 failed; 0 skipped; finished in 116.82ms (175.09ms CPU time)
+
+Ran 12 tests for test/CriticalFixes.t.sol:CriticalFixesTest
+[PASS] test_C2_EmergencyRefundMatch_LP_RestoresPoolExposure() (gas: 1142763)
+[PASS] test_C2_EmergencyRefundMatch_PvP_After24h() (gas: 1160293)
+[PASS] test_C2_EmergencyRefundMatch_RevertsBeforeGrace() (gas: 934821)
+[PASS] test_C3_BarePlaceBetOverloadIsGone() (gas: 1056944212)
+[PASS] test_C3_PlaceBet_RejectsACallWithNoSignedPrice() (gas: 44177)
+[PASS] test_C3_PlaceBet_TakesNoFeeAndIsNotPayable() (gas: 341137)
+[PASS] test_C3_PlaceBet_WorksWithAnUnfundedResolver() (gas: 364295)
+[PASS] test_C4_GenesisTransferRebalancesFeeWeight() (gas: 7522752)
+[PASS] test_C5_RefundExpired_FreesMatchingSlot() (gas: 773427)
+[PASS] test_C5_RefundExpired_RemovesFromQueue() (gas: 1232013)
+[PASS] test_C5_TryMatch_BoundedScan_NoDoS() (gas: 21108078)
+[PASS] test_SettleMatch_Reverts_AfterGraceWindowExpired() (gas: 1085151)
+Suite result: ok. 12 passed; 0 failed; 0 skipped; finished in 840.62ms (292.59ms CPU time)
+
+Ran 27 tests for test/MarketFactory.t.sol:MarketFactoryTest
+[PASS] test_AddFeed_OnlyOwner() (gas: 33913)
+[PASS] test_AddFeed_ReAdd_DoesNotDuplicateInList() (gas: 96327)
+[PASS] test_CreateMarket_AllowedAfterCooldown() (gas: 746994)
+[PASS] test_CreateMarket_AuthorizesLP() (gas: 413887)
+[PASS] test_CreateMarket_ByMarketCreator() (gas: 452727)
+[PASS] test_CreateMarket_DifferentDuration_NotBlockedByCooldown() (gas: 750548)
+[PASS] test_CreateMarket_DifferentFeed_NotBlockedByCooldown() (gas: 770080)
+[PASS] test_CreateMarket_EarlyRolloverAt50Percent_StillWorks() (gas: 731737)
+[PASS] test_CreateMarket_Multiple_SharePool() (gas: 1169609)
+[PASS] test_CreateMarket_Owner_Bypass() (gas: 391885)
+[PASS] test_CreateMarket_Reverts_AfterCreatorRevoked() (gas: 105683)
+[PASS] test_CreateMarket_Reverts_DuplicateWithinCooldown() (gas: 425314)
+[PASS] test_CreateMarket_Reverts_DurationNotAllowed() (gas: 51451)
+[PASS] test_CreateMarket_Reverts_FeedNotWhitelisted() (gas: 34875)
+[PASS] test_CreateMarket_Reverts_UnauthorizedCaller() (gas: 36574)
+[PASS] test_CreatedMarket_HasCorrectParams() (gas: 457730)
+[PASS] test_GetAllFeedIds() (gas: 20356)
+[PASS] test_GetAllFeedIds_ExcludesRemovedFeed() (gas: 39494)
+[PASS] test_PauseMarketsForFeed_ByEmergencyPauser() (gas: 527027)
+[PASS] test_PauseMarketsForFeed_ByOwner() (gas: 474502)
+[PASS] test_PauseMarketsForFeed_CostDoesNotGrowWithFeedHistory() (gas: 88003574)
+[PASS] test_PauseMarketsForFeed_PausesAllMarketsForThatFeed() (gas: 869807)
+[PASS] test_PauseMarketsForFeed_PausesTheNewestMarkets_NotTheOldest() (gas: 77327352)
+[PASS] test_PauseMarketsForFeed_Reverts_Unauthorized() (gas: 416063)
+[PASS] test_RemoveFeed_OnlyOwner() (gas: 56754)
+[PASS] test_SetEmergencyPauser_OnlyOwner() (gas: 89460)
+[PASS] test_SetMarketCreator_OnlyOwner() (gas: 89369)
+Suite result: ok. 27 passed; 0 failed; 0 skipped; finished in 1.60s (3.02s CPU time)
+
+Ran 11 tests for test/OrderbookMarketAccounting.t.sol:OrderbookMarketAccountingTest
+[PASS] test_GetReadySettlements_DoesNotStallAfterHeadSettled() (gas: 3783296)
+[PASS] test_GetReadySettlements_Pagination() (gas: 4357291)
+[PASS] test_LP_PartialMatch_QueueRemainder() (gas: 1109292)
+[PASS] test_PartialMatch_RemainderMatchedByLater() (gas: 1483896)
+[PASS] test_PartialMatch_RemainderQueued() (gas: 1022071)
+[PASS] test_PartialMatch_SubMinBetDustRefunded() (gas: 1020980)
+[PASS] test_PartialMatch_USDCConservation() (gas: 1843844)
+[PASS] test_PlaceBet_RejectsZeroExpectedPrice() (gas: 63664)
+[PASS] test_RefundExpired_NoFill_FullRefund() (gas: 459846)
+[PASS] test_RefundExpired_NotIdempotent() (gas: 448356)
+[PASS] test_RefundExpired_PartialFill_KeepsMatchedPortion() (gas: 1335972)
+Suite result: ok. 11 passed; 0 failed; 0 skipped; finished in 1.79s (145.73ms CPU time)
+
+Ran 24 tests for test/OracleResolver.t.sol:OracleResolverTest
+[PASS] testFuzz_Normalize_NoRevert_PositivePrice(uint64) (runs: 1000, μ: 153974, ~: 153960)
+[PASS] test_AddKeeper_OnlyAdmin() (gas: 34986)
+[PASS] test_HistoryHead_NotAffectingFreshPrices() (gas: 393269)
+[PASS] test_LateSettlement_UsesPriceAtSettleAt_NotAtKeeperTime() (gas: 11016011)
+[PASS] test_LateSingleSettlement_UsesPriceAtSettleAt_NotAtKeeperTime() (gas: 11011291)
+[PASS] test_RecordPrice_OnlyKeeper() (gas: 50887)
+[PASS] test_RejectsPlainEther() (gas: 36120)
+[PASS] test_RemoveKeeper_RevokesAccess() (gas: 73573)
+[PASS] test_ResolveOrderbookMarketBatch_AnomalyCancels_NoSettle() (gas: 10810047)
+[PASS] test_ResolveOrderbookMarketBatch_SettlesMultipleUpToMaxCount() (gas: 12093147)
+[PASS] test_ResolveOrderbookMarket_UnboundedWrapper_SettlesAll() (gas: 10915454)
+[PASS] test_ResolveOrderbookMatch_AnomalyCancels_NoSettle() (gas: 10799389)
+[PASS] test_ResolveOrderbookMatch_Reverts_NonKeeper() (gas: 10584194)
+[PASS] test_Resolve_SkipsMatchWhoseFeedHasNoPriceData() (gas: 10635056)
+[PASS] test_SettlementBeyondRetention_SkipsRatherThanInventingAWinner() (gas: 10936561)
+[PASS] test_StuckHeadDoesNotHideTheMatchesBehindIt() (gas: 12366490)
+[PASS] test_TWAP_AllStale_NotUsable() (gas: 323197)
+[PASS] test_TWAP_ConstantPrice() (gas: 641859)
+[PASS] test_TWAP_WindowCapsForLongDurationMarket() (gas: 11035725)
+[PASS] test_TWAP_WindowFloorsForVeryShortDuration() (gas: 11038213)
+[PASS] test_TWAP_WindowScalesDownForShortDurationMarket() (gas: 12145762)
+[PASS] test_WithdrawETH_OnlyAdmin() (gas: 33335)
+[PASS] test_WithdrawETH_Reverts_OnFailedTransfer() (gas: 139581)
+[PASS] test_WithdrawRescuesForcedEther() (gas: 66815)
+Suite result: ok. 24 passed; 0 failed; 0 skipped; finished in 1.68s (2.00s CPU time)
+
+Ran 25 tests for test/OrderbookMarket.t.sol:OrderbookMarketTest
+[PASS] testFuzz_PlaceBet_AmountRange(uint256) (runs: 1000, μ: 345781, ~: 345835)
+[PASS] testFuzz_Settle_Payout(uint256,uint256) (runs: 1000, μ: 1224853, ~: 1245559)
+[PASS] test_Claim_Reverts_NotYourOrder() (gas: 1075789)
+[PASS] test_Fee_DirectDeployStartsAtZero() (gas: 7635)
+[PASS] test_Fee_IsNotChangeableOnAnOpenMarket() (gas: 7636)
+[PASS] test_GetPendingDepth() (gas: 345006)
+[PASS] test_GetPendingSettlements() (gas: 934807)
+[PASS] test_GetTraderOrders() (gas: 346227)
+[PASS] test_Match_LP_Fallback() (gas: 1004640)
+[PASS] test_Match_PvP_Success() (gas: 948710)
+[PASS] test_Pause_OnlyMultisig() (gas: 111266)
+[PASS] test_Pause_Reverts_NonMultisig() (gas: 34257)
+[PASS] test_PlaceBet_AcceptsAPriceInsideTheEntryWindow() (gas: 343295)
+[PASS] test_PlaceBet_Reverts_AboveMax() (gas: 63720)
+[PASS] test_PlaceBet_Reverts_BelowMin() (gas: 63703)
+[PASS] test_PlaceBet_Reverts_SelfReferral() (gas: 63986)
+[PASS] test_PlaceBet_Reverts_StalePrice() (gas: 93278)
+[PASS] test_PlaceBet_Succeeds_AfterRefreshingStalePrice() (gas: 368011)
+[PASS] test_Refund_If_No_Match() (gas: 456650)
+[PASS] test_Refund_Reverts_NotExpired() (gas: 374111)
+[PASS] test_Settle_And_Claim_LP() (gas: 1165869)
+[PASS] test_Settle_And_Claim_PvP() (gas: 1103742)
+[PASS] test_Settle_Reverts_OnlyResolver() (gas: 929289)
+[PASS] test_Slippage_Revert_HighDeviation() (gas: 90037)
+[PASS] test_Slippage_Success_WithinDeviation() (gas: 361679)
+Suite result: ok. 25 passed; 0 failed; 0 skipped; finished in 1.73s (3.49s CPU time)
+
+Ran 1 test for test/StressTest.t.sol:StressTest
+[PASS] test_Stress_500_Matches() (gas: 701242618)
+Logs:
+  PvP matches: 500
+  LP fallback matches: 100
+  Emergency refunds: 50
+  Final pool assets: 37971836300
+  Final market USDC: 4401690784
+  Treasury collected: 39344754
+  LP sink collected: 39344754
+
+Suite result: ok. 1 passed; 0 failed; 0 skipped; finished in 11.55s (11.54s CPU time)
+
+╭------------------------------------+-----------------+-------+--------+-------+---------╮
+| src/BadgeNFT.sol:BadgeNFT Contract |                 |       |        |       |         |
++=========================================================================================+
+| Deployment Cost                    | Deployment Size |       |        |       |         |
+|------------------------------------+-----------------+-------+--------+-------+---------|
+|                            2771861 |            9455 |       |        |       |         |
+|------------------------------------+-----------------+-------+--------+-------+---------|
+|                                    |                 |       |        |       |         |
+|------------------------------------+-----------------+-------+--------+-------+---------|
+| Function Name                      | Min             | Avg   | Median | Max   | # Calls |
+|------------------------------------+-----------------+-------+--------+-------+---------|
+| DEFAULT_ADMIN_ROLE                 |             293 |   293 |    293 |   293 |       1 |
+|------------------------------------+-----------------+-------+--------+-------+---------|
+| MINTER_ROLE                        |             259 |   259 |    259 |   259 |       2 |
+|------------------------------------+-----------------+-------+--------+-------+---------|
+| addMinter                          |           24266 | 47387 |  48833 | 48833 |      17 |
+|------------------------------------+-----------------+-------+--------+-------+---------|
+| badges                             |            8646 |  8646 |   8646 |  8646 |      20 |
+|------------------------------------+-----------------+-------+--------+-------+---------|
+| balanceOf                          |            2657 |  2657 |   2657 |  2657 |      17 |
+|------------------------------------+-----------------+-------+--------+-------+---------|
+| hasRole                            |            2685 |  2685 |   2685 |  2685 |       3 |
+|------------------------------------+-----------------+-------+--------+-------+---------|
+| mintBadge                          |           24481 | 56104 |  60109 | 60109 |      25 |
+|------------------------------------+-----------------+-------+--------+-------+---------|
+| removeMinter                       |           24266 | 25568 |  25568 | 26870 |       2 |
+|------------------------------------+-----------------+-------+--------+-------+---------|
+| safeBatchTransferFrom              |           25660 | 25660 |  25660 | 25660 |       1 |
+|------------------------------------+-----------------+-------+--------+-------+---------|
+| safeTransferFrom                   |           23906 | 23906 |  23906 | 23906 |       1 |
+|------------------------------------+-----------------+-------+--------+-------+---------|
+| supportsInterface                  |             510 |   636 |    663 |   707 |       4 |
+|------------------------------------+-----------------+-------+--------+-------+---------|
+| uri                                |            4408 |  4445 |   4445 |  4483 |       2 |
+╰------------------------------------+-----------------+-------+--------+-------+---------╯
+
+╭------------------------------------------------+-----------------+--------+--------+--------+---------╮
+| src/FeeDistributor.sol:FeeDistributor Contract |                 |        |        |        |         |
++=======================================================================================================+
+| Deployment Cost                                | Deployment Size |        |        |        |         |
+|------------------------------------------------+-----------------+--------+--------+--------+---------|
+|                                        1023899 |            4667 |        |        |        |         |
+|------------------------------------------------+-----------------+--------+--------+--------+---------|
+|                                                |                 |        |        |        |         |
+|------------------------------------------------+-----------------+--------+--------+--------+---------|
+| Function Name                                  | Min             | Avg    | Median | Max    | # Calls |
+|------------------------------------------------+-----------------+--------+--------+--------+---------|
+| authorizeMarket                                |           26195 |  48756 |  50497 |  55124 |      22 |
+|------------------------------------------------+-----------------+--------+--------+--------+---------|
+| claimReferralRewards                           |           28757 |  42854 |  42854 |  56952 |       2 |
+|------------------------------------------------+-----------------+--------+--------+--------+---------|
+| deauthorizeMarket                              |           24066 |  24758 |  24758 |  25451 |       2 |
+|------------------------------------------------+-----------------+--------+--------+--------+---------|
+| distributeFee                                  |           29500 | 118950 | 140245 | 165817 |       8 |
+|------------------------------------------------+-----------------+--------+--------+--------+---------|
+| isAuthorizedMarket                             |            2595 |   2595 |   2595 |   2595 |       3 |
+|------------------------------------------------+-----------------+--------+--------+--------+---------|
+| liquidityPool                                  |            2469 |   2469 |   2469 |   2469 |       1 |
+|------------------------------------------------+-----------------+--------+--------+--------+---------|
+| nftRewardsPool                                 |            2359 |   2359 |   2359 |   2359 |       1 |
+|------------------------------------------------+-----------------+--------+--------+--------+---------|
+| referralBalance                                |            2594 |   2594 |   2594 |   2594 |       5 |
+|------------------------------------------------+-----------------+--------+--------+--------+---------|
+| setLiquidityPool                               |           29023 |  29023 |  29023 |  29023 |       1 |
+|------------------------------------------------+-----------------+--------+--------+--------+---------|
+| setMarketFactory                               |           26213 |  47194 |  47430 |  47442 |      89 |
+|------------------------------------------------+-----------------+--------+--------+--------+---------|
+| setNftRewardsPool                              |           29132 |  29132 |  29132 |  29132 |       1 |
+|------------------------------------------------+-----------------+--------+--------+--------+---------|
+| setTreasury                                    |           24000 |  26521 |  26521 |  29043 |       2 |
+|------------------------------------------------+-----------------+--------+--------+--------+---------|
+| sweepDust                                      |           23522 |  32564 |  31070 |  44597 |       4 |
+|------------------------------------------------+-----------------+--------+--------+--------+---------|
+| totalReferralOwed                              |            2329 |   2329 |   2329 |   2329 |       1 |
+|------------------------------------------------+-----------------+--------+--------+--------+---------|
+| treasury                                       |            2447 |   2447 |   2447 |   2447 |       1 |
+╰------------------------------------------------+-----------------+--------+--------+--------+---------╯
+
+╭----------------------------------------+-----------------+--------+--------+--------+---------╮
+| src/GenesisNFT.sol:GenesisNFT Contract |                 |        |        |        |         |
++===============================================================================================+
+| Deployment Cost                        | Deployment Size |        |        |        |         |
+|----------------------------------------+-----------------+--------+--------+--------+---------|
+|                                1358343 |            6555 |        |        |        |         |
+|----------------------------------------+-----------------+--------+--------+--------+---------|
+|                                        |                 |        |        |        |         |
+|----------------------------------------+-----------------+--------+--------+--------+---------|
+| Function Name                          | Min             | Avg    | Median | Max    | # Calls |
+|----------------------------------------+-----------------+--------+--------+--------+---------|
+| balanceOf                              |             630 |   1300 |    630 |   2630 |     176 |
+|----------------------------------------+-----------------+--------+--------+--------+---------|
+| genesisNumber                          |            2458 |   2458 |   2458 |   2458 |       1 |
+|----------------------------------------+-----------------+--------+--------+--------+---------|
+| liquidityPool                          |            2469 |   2469 |   2469 |   2469 |       1 |
+|----------------------------------------+-----------------+--------+--------+--------+---------|
+| mint                                   |           24191 | 116114 | 108538 | 162638 |      28 |
+|----------------------------------------+-----------------+--------+--------+--------+---------|
+| ownerOf                                |            2660 |   2660 |   2660 |   2660 |       4 |
+|----------------------------------------+-----------------+--------+--------+--------+---------|
+| safeTransferFrom                       |           92065 |  92065 |  92065 |  92065 |       1 |
+|----------------------------------------+-----------------+--------+--------+--------+---------|
+| setBaseURI                             |           24487 |  27155 |  27155 |  29823 |       2 |
+|----------------------------------------+-----------------+--------+--------+--------+---------|
+| setLiquidityPool                       |           23981 |  45938 |  46262 |  46262 |     194 |
+|----------------------------------------+-----------------+--------+--------+--------+---------|
+| tokenURI                               |            2583 |   4863 |   6004 |   6004 |       3 |
+|----------------------------------------+-----------------+--------+--------+--------+---------|
+| totalMinted                            |            2316 |   2316 |   2316 |   2316 |       1 |
+|----------------------------------------+-----------------+--------+--------+--------+---------|
+| transferFrom                           |           62994 |  66997 |  66997 |  71001 |       2 |
+╰----------------------------------------+-----------------+--------+--------+--------+---------╯
+
+╭----------------------------------------------+-----------------+--------+--------+--------+---------╮
+| src/LiquidityPool.sol:LiquidityPool Contract |                 |        |        |        |         |
++=====================================================================================================+
+| Deployment Cost                              | Deployment Size |        |        |        |         |
+|----------------------------------------------+-----------------+--------+--------+--------+---------|
+|                                      2846524 |           13683 |        |        |        |         |
+|----------------------------------------------+-----------------+--------+--------+--------+---------|
+|                                              |                 |        |        |        |         |
+|----------------------------------------------+-----------------+--------+--------+--------+---------|
+| Function Name                                | Min             | Avg    | Median | Max    | # Calls |
+|----------------------------------------------+-----------------+--------+--------+--------+---------|
+| GLOBAL_MAX_EXPOSURE_BPS                      |             252 |    252 |    252 |    252 |       1 |
+|----------------------------------------------+-----------------+--------+--------+--------+---------|
+| MIN_DEPOSIT                                  |             294 |    294 |    294 |    294 |       1 |
+|----------------------------------------------+-----------------+--------+--------+--------+---------|
+| PER_MARKET_MAX_EXPOSURE_BPS                  |             250 |    250 |    250 |    250 |       1 |
+|----------------------------------------------+-----------------+--------+--------+--------+---------|
+| authorizeMarket                              |           26310 |  52004 |  50584 |  55259 |     148 |
+|----------------------------------------------+-----------------+--------+--------+--------+---------|
+| availableForMatching                         |           10562 |  10679 |  10727 |  10727 |       7 |
+|----------------------------------------------+-----------------+--------+--------+--------+---------|
+| balanceOf                                    |            2615 |   2615 |   2615 |   2615 |      13 |
+|----------------------------------------------+-----------------+--------+--------+--------+---------|
+| claimFees                                    |           92999 |  92999 |  92999 |  92999 |       1 |
+|----------------------------------------------+-----------------+--------+--------+--------+---------|
+| convertToAssets                              |           13527 |  13527 |  13527 |  13527 |       3 |
+|----------------------------------------------+-----------------+--------+--------+--------+---------|
+| deauthorizeMarket                            |           24059 |  24751 |  24751 |  25444 |       2 |
+|----------------------------------------------+-----------------+--------+--------+--------+---------|
+| deposit                                      |           29351 | 253607 | 226322 | 316457 |     120 |
+|----------------------------------------------+-----------------+--------+--------+--------+---------|
+| earnedFees                                   |            9428 |   9428 |   9428 |   9428 |       5 |
+|----------------------------------------------+-----------------+--------+--------+--------+---------|
+| genesisCount                                 |            2415 |   2415 |   2415 |   2415 |       3 |
+|----------------------------------------------+-----------------+--------+--------+--------+---------|
+| getPoolStats                                 |           13233 |  13233 |  13233 |  13233 |       1 |
+|----------------------------------------------+-----------------+--------+--------+--------+---------|
+| isAuthorizedMarket                           |            2662 |   2662 |   2662 |   2662 |      15 |
+|----------------------------------------------+-----------------+--------+--------+--------+---------|
+| isFullyBacked                                |            7902 |   7902 |   7902 |   7902 |      21 |
+|----------------------------------------------+-----------------+--------+--------+--------+---------|
+| isGenesis                                    |            6046 |   6046 |   6046 |   6046 |      29 |
+|----------------------------------------------+-----------------+--------+--------+--------+---------|
+| marketExposure                               |            2617 |   2617 |   2617 |   2617 |      58 |
+|----------------------------------------------+-----------------+--------+--------+--------+---------|
+| maxRedeem                                    |           19554 |  19554 |  19554 |  19554 |       1 |
+|----------------------------------------------+-----------------+--------+--------+--------+---------|
+| maxWithdraw                                  |           16984 |  16987 |  16984 |  16994 |      13 |
+|----------------------------------------------+-----------------+--------+--------+--------+---------|
+| mint                                         |           42583 | 180859 | 180859 | 319136 |       2 |
+|----------------------------------------------+-----------------+--------+--------+--------+---------|
+| onMatchRefunded                              |           33419 |  33419 |  33419 |  33419 |       1 |
+|----------------------------------------------+-----------------+--------+--------+--------+---------|
+| onMatchSettled                               |           33674 |  52871 |  39629 |  90489 |      14 |
+|----------------------------------------------+-----------------+--------+--------+--------+---------|
+| owner                                        |            2454 |   2454 |   2454 |   2454 |       1 |
+|----------------------------------------------+-----------------+--------+--------+--------+---------|
+| pause                                        |           23515 |  27139 |  27744 |  27744 |       7 |
+|----------------------------------------------+-----------------+--------+--------+--------+---------|
+| paused                                       |            2393 |   2393 |   2393 |   2393 |       1 |
+|----------------------------------------------+-----------------+--------+--------+--------+---------|
+| previewRedeem                                |           11355 |  11355 |  11355 |  11355 |       4 |
+|----------------------------------------------+-----------------+--------+--------+--------+---------|
+| redeem                                       |           83800 |  83804 |  83804 |  83809 |       2 |
+|----------------------------------------------+-----------------+--------+--------+--------+---------|
+| setMarketFactory                             |           26229 |  47334 |  47458 |  47458 |     180 |
+|----------------------------------------------+-----------------+--------+--------+--------+---------|
+| totalAssets                                  |           10201 |  10201 |  10201 |  10201 |      27 |
+|----------------------------------------------+-----------------+--------+--------+--------+---------|
+| totalExposure                                |            2416 |   2416 |   2416 |   2416 |      35 |
+|----------------------------------------------+-----------------+--------+--------+--------+---------|
+| totalPendingFees                             |            2418 |   2418 |   2418 |   2418 |       1 |
+|----------------------------------------------+-----------------+--------+--------+--------+---------|
+| transfer                                     |           22325 |  22325 |  22325 |  22325 |       1 |
+|----------------------------------------------+-----------------+--------+--------+--------+---------|
+| tryMatch                                     |           24454 | 120788 | 140719 | 157819 |      39 |
+|----------------------------------------------+-----------------+--------+--------+--------+---------|
+| unpause                                      |           27720 |  27720 |  27720 |  27720 |       1 |
+|----------------------------------------------+-----------------+--------+--------+--------+---------|
+| withdraw                                     |          105383 | 105388 | 105385 | 105395 |       5 |
+╰----------------------------------------------+-----------------+--------+--------+--------+---------╯
+
+╭----------------------------------------------------+-----------------+-------+--------+-------+---------╮
+| src/ReferralRegistry.sol:ReferralRegistry Contract |                 |       |        |       |         |
++=========================================================================================================+
+| Deployment Cost                                    | Deployment Size |       |        |       |         |
+|----------------------------------------------------+-----------------+-------+--------+-------+---------|
+|                                             730798 |            3173 |       |        |       |         |
+|----------------------------------------------------+-----------------+-------+--------+-------+---------|
+|                                                    |                 |       |        |       |         |
+|----------------------------------------------------+-----------------+-------+--------+-------+---------|
+| Function Name                                      | Min             | Avg   | Median | Max   | # Calls |
+|----------------------------------------------------+-----------------+-------+--------+-------+---------|
+| authorizeMarket                                    |           31870 | 52790 |  55115 | 55115 |      10 |
+|----------------------------------------------------+-----------------+-------+--------+-------+---------|
+| authorizedMarkets                                  |            2573 |  2573 |   2573 |  2573 |       1 |
+|----------------------------------------------------+-----------------+-------+--------+-------+---------|
+| generateCode                                       |           21922 | 45803 |  46364 | 68563 |       4 |
+|----------------------------------------------------+-----------------+-------+--------+-------+---------|
+| getReferralCount                                   |            2602 |  2602 |   2602 |  2602 |       1 |
+|----------------------------------------------------+-----------------+-------+--------+-------+---------|
+| getReferrer                                        |            2620 |  2620 |   2620 |  2620 |       2 |
+|----------------------------------------------------+-----------------+-------+--------+-------+---------|
+| referrerOf                                         |            2588 |  2588 |   2588 |  2588 |       3 |
+|----------------------------------------------------+-----------------+-------+--------+-------+---------|
+| referrerToCode                                     |            2656 |  2656 |   2656 |  2656 |       1 |
+|----------------------------------------------------+-----------------+-------+--------+-------+---------|
+| register                                           |           26738 | 48834 |  26831 | 92933 |       6 |
+|----------------------------------------------------+-----------------+-------+--------+-------+---------|
+| resolveCode                                        |            2556 |  2556 |   2556 |  2556 |       1 |
+|----------------------------------------------------+-----------------+-------+--------+-------+---------|
+| revokeMarket                                       |           25431 | 25431 |  25431 | 25431 |       1 |
+|----------------------------------------------------+-----------------+-------+--------+-------+---------|
+| setMarketFactory                                   |           47452 | 47453 |  47452 | 47464 |      77 |
+╰----------------------------------------------------+-----------------+-------+--------+-------+---------╯
+
+╭---------------------------------------------+-----------------+-------+--------+-------+---------╮
+| test/GenesisNFT.t.sol:MockPoolHook Contract |                 |       |        |       |         |
++==================================================================================================+
+| Deployment Cost                             | Deployment Size |       |        |       |         |
+|---------------------------------------------+-----------------+-------+--------+-------+---------|
+|                                      180183 |             616 |       |        |       |         |
+|---------------------------------------------+-----------------+-------+--------+-------+---------|
+|                                             |                 |       |        |       |         |
+|---------------------------------------------+-----------------+-------+--------+-------+---------|
+| Function Name                               | Min             | Avg   | Median | Max   | # Calls |
+|---------------------------------------------+-----------------+-------+--------+-------+---------|
+| called                                      |            2297 |  2297 |   2297 |  2297 |       1 |
+|---------------------------------------------+-----------------+-------+--------+-------+---------|
+| lastFrom                                    |            2390 |  2390 |   2390 |  2390 |       2 |
+|---------------------------------------------+-----------------+-------+--------+-------+---------|
+| lastTo                                      |            2402 |  2402 |   2402 |  2402 |       2 |
+|---------------------------------------------+-----------------+-------+--------+-------+---------|
+| setShouldRevert                             |           26532 | 26532 |  26532 | 26532 |       1 |
+╰---------------------------------------------+-----------------+-------+--------+-------+---------╯
+
+╭-------------------------------------------------------------+-----------------+--------+--------+--------+---------╮
+| test/OrderbookMarketAccounting.t.sol:MockResolverA Contract |                 |        |        |        |         |
++====================================================================================================================+
+| Deployment Cost                                             | Deployment Size |        |        |        |         |
+|-------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+|                                                      111199 |             296 |        |        |        |         |
+|-------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+|                                                             |                 |        |        |        |         |
+|-------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| Function Name                                               | Min             | Avg    | Median | Max    | # Calls |
+|-------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| settleMatch                                                 |          123345 | 150858 | 151257 | 176762 |       6 |
+╰-------------------------------------------------------------+-----------------+--------+--------+--------+---------╯
+
+╭------------------------------------------------+-----------------+------+--------+------+---------╮
+| test/RedstoneOracle.t.sol:PriceReader Contract |                 |      |        |      |         |
++===================================================================================================+
+| Deployment Cost                                | Deployment Size |      |        |      |         |
+|------------------------------------------------+-----------------+------+--------+------+---------|
+|                                         976150 |            4297 |      |        |      |         |
+|------------------------------------------------+-----------------+------+--------+------+---------|
+|                                                |                 |      |        |      |         |
+|------------------------------------------------+-----------------+------+--------+------+---------|
+| Function Name                                  | Min             | Avg  | Median | Max  | # Calls |
+|------------------------------------------------+-----------------+------+--------+------+---------|
+| getUniqueSignersThreshold                      |             266 |  266 |    266 |  266 |       1 |
+|------------------------------------------------+-----------------+------+--------+------+---------|
+| readPrice                                      |            1352 | 1352 |   1352 | 1352 |       1 |
+╰------------------------------------------------+-----------------+------+--------+------+---------╯
+
+╭----------------------------------------------------------------+-----------------+--------+--------+--------+---------╮
+| test/helpers/RedstoneHarness.sol:MarketFactoryHarness Contract |                 |        |        |        |         |
++=======================================================================================================================+
+| Deployment Cost                                                | Deployment Size |        |        |        |         |
+|----------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+|                                                        5612196 |           26142 |        |        |        |         |
+|----------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+|                                                                |                 |        |        |        |         |
+|----------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| Function Name                                                  | Min             | Avg    | Median | Max    | # Calls |
+|----------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| FEE_MAX                                                        |             283 |    283 |    283 |    283 |       1 |
+|----------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| FEE_TIMELOCK                                                   |             239 |    239 |    239 |    239 |       4 |
+|----------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| MIN_CREATE_INTERVAL                                            |             284 |    284 |    284 |    284 |       1 |
+|----------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| addFeed                                                        |           23693 | 103397 | 112530 | 112530 |     131 |
+|----------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| allowedFeeds                                                   |            2558 |   2558 |   2558 |   2558 |       2 |
+|----------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| applyNewFee                                                    |           25863 |  47009 |  49124 |  49124 |      11 |
+|----------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| createMarket                                                   |           24158 | 338280 | 378924 | 403396 |      61 |
+|----------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| emergencyPauser                                                |            2394 |   2394 |   2394 |   2394 |       1 |
+|----------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| feeBps                                                         |            2362 |   2362 |   2362 |   2362 |       1 |
+|----------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| feeDistributor                                                 |             317 |    317 |    317 |    317 |       1 |
+|----------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| feedPaused                                                     |            2492 |   2492 |   2492 |   2492 |       3 |
+|----------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| getActiveMarkets                                               |            5109 |   5563 |   5109 |   7383 |       5 |
+|----------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| getAllFeedIds                                                  |           13985 |  14368 |  14560 |  14560 |       3 |
+|----------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| isMarket                                                       |             640 |    699 |    640 |   2640 |     167 |
+|----------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| marketCreator                                                  |            2437 |   2437 |   2437 |   2437 |       1 |
+|----------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| marketImplementation                                           |             272 |    272 |    272 |    272 |       2 |
+|----------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| multisig                                                       |            2392 |   2392 |   2392 |   2392 |       2 |
+|----------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| pauseMarketsForFeed                                            |           25984 | 150668 |  81391 | 446955 |      13 |
+|----------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| proposeNewFee                                                  |           23781 |  62368 |  69377 |  69377 |      13 |
+|----------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| pushActiveMarket                                               |           49118 |  49145 |  49130 |  66218 |    3200 |
+|----------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| referralRegistry                                               |             315 |    315 |    315 |    315 |       1 |
+|----------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| removeFeed                                                     |           23776 |  23942 |  23998 |  23998 |       4 |
+|----------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| setEmergencyPauser                                             |           24090 |  46367 |  47336 |  47336 |      24 |
+|----------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| setMarketCreator                                               |           24045 |  45545 |  47291 |  47291 |      26 |
+|----------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| setMultisig                                                    |           23913 |  28053 |  30762 |  30762 |       5 |
+|----------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| unpauseFeed                                                    |           23864 |  24547 |  24547 |  25231 |       2 |
+╰----------------------------------------------------------------+-----------------+--------+--------+--------+---------╯
+
+╭-----------------------------------------------------------------+-----------------+-------+--------+-------+---------╮
+| test/helpers/RedstoneHarness.sol:OracleResolverHarness Contract |                 |       |        |       |         |
++======================================================================================================================+
+| Deployment Cost                                                 | Deployment Size |       |        |       |         |
+|-----------------------------------------------------------------+-----------------+-------+--------+-------+---------|
+|                                                         2214933 |           10090 |       |        |       |         |
+|-----------------------------------------------------------------+-----------------+-------+--------+-------+---------|
+|                                                                 |                 |       |        |       |         |
+|-----------------------------------------------------------------+-----------------+-------+--------+-------+---------|
+| Function Name                                                   | Min             | Avg   | Median | Max   | # Calls |
+|-----------------------------------------------------------------+-----------------+-------+--------+-------+---------|
+| HISTORY_RETENTION                                               |             327 |   327 |    327 |   327 |       3 |
+|-----------------------------------------------------------------+-----------------+-------+--------+-------+---------|
+| addKeeper                                                       |           24258 | 48155 |  48819 | 48819 |      37 |
+|-----------------------------------------------------------------+-----------------+-------+--------+-------+---------|
+| historyHead                                                     |            2503 |  2503 |   2503 |  2503 |       3 |
+|-----------------------------------------------------------------+-----------------+-------+--------+-------+---------|
+| historyLength                                                   |            2547 |  2547 |   2547 |  2547 |       9 |
+|-----------------------------------------------------------------+-----------------+-------+--------+-------+---------|
+| priceHistory                                                    |            6863 |  6863 |   6863 |  6863 |     259 |
+|-----------------------------------------------------------------+-----------------+-------+--------+-------+---------|
+| recordPrice                                                     |           25094 | 25094 |  25094 | 25094 |       1 |
+|-----------------------------------------------------------------+-----------------+-------+--------+-------+---------|
+| removeKeeper                                                    |           26857 | 26857 |  26857 | 26857 |       1 |
+|-----------------------------------------------------------------+-----------------+-------+--------+-------+---------|
+| withdrawETH                                                     |           24478 | 39089 |  33959 | 58831 |       3 |
+╰-----------------------------------------------------------------+-----------------+-------+--------+-------+---------╯
+
+╭------------------------------------------------------------------+-----------------+--------+--------+--------+---------╮
+| test/helpers/RedstoneHarness.sol:OrderbookMarketHarness Contract |                 |        |        |        |         |
++=========================================================================================================================+
+| Deployment Cost                                                  | Deployment Size |        |        |        |         |
+|------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+|                                                          4238018 |           19740 |        |        |        |         |
+|------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+|                                                                  |                 |        |        |        |         |
+|------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| Function Name                                                    | Min             | Avg    | Median | Max    | # Calls |
+|------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| ENTRY_MAX_PRICE_AGE                                              |             272 |    272 |    272 |    272 |       3 |
+|------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| LP_TAKER_FEE_BPS                                                 |             273 |    273 |    273 |    273 |       2 |
+|------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| MATCH_TIMEOUT                                                    |             273 |    273 |    273 |    273 |       6 |
+|------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| MAX_MATCH_SCAN                                                   |             250 |    250 |    250 |    250 |       1 |
+|------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| SETTLE_GRACE                                                     |             272 |    272 |    272 |    272 |      53 |
+|------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| claim                                                            |            9897 |  23929 |  14405 |  47334 |    1106 |
+|------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| duration                                                         |            2396 |   2396 |   2396 |   2396 |      17 |
+|------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| emergencyRefundMatch                                             |           33275 | 111602 | 112157 | 134191 |      54 |
+|------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| factory                                                          |             327 |    327 |    327 |    327 |       2 |
+|------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| feeBps                                                           |            2396 |   2396 |   2396 |   2396 |       4 |
+|------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| feeDistributor                                                   |             306 |    306 |    306 |    306 |       1 |
+|------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| feedId                                                           |            2417 |   2417 |   2417 |   2417 |      17 |
+|------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| getMatch                                                         |            1932 |   9758 |  11932 |  15932 |      46 |
+|------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| getOrder                                                         |           20651 |  20651 |  20651 |  20651 |     285 |
+|------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| getPendingDepth                                                  |            4541 |   4541 |   4541 |   4541 |     261 |
+|------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| getPendingSettlements                                            |           12221 |  12528 |  12528 |  12835 |       2 |
+|------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| getReadySettlements                                              |           13147 |  17598 |  13312 |  37090 |      11 |
+|------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| getTraderOrders                                                  |            5217 |   5217 |   5217 |   5217 |       1 |
+|------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| initialize                                                       |             587 | 109317 | 113490 | 133390 |      58 |
+|------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| liquidityPool                                                    |             283 |    283 |    283 |    283 |       2 |
+|------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| multisig                                                         |            2448 |   2448 |   2448 |   2448 |       2 |
+|------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| nextMatchId                                                      |            2350 |   2350 |   2350 |   2350 |     651 |
+|------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| nextOrderId                                                      |            2351 |   2351 |   2351 |   2351 |     604 |
+|------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| pause                                                            |            2552 |  24721 |  24721 |  46891 |       4 |
+|------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| pauseByFactory                                                   |           23661 |  23661 |  23661 |  23661 |      10 |
+|------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| paused                                                           |            2401 |   2401 |   2401 |   2401 |       9 |
+|------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| placeBet                                                         |            2747 |  17899 |  17899 |  33051 |       2 |
+|------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| referralRegistry                                                 |             283 |    283 |    283 |    283 |       1 |
+|------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| refundExpired                                                    |           29023 |  82507 |  91949 | 112074 |      10 |
+|------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| resolver                                                         |             284 |    284 |    284 |    284 |       2 |
+|------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| settleMatch                                                      |            9971 | 164773 | 205153 | 326536 |     869 |
+|------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| traderLpExposure                                                 |            2571 |   2571 |   2571 |   2571 |       1 |
+|------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| usdc                                                             |             306 |    306 |    306 |    306 |       4 |
+╰------------------------------------------------------------------+-----------------+--------+--------+--------+---------╯
+
+╭---------------------------------------------------------------+-----------------+-------+--------+-------+---------╮
+| test/mocks/MockMarketRegistry.sol:MockMarketRegistry Contract |                 |       |        |       |         |
++====================================================================================================================+
+| Deployment Cost                                               | Deployment Size |       |        |       |         |
+|---------------------------------------------------------------+-----------------+-------+--------+-------+---------|
+|                                                        107071 |             276 |       |        |       |         |
+|---------------------------------------------------------------+-----------------+-------+--------+-------+---------|
+|                                                               |                 |       |        |       |         |
+|---------------------------------------------------------------+-----------------+-------+--------+-------+---------|
+| Function Name                                                 | Min             | Avg   | Median | Max   | # Calls |
+|---------------------------------------------------------------+-----------------+-------+--------+-------+---------|
+| isMarket                                                      |            2484 |  2484 |   2484 |  2484 |     175 |
+|---------------------------------------------------------------+-----------------+-------+--------+-------+---------|
+| register                                                      |           43861 | 43872 |  43873 | 43873 |     173 |
+╰---------------------------------------------------------------+-----------------+-------+--------+-------+---------╯
+
+╭-------------------------------------------+-----------------+-------+--------+-------+---------╮
+| test/mocks/MockUSDC.sol:MockUSDC Contract |                 |       |        |       |         |
++================================================================================================+
+| Deployment Cost                           | Deployment Size |       |        |       |         |
+|-------------------------------------------+-----------------+-------+--------+-------+---------|
+|                                    512754 |            2355 |       |        |       |         |
+|-------------------------------------------+-----------------+-------+--------+-------+---------|
+|                                           |                 |       |        |       |         |
+|-------------------------------------------+-----------------+-------+--------+-------+---------|
+| Function Name                             | Min             | Avg   | Median | Max   | # Calls |
+|-------------------------------------------+-----------------+-------+--------+-------+---------|
+| approve                                   |           26779 | 36466 |  26779 | 46679 |     988 |
+|-------------------------------------------+-----------------+-------+--------+-------+---------|
+| balanceOf                                 |             559 |  2531 |   2559 |  2559 |    2352 |
+|-------------------------------------------+-----------------+-------+--------+-------+---------|
+| decimals                                  |             265 |   265 |    265 |   265 |     179 |
+|-------------------------------------------+-----------------+-------+--------+-------+---------|
+| mint                                      |           28544 | 44461 |  34192 | 68392 |     987 |
+|-------------------------------------------+-----------------+-------+--------+-------+---------|
+| transfer                                  |           28842 | 36248 |  34490 | 46778 |      20 |
+╰-------------------------------------------+-----------------+-------+--------+-------+---------╯
+
+
+Ran 18 test suites in 11.71s (19.98s CPU time): 276 tests passed, 0 failed, 0 skipped (276 total tests)

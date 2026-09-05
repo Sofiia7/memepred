@@ -67,3 +67,7 @@ contracts/lib/forge-std/test/fixtures/
 
 # wrangler build temp
 workers/.wrangler/
+
+# Замеры §7 для Robinhood Chain: сырые данные - доказательство под числами
+# в docs/rhc/measurements/README.md, без них цифры нечем перепроверить.
+!docs/rhc/measurements/*.json

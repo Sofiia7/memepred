@@ -1,0 +1,152 @@
+{
+  "measuredAt": "2026-09-04T20:32:44.678Z",
+  "windowSec": 600,
+  "fromBlock": 54544029,
+  "toBlock": 54551346,
+  "pools": [
+    {
+      "pool": "0x297816d15be36a1ddea53fa3aec8a56539d748f0",
+      "symbol": "MarsCoin",
+      "wethDepthEth": 523.6415156512633,
+      "swaps": 0,
+      "distinctBlocks": 0,
+      "distinctSeconds": 0,
+      "writesPerSecond": 0,
+      "historySecAt60": null,
+      "historySecAt300": null,
+      "cardinalityFor180s": 0
+    },
+    {
+      "pool": "0x97bcdd384fc144899545deb749b6daf2aa52a2c5",
+      "symbol": "MEME",
+      "wethDepthEth": 177.37501194078678,
+      "swaps": 46,
+      "distinctBlocks": 46,
+      "distinctSeconds": 44,
+      "writesPerSecond": 0.0733,
+      "historySecAt60": 818,
+      "historySecAt300": 4091,
+      "cardinalityFor180s": 20
+    },
+    {
+      "pool": "0x6d25417718a8d6c529130a8ccc4bfbf0a18219d3",
+      "symbol": "RBLX",
+      "wethDepthEth": 136.44417044627522,
+      "swaps": 437,
+      "distinctBlocks": 278,
+      "distinctSeconds": 208,
+      "writesPerSecond": 0.3467,
+      "historySecAt60": 173,
+      "historySecAt300": 865,
+      "cardinalityFor180s": 94
+    },
+    {
+      "pool": "0x81b4caac5d313ea0c831c4d16f8c23937602dcf1",
+      "symbol": "DJT",
+      "wethDepthEth": 105.07463104283174,
+      "swaps": 8,
+      "distinctBlocks": 8,
+      "distinctSeconds": 8,
+      "writesPerSecond": 0.0133,
+      "historySecAt60": 4500,
+      "historySecAt300": 22500,
+      "cardinalityFor180s": 4
+    },
+    {
+      "pool": "0xabe3b1ff5fc6a9638d0c46f2379b20f7e6173bee",
+      "symbol": "RMHT",
+      "wethDepthEth": 93.51277298339731,
+      "swaps": 0,
+      "distinctBlocks": 0,
+      "distinctSeconds": 0,
+      "writesPerSecond": 0,
+      "historySecAt60": null,
+      "historySecAt300": null,
+      "cardinalityFor180s": 0
+    },
+    {
+      "pool": "0x5201ea77c950abb8d3706a20bf3b83d872e4a98b",
+      "symbol": "MRVL",
+      "wethDepthEth": 34.11165085870574,
+      "swaps": 3,
+      "distinctBlocks": 3,
+      "distinctSeconds": 3,
+      "writesPerSecond": 0.005,
+      "historySecAt60": 12000,
+      "historySecAt300": 60000,
+      "cardinalityFor180s": 2
+    },
+    {
+      "pool": "0xfbe80ebd2b7eb86e8263155cf2c6b6c3b14cd236",
+      "symbol": "GRASS",
+      "wethDepthEth": 20.269893321939573,
+      "swaps": 73,
+      "distinctBlocks": 72,
+      "distinctSeconds": 68,
+      "writesPerSecond": 0.1133,
+      "historySecAt60": 529,
+      "historySecAt300": 2647,
+      "cardinalityFor180s": 31
+    },
+    {
+      "pool": "0x1044cbcd9344616c7124a2393413d4ef1db1c7c8",
+      "symbol": "MSC",
+      "wethDepthEth": 12.758404800567291,
+      "swaps": 1,
+      "distinctBlocks": 1,
+      "distinctSeconds": 1,
+      "writesPerSecond": 0.0017,
+      "historySecAt60": 36000,
+      "historySecAt300": 180000,
+      "cardinalityFor180s": 1
+    },
+    {
+      "pool": "0x737a81734b4e97a6530f2a6682af324d77221ff3",
+      "symbol": "QF",
+      "wethDepthEth": 12.47910324969404,
+      "swaps": 0,
+      "distinctBlocks": 0,
+      "distinctSeconds": 0,
+      "writesPerSecond": 0,
+      "historySecAt60": null,
+      "historySecAt300": null,
+      "cardinalityFor180s": 0
+    },
+    {
+      "pool": "0xbec4d418ad5aac418d56e923328c3fe098da1f07",
+      "symbol": "KUANCAT",
+      "wethDepthEth": 12.478125734577256,
+      "swaps": 0,
+      "distinctBlocks": 0,
+      "distinctSeconds": 0,
+      "writesPerSecond": 0,
+      "historySecAt60": null,
+      "historySecAt300": null,
+      "cardinalityFor180s": 0
+    },
+    {
+      "pool": "0x51312f55901e9bc978fd884ebe50a8582b34da18",
+      "symbol": "SHRT",
+      "wethDepthEth": 12.459326172465612,
+      "swaps": 0,
+      "distinctBlocks": 0,
+      "distinctSeconds": 0,
+      "writesPerSecond": 0,
+      "historySecAt60": null,
+      "historySecAt300": null,
+      "cardinalityFor180s": 0
+    },
+    {
+      "pool": "0xfb05b7e0ba275bb34e6b21759f89a6d497f74e4e",
+      "symbol": "OT",
+      "wethDepthEth": 12.456559642497984,
+      "swaps": 0,
+      "distinctBlocks": 0,
+      "distinctSeconds": 0,
+      "writesPerSecond": 0,
+      "historySecAt60": null,
+      "historySecAt300": null,
+      "cardinalityFor180s": 0
+    }
+  ]
+}
