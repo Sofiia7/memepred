@@ -68,6 +68,40 @@ async function indexedBlock(): Promise<bigint | undefined> {
   }
 }
 
+export type AlertLevel = 'ok' | 'warn' | 'critical'
+
+/**
+ * Turn a drift into an alert level.
+ *
+ * Pure and exported so the classification can be tested without a database, a
+ * chain or a Redis - the arrangement `decidePool` uses, and for the same
+ * reason: this is the branch that decides whether anyone is told the money is
+ * missing.
+ *
+ * The non-finite case comes first and deliberately. Every comparison against
+ * NaN is false, so `drift > crit` and `drift > warn` both fail and a plain
+ * if/else-if chain falls through to "ok" - the one alarm that has to be
+ * believed reporting green precisely because it could not compute anything.
+ * That is not a hypothetical: five snapshots were written exactly that way,
+ * every total NaN and the level "ok", when SUM() over an empty orders table
+ * came back NULL. A drift that cannot be computed is not evidence the money is
+ * there; it is the absence of evidence either way, and saying so is the job.
+ */
+export function classifyDrift(drift: number, warn: number, crit: number): AlertLevel {
+  if (!Number.isFinite(drift)) return 'critical'
+  if (drift > crit) return 'critical'
+  if (drift > warn) return 'warn'
+  return 'ok'
+}
+
+/**
+ * NaN is a legal NUMERIC in Postgres and poisons every aggregate over the
+ * column: one such row makes `max(abs(drift_usdc))` across a whole soak return
+ * NaN. Store NULL instead, so the level carries the alarm and the history stays
+ * queryable.
+ */
+export const finite = (n: number): number | null => (Number.isFinite(n) ? n : null)
+
 export async function invariantTick() {
   if (!CONTRACTS.USDC || CONTRACTS.USDC === '0x') return
 
@@ -78,10 +112,20 @@ export async function invariantTick() {
   }>(`SELECT * FROM protocol_usdc_summary`)
   if (!sumRow.rows[0]) return
   const s = sumRow.rows[0]
-  const totalDeposited = parseFloat(s.total_deposited)
-  const totalClaimed   = parseFloat(s.total_claimed)
-  const totalRefunded  = parseFloat(s.total_refunded)
-  const expected       = parseFloat(s.expected_onchain_balance)
+
+  // SUM() over an empty orders table is NULL, and parseFloat(null) is NaN. That
+  // put five snapshots into the table with every total NaN, an actual balance of
+  // zero and an alert_level of "ok" - the monitor announcing that the money was
+  // fine at a moment when it had not managed to count any of it.
+  //
+  // An empty book really does have zero deposited, so NULL becomes 0 and the
+  // tick reads ok honestly. Anything else that will not parse stays NaN and is
+  // caught below, where not-a-number is treated as the failure it is.
+  const num = (v: string | null | undefined) => (v === null || v === undefined ? 0 : parseFloat(v))
+  const totalDeposited = num(s.total_deposited)
+  const totalClaimed   = num(s.total_claimed)
+  const totalRefunded  = num(s.total_refunded)
+  const expected       = num(s.expected_onchain_balance)
 
   // 2. Sum on-chain balances across all markets, AT THE BLOCK THE PROJECTION
   //    REFLECTS.
@@ -129,9 +173,7 @@ export async function invariantTick() {
   const drift  = Math.abs(actual - expected)
 
   // 3. Classify and persist.
-  let level: 'ok' | 'warn' | 'critical' = 'ok'
-  if (drift > CRIT_USDC) level = 'critical'
-  else if (drift > WARN_USDC) level = 'warn'
+  const level = classifyDrift(drift, WARN_USDC, CRIT_USDC)
 
   await pg.query(
     `INSERT INTO invariant_snapshots
@@ -139,7 +181,8 @@ export async function invariantTick() {
         actual_balance, drift_usdc, alert_level)
      VALUES ($1, $2, $3, $4, $5, $6, $7)
      ON CONFLICT (snapshot_at) DO NOTHING`,
-    [totalDeposited, totalClaimed, totalRefunded, expected, actual, drift, level],
+    [finite(totalDeposited), finite(totalClaimed), finite(totalRefunded),
+     finite(expected), finite(actual), finite(drift), level],
   )
 
   // 4. Surface critical via Redis flag for /api/keeper/health.
@@ -147,7 +190,12 @@ export async function invariantTick() {
     await redis.setEx('invariant:critical', 300, JSON.stringify({
       drift, actual, expected, totalDeposited, totalClaimed, totalRefunded, at: Date.now(),
     }))
-    console.error(`[invariant] CRITICAL drift = $${drift.toFixed(6)} (expected $${expected}, actual $${actual})`)
+    console.error(
+      Number.isFinite(drift)
+        ? `[invariant] CRITICAL drift = $${drift.toFixed(6)} (expected $${expected}, actual $${actual})`
+        : `[invariant] CRITICAL drift is not a number (expected ${expected}, actual ${actual}) - ` +
+          `the projection could not be summed, so nothing here vouches for the balances`,
+    )
   } else {
     await redis.del('invariant:critical')
     if (level === 'warn') {
