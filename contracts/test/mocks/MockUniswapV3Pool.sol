@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import "../../src/interfaces/IUniswapV3.sol";
+import "../../src/lib/TickMath.sol";
 
 /**
  * A Uniswap v3 pool's oracle, faithfully enough for PoolOracleResolver.
@@ -90,7 +91,12 @@ contract MockUniswapV3Pool is IUniswapV3Pool {
             bool unlocked
         )
     {
-        return (0, _tickAt(uint32(block.timestamp)), 0, cardinality, cardinalityNext, 0, true);
+        int24 t = _tickAt(uint32(block.timestamp));
+        // A real pool's sqrtPriceX96 and tick agree by construction, and
+        // PoolMarketFactory.wethDepth reads both - so deriving one from the
+        // other here keeps the mock from admitting a pool state that cannot
+        // exist on chain.
+        return (TickMath.getSqrtRatioAtTick(t), t, 0, cardinality, cardinalityNext, 0, true);
     }
 
     function observe(uint32[] calldata secondsAgos)
