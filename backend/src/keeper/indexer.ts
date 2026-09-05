@@ -616,23 +616,41 @@ async function indexReferrals(toBlock: bigint) {
  * shows up as invariant drift - and the monitor cannot tell a stale row from
  * real money going missing, which is the one thing it exists to tell.
  *
+ * It also fixes the status, and that is the larger half. The event-derived
+ * promotion only moves an order out of 'MATCHED', so a PARTIALLY FILLED order -
+ * which stays 'PENDING' while it still has an unmatched remainder queued -
+ * never left 'PENDING' in the projection even after the contract had settled
+ * and closed it. Its accrued payout was then excluded from unclaimed_payout,
+ * which counts only MATCHED and SETTLED, and the invariant showed a permanent
+ * drift equal to what partially-filled winners were owed. Seen on the soak:
+ * order 3 held 0.01 WETH on chain against a row that said PENDING and nothing
+ * owed.
+ *
+ * Read back rather than re-derived. The contract's rule for closing an order
+ * involves its unmatched remainder, whether that remainder was refunded, and
+ * how many of its matches have settled; a second implementation of that here
+ * would be one more thing to drift.
+ *
  * So the reconciliation is here rather than in a one-off repair script: a
  * deployment that adopts the fix heals itself, and so does one that missed a
  * log for any other reason. Bounded per tick, oldest first, because it costs an
  * RPC read per order and nothing about it is urgent.
  */
+/** OrderbookMarket.OrderStatus, by ordinal. */
+const ORDER_STATUS = ['PENDING', 'MATCHED', 'SETTLED', 'CLAIMED', 'REFUNDED'] as const
+
 async function reconcilePayouts(limit = 20) {
   const stale = await pg.query(
     `SELECT o.market_address, o.order_id
        FROM orders o
-      WHERE o.payout_usdc IS NULL
-        AND o.status IN ('MATCHED', 'SETTLED', 'CLAIMED')
+      WHERE o.status NOT IN ('CLAIMED', 'REFUNDED')
         AND EXISTS (
           SELECT 1 FROM order_matches om
           JOIN matches m ON m.market_address = om.market_address AND m.match_id = om.match_id
           WHERE om.market_address = o.market_address AND om.order_id = o.order_id
             AND m.settled = TRUE
         )
+        AND (o.payout_usdc IS NULL OR o.status = 'PENDING')
       ORDER BY o.placed_at
       LIMIT $1`,
     [limit],
@@ -647,18 +665,22 @@ async function reconcilePayouts(limit = 20) {
         functionName: 'getOrder',
         args: [BigInt(order_id)],
       })
+      const status = ORDER_STATUS[Number(o[5])] ?? 'PENDING'
       // Zero is an answer too - a losing order really is owed nothing - so it
       // is written rather than skipped, or this query returns it forever.
       await pg.query(
-        `UPDATE orders SET payout_usdc = $1::numeric / ${UNIT_DIVISOR}
-          WHERE market_address = $2 AND order_id = $3`,
-        [o[9].toString(), market_address, order_id],
+        `UPDATE orders
+            SET payout_usdc = $1::numeric / ${UNIT_DIVISOR},
+                status = $2,
+                unmatched_refunded = $3
+          WHERE market_address = $4 AND order_id = $5`,
+        [o[9].toString(), status, o[10], market_address, order_id],
       )
     } catch (err) {
-      console.error(`[indexer] payout reconcile failed for ${market_address} order ${order_id}:`, err)
+      console.error(`[indexer] reconcile failed for ${market_address} order ${order_id}:`, err)
     }
   }
-  console.log(`[indexer] reconciled ${stale.rowCount} payout(s) the event stream had not carried`)
+  console.log(`[indexer] reconciled ${stale.rowCount} order(s) against the chain`)
 }
 
 export async function indexerTick() {
