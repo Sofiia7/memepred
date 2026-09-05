@@ -1,7 +1,6 @@
 packages:
   - 'backend'
   - 'frontend'
-  - 'subgraph'
   # The edge geo-block and the off-box watchdog. In the workspace so CI
   # typechecks them: they are the alarm system, and until now nothing checked
   # them at all.

@@ -159,37 +159,8 @@ jobs:
           VITE_LIQUIDITY_POOL: '0x0000000000000000000000000000000000000007'
           VITE_GENESIS_NFT: '0x0000000000000000000000000000000000000008'
           VITE_API_URL: https://api.example.test
-          VITE_GRAPH_URL: https://example.test/subgraph
           VITE_PYTH_HERMES: https://hermes.pyth.network
         run: pnpm exec vite build
-
-  # ─────────────────────────────────────────────────────────────
-  # 4. SUBGRAPH — graph codegen + build
-  # ─────────────────────────────────────────────────────────────
-  subgraph:
-    name: subgraph (graph build)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v4
-        with: { version: '${{ env.PNPM_VERSION }}' }
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version-file: '.nvmrc'
-          cache: pnpm
-
-      - name: pnpm install
-        run: pnpm install --frozen-lockfile
-
-      - name: graph codegen
-        working-directory: subgraph
-        run: pnpm exec graph codegen
-
-      - name: graph build
-        working-directory: subgraph
-        run: pnpm exec graph build
 
   # ─────────────────────────────────────────────────────────────
   # 4b. WORKERS — the edge geo-block and the off-box watchdog.
@@ -252,7 +223,7 @@ jobs:
   ci-passed:
     name: ci-passed
     if: always()
-    needs: [contracts, backend, frontend, subgraph, workers]
+    needs: [contracts, backend, frontend, workers]
     runs-on: ubuntu-latest
     steps:
       - name: assert all green
@@ -260,7 +231,7 @@ jobs:
           if [ "${{ needs.contracts.result }}" != "success" ] \
           || [ "${{ needs.backend.result   }}" != "success" ] \
           || [ "${{ needs.frontend.result  }}" != "success" ] \
-          || [ "${{ needs.subgraph.result  }}" != "success" ]           || [ "${{ needs.workers.result   }}" != "success" ]; then
+          || [ "${{ needs.workers.result   }}" != "success" ]; then
             echo "one or more jobs failed"
             exit 1
           fi

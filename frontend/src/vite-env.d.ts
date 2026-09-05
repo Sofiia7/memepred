@@ -13,7 +13,6 @@ interface ImportMetaEnv {
   readonly VITE_LIQUIDITY_POOL: `0x${string}`
   readonly VITE_PYTH_FEED_ID?: string
   readonly VITE_API_URL: string
-  readonly VITE_GRAPH_URL: string
 }
 
 interface ImportMeta {

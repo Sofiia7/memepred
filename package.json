@@ -9,10 +9,9 @@
     "pnpm": ">=9.0.0"
   },
   "scripts": {
-    "build":           "pnpm -r --filter ./backend --filter ./frontend --filter ./subgraph run build",
+    "build":           "pnpm -r --filter ./backend --filter ./frontend run build",
     "build:backend":   "pnpm --filter ./backend run build",
     "build:frontend":  "pnpm --filter ./frontend run build",
-    "build:subgraph":  "pnpm --filter ./subgraph run build",
     "typecheck":       "pnpm -r run typecheck",
     "test":            "pnpm -r run test",
     "contracts:build": "forge build --root contracts",

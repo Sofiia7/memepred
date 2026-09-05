@@ -481,6 +481,12 @@ User asked for a full ТЗ-vs-code audit (competitors, security, gaps), then "ф
 Before touching memory, verified live on-chain rather than trusting any prior note (all previous
 entries below about "CURRENT contracts = 0xFA747…" are now STALE). `.env` / `frontend/.env.local` /
 `subgraph/subgraph.yaml` all already point at a **3rd deploy**, factory `0x77cb2EE5695CfFD3bD2043afe7eb910Ec0fe71b0`,
+[КОРРЕКТИВ 2026-09-05: про субграф это было неверно. `subgraph/subgraph.yaml` указывал на
+`0x1df94c1e8a7084f47d91b90c63093c171df3ae30` - фабрику ещё более раннего деплоя; проверку
+"на цепочке, а не по прежним заметкам" на него, судя по всему, не распространили. Обнаружено
+при инвентаризации мёртвого кода: субграф ничего не отдавал никому (`VITE_GRAPH_URL` объявлен
+в типах и не читается ни в одном файле), при этом занимал отдельную работу в CI, которая
+входила в общий гейт all-green. Удалён целиком.]
 that was never logged in memory. Checked on-chain and it is fully wired — better than the documented
 2nd deploy:
 - `factory.owner()` = `0xAA1a14ad2f57fc79Ac14b2Cf5e2968Fdaeb9047F` (multisig stand-in) — full ownership

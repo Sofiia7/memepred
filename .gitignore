@@ -10,7 +10,6 @@
 !openclaw.json
 !pnpm-lock.yaml
 !.github/**/*.json
-!subgraph/**/*.json
 !frontend/**/*.json
 !backend/**/*.json
 !contracts/**/*.json
