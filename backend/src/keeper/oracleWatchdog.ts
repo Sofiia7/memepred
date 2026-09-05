@@ -361,13 +361,63 @@ async function checkFeedsAndAutoPause() {
 }
 
 /**
- * Can we still build a usable payload for this feed?
+ * Can this feed still be priced?
+ *
+ * Two implementations, because the question means different things on the two
+ * chains, and getting it wrong is not cosmetic: a streak of 'unavailable' ends
+ * in maybePauseFeed, which stops trading. On rhc a feedId is a pool address, so
+ * the RedStone branch decodes it as UTF-8, asks the gateway for a symbol made
+ * of address bytes and answers 'unavailable' every time - which would pause
+ * every market on the chain while the watchdog looked healthy.
+ */
+async function pingOracle(feedId: string): Promise<FeedPing> {
+  return CHAIN_PROFILE.oraclePayloadInCalldata ? pingRedstone(feedId) : pingPool(feedId)
+}
+
+/**
+ * On rhc: whether the pool can still serve the longest exit window we use.
+ *
+ * The same question the resolver asks at settlement, so a green watchdog means
+ * settlement works rather than that some endpoint answered - which is the
+ * property the RedStone version was written for. A pool whose observation ring
+ * has fallen behind the window is exactly what produces MatchUnpriceable, and
+ * exactly what should stop new markets opening on it.
+ */
+async function pingPool(feedId: string): Promise<FeedPing> {
+  const pool = `0x${feedId.slice(-40)}` as Address
+  const longest = Math.max(
+    ...(process.env.RHC_DURATIONS_SEC || '60,300,900').split(',').map(Number).filter((n) => n > 0),
+  )
+  try {
+    const window = await publicClient.readContract({
+      address: CONTRACTS.MARKET_FACTORY as Address,
+      abi: POOL_MARKET_FACTORY_ABI,
+      functionName: 'twapWindowFor',
+      args: [BigInt(longest)],
+    })
+    const ok = await publicClient.readContract({
+      address: CONTRACTS.MARKET_FACTORY as Address,
+      abi: POOL_MARKET_FACTORY_ABI,
+      functionName: 'canServeWindow',
+      args: [pool, window],
+    })
+    return ok ? 'ok' : 'unavailable'
+  } catch (err) {
+    // An RPC we could not reach says nothing about this pool, and must not
+    // advance a streak that ends in pausing its markets.
+    console.error(`[watchdog] cannot reach the chain while checking pool ${pool}:`, err)
+    return 'unreachable'
+  }
+}
+
+/**
+ * On base: can we still build a usable payload for this feed?
  *
  * Deliberately the same call the keeper makes to actually push a price, so a
  * green watchdog means the write path works rather than merely that some
  * endpoint answered.
  */
-async function pingOracle(feedId: string): Promise<FeedPing> {
+async function pingRedstone(feedId: string): Promise<FeedPing> {
   const symbol = Buffer.from(feedId.slice(2), 'hex').toString('utf8').replace(/\u0000+$/, '')
   try {
     const payload = await fetchPayload(symbol)
