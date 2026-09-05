@@ -373,18 +373,22 @@ let ticks = 0
 
 while (Date.now() < deadline) {
   ticks++
-  await Promise.all(
-    bots.map(async (b) => {
-      try {
-        // 70% bet, 30% sweep. The sweep is what turns settled positions back
-        // into balance, so a harness that only bets drains itself and stops.
-        if (Math.random() < 0.7) await actPlaceBet(b)
-        else await actSweep(b)
-      } catch (err) {
-        log('tick_error', { bot: b.index, err: String(err).slice(0, 200) })
-      }
-    }),
-  )
+  // Sequentially, not in parallel, and that is the whole point of the ordering.
+  // Bots choose the thinner side of the book; run together they all read the
+  // same depth before any of them has written to it, and stampede onto one
+  // side - 5 UP against 1 DOWN in the first tick after that rule landed, which
+  // is the same failure as the coin flip it replaced. One at a time, each sees
+  // what the last one did, which is also how an order book actually fills.
+  for (const b of bots) {
+    try {
+      // 70% bet, 30% sweep. The sweep is what turns settled positions back
+      // into balance, so a harness that only bets drains itself and stops.
+      if (Math.random() < 0.7) await actPlaceBet(b)
+      else await actSweep(b)
+    } catch (err) {
+      log('tick_error', { bot: b.index, err: String(err).slice(0, 200) })
+    }
+  }
 
   if (ticks % 10 === 0) {
     const hours = ((Date.now() - metrics.startTs) / 3_600_000).toFixed(2)
