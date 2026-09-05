@@ -138,6 +138,12 @@ interface Bot {
 }
 const mkBot = (i: number): Bot => {
   const account = mnemonicToAccount(BOT_MNEMONIC!, { addressIndex: i })
+  // The account is bound to the client, which is what makes viem sign locally.
+  // Passing `account: bot.address` at a call site instead - an address rather
+  // than an Account - makes it a JSON-RPC account, and viem then calls
+  // eth_sendTransaction, which no public RPC implements. bot-harness.ts does
+  // exactly that on every write, which is a second reason it has never placed
+  // a bet.
   return { index: i, address: account.address, client: createWalletClient({ account, chain, transport: http(RPC) }) }
 }
 
@@ -231,7 +237,6 @@ async function actPlaceBet(bot: Bot) {
   if (allowance < amount) {
     const hash = await bot.client.writeContract({
       address: STAKE, abi: ERC20_ABI, functionName: 'approve', args: [market, 2n ** 255n],
-      chain, account: bot.address,
     })
     await pub.waitForTransactionReceipt({ hash })
   }
@@ -240,7 +245,6 @@ async function actPlaceBet(bot: Bot) {
     const hash = await bot.client.writeContract({
       address: market, abi: MARKET_ABI, functionName: 'placeBet',
       args: [dir, amount, '0x0000000000000000000000000000000000000000', price, SLIPPAGE_BPS],
-      chain, account: bot.address,
     })
     const r = await pub.waitForTransactionReceipt({ hash })
     if (r.status !== 'success') throw new Error('reverted')
@@ -279,7 +283,7 @@ async function actSweep(bot: Bot) {
     if (status === 2 && payout > 0n) {
       try {
         const hash = await bot.client.writeContract({
-          address: market, abi: MARKET_ABI, functionName: 'claim', args: [id], chain, account: bot.address,
+          address: market, abi: MARKET_ABI, functionName: 'claim', args: [id],
         })
         await pub.waitForTransactionReceipt({ hash })
         metrics.claimOk++
@@ -296,7 +300,7 @@ async function actSweep(bot: Bot) {
     if (status === 0 && now - o[6] > 310n) {
       try {
         const hash = await bot.client.writeContract({
-          address: market, abi: MARKET_ABI, functionName: 'refundExpired', args: [id], chain, account: bot.address,
+          address: market, abi: MARKET_ABI, functionName: 'refundExpired', args: [id],
         })
         await pub.waitForTransactionReceipt({ hash })
         metrics.refundOk++
