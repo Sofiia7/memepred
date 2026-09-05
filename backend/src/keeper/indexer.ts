@@ -24,7 +24,12 @@ import {
 import { pg } from '../db/pg.js'
 
 const chain = CHAIN_PROFILE.chain
-const RPC   = process.env.BASE_RPC_URL
+// The profile's RPC, not BASE_RPC_URL. This one survived the sweep because it
+// goes through a local const: on the rhc profile it read undefined and viem
+// fell back to the chain's own default, so the indexer worked by accident and
+// would have silently read Base the moment BASE_RPC_URL appeared in that
+// environment.
+const RPC   = CHAIN_PROFILE.rpcUrl
 const client = createPublicClient({ chain, transport: http(RPC) })
 
 const FACTORY = process.env.MARKET_FACTORY as Address
@@ -274,6 +279,80 @@ async function marketIdentity(feedId: string): Promise<{ symbol: string; token: 
   }
 }
 
+/**
+ * Write back what a settlement actually paid.
+ *
+ * MatchSettled carries the winner and the two prices, not the money. The
+ * contract accrues the payout onto the winning order at settlement and only
+ * emits an amount at Claimed - so between those two moments the row said a
+ * settled order had won nothing.
+ *
+ * That is not cosmetic in two places. The UI reads the row to decide whether
+ * there is anything to claim, and market_order_obligations sums payout_usdc
+ * over MATCHED and SETTLED orders to compute the protocol's expected on-chain
+ * balance - so every unclaimed win understated the expectation and showed up as
+ * invariant drift. The monitor was reporting a real-looking warn against a
+ * perfectly healthy market.
+ *
+ * Read from chain rather than derived: the payout depends on feeBps snapshotted
+ * at market creation and on whether the LP took the other side
+ * (LP_TAKER_FEE_BPS), and a second implementation of that arithmetic here would
+ * be a second thing to get wrong.
+ *
+ * Pre-existing, and invisible until now for a plain reason: nothing had ever
+ * been settled. Six orders in the protocol's whole history, none of them
+ * carried to payout.
+ */
+const ORDER_VIEW_ABI = [
+  {
+    name: 'getOrder',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [{ type: 'uint256' }],
+    outputs: [
+      { name: 'trader', type: 'address' },
+      { name: 'direction', type: 'uint8' },
+      { name: 'amount', type: 'uint256' },
+      { name: 'filledAmount', type: 'uint256' },
+      { name: 'referrer', type: 'address' },
+      { name: 'status', type: 'uint8' },
+      { name: 'placedAt', type: 'uint256' },
+      { name: 'matchId', type: 'uint256' },
+      { name: 'pendingSettlements', type: 'uint256' },
+      { name: 'payout', type: 'uint256' },
+      { name: 'unmatchedRefunded', type: 'bool' },
+    ],
+  },
+] as const
+
+async function recordSettlementPayouts(market: string, matchId: string) {
+  const orders = await pg.query(
+    `SELECT order_id FROM order_matches WHERE market_address = $1 AND match_id = $2`,
+    [market, matchId],
+  )
+  for (const { order_id } of orders.rows) {
+    try {
+      const o = await client.readContract({
+        address: market as `0x${string}`,
+        abi: ORDER_VIEW_ABI,
+        functionName: 'getOrder',
+        args: [BigInt(order_id)],
+      })
+      const payout = o[9]
+      if (payout === 0n) continue
+      await pg.query(
+        `UPDATE orders SET payout_usdc = $1::numeric / ${UNIT_DIVISOR}
+          WHERE market_address = $2 AND order_id = $3`,
+        [payout.toString(), market, order_id],
+      )
+    } catch (err) {
+      // One unreadable order must not stop the batch: the next tick re-reads
+      // it, and a wrong payout is worse than a late one.
+      console.error(`[indexer] payout read failed for ${market} order ${order_id}:`, err)
+    }
+  }
+}
+
 // ── ORDERBOOK: per-market events → orders/matches/order_matches ──
 async function indexMarketEvents(toBlock: bigint) {
   const stream = 'orderbook'
@@ -429,6 +508,7 @@ async function indexMarketEvents(toBlock: bigint) {
     }
 
     // MatchSettled → mark match settled + close orders that ran out of pending matches
+    // (payouts are read back per settled match; see recordSettlementPayouts)
     for (const log of settled) {
       if (!(await markIngested(log.transactionHash!, log.logIndex!))) continue
       const a = (log as any).args
@@ -450,6 +530,7 @@ async function indexMarketEvents(toBlock: bigint) {
               AND m.settled = FALSE
           )
       `, [ts, mkt])
+      await recordSettlementPayouts(mkt, a.matchId.toString())
     }
 
     // OrderRefunded → either full refund (status PENDING → REFUNDED) or
