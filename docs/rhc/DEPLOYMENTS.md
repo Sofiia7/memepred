@@ -2,18 +2,18 @@
 
 ## Robinhood Chain testnet, chainId 46630
 
-Развёрнуто 2026-09-05, `contracts/script/DeployRhc.s.sol`.
+Развёрнуто 2026-09-05, `contracts/script/DeployRhc.s.sol`, блок 113 437 979.
 Обозреватель: `https://robinhoodchain.blockscout.com`.
 
 | Контракт | Адрес |
 |---|---|
-| `PoolOracleResolver` | `0x858E8980e1D5773Ab3630483f4d1Efc150ACDd5F` |
-| `PoolMarketFactory` | `0xEBFcfb0f9A53e80B1ce743064Caab8916ffEb98b` |
-| `FeeDistributor` | `0xc27133b3CDE6ffE70276DC56f50471D8cf5d5B19` |
-| `ReferralRegistry` | `0x3E90C5Bff5F4426f7Af20140E41fBB63Ed118FE6` |
-| `GenesisNFT` | `0x0c157b90B85e30748AE608a86dBC099f7384Fb84` |
-| `LiquidityPool` | `0xa520061E8cdF4d9Bc2cbA27ce3487671918d3751` |
-| `BadgeNFT` | `0xD13D6d9795CcE7a7A32e58A0d937b4bd18A62767` |
+| `PoolOracleResolver` | `0xA246C3c9C93cB6C8d2f032b1fEB1Ff90258aa71d` |
+| `PoolMarketFactory` | `0xE5802e3e9aB5dEFE7F133543Bc90b5893aD75a42` |
+| `FeeDistributor` | `0x938227161Ff9447C20a6Ee65A66403444155433a` |
+| `ReferralRegistry` | `0x41939245A777188f9236Cf13C20bCa6160F5FEa7` |
+| `GenesisNFT` | `0x16D44dC8d73803914f82fb55ce1d974d3a858507` |
+| `LiquidityPool` | `0xC3f8Bbd7C62386078D85E99288E4ebd5C3e0d8DE` |
+| `BadgeNFT` | `0xf9a30cFA5318579A36d829A2c5Fed7b17B62f4c9` |
 
 **Права не переданы.** `RHC_HANDOVER` не выставлен, деплойер
 `0x12f9B9De75ccEa7be573F643A99AAA63b9448BD2` остаётся владельцем. Это
@@ -30,20 +30,24 @@
 
 | | Адрес |
 |---|---|
-| WETH (стенд-ин) | `0x772003E3394D3D4E53FD8bB7CC28583a08a21789` |
-| Uniswap v3 Factory (стенд-ин) | `0x5c60772F220D73df65D61d85BBFA8187Ad463b24` |
-| Пул (токен/WETH, 1%) | `0xbB498e264C519F0535EE8797359461a359Bf82cf` |
-| Токен | `0x4148Ec06548F1fc2205c78ABcd057daAB2266eE4` |
+| WETH (стенд-ин) | `0xaF3aCfCE41417DE5C973cc214E170C73480b068a` |
+| Uniswap v3 Factory (стенд-ин) | `0x59385Ca69a4CA9628A411a6A0655C3EaF7507316` |
+| Пул (токен/WETH, 1%) | `0xC9168555E619e4E00743d5FB14CBeaA39753A450` |
+| Токен | `0x89eac846356102bEaD3d71170961b26Bb5eed6B1` |
 
 Пул настроен так, чтобы проходить все гейты: глубина 50 ETH, кардинальность
 300/300, два часа истории на тике 0. Цена задаётся - соук может гонять рынок
 вверх, вниз и в обрыв намеренно, а не ждать, пока это сделает мемкоин.
 
+Первый комплект стенд-инов (`0x7720…`, `0x5c60…`, `0xbB49…`) переразвёрнут:
+мок-фабрика не эмитила `PoolCreated`, а без него `poolWatcher` не мог найти пул -
+то есть соук два дня не проверял бы ровно тот путь, ради которого он и нужен.
+`weth` и `v3Factory` в фабрике immutable, поэтому вместе со стенд-инами
+переразвёрнут и стек.
+
 ### Рынки
 
-| Рынок | Длительность |
-|---|---|
-| `0x1Fc66E57d0d4D3CE77683638B2f5acfe9b75692c` | 60 с |
+Создаются `poolWatcher`, руками ничего не заводится.
 
 ### Что проверено на цепочке
 
