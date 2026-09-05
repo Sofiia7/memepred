@@ -8,6 +8,7 @@ import { leaderboardRoutes } from './routes/leaderboard.js'
 import { profileRoutes }     from './routes/profile.js'
 import { referralRoutes }    from './routes/referral.js'
 import poolRoutes            from './routes/pool.js'
+import { poolsRoutes }        from './routes/pools.js'
 import { keeperHealthRoutes } from './routes/keeperHealth.js'
 import { oracleRoutes }      from './routes/oracle.js'
 import { pg }                from './db/pg.js'
@@ -38,6 +39,7 @@ await app.register(candlesRoutes,     { prefix: '/api/candles' })
 await app.register(leaderboardRoutes, { prefix: '/api/leaderboard' })
 await app.register(profileRoutes,     { prefix: '/api/profile' })
 await app.register(referralRoutes,    { prefix: '/api/referral' })
+await app.register(poolsRoutes,       { prefix: '/api/pools' })
 await app.register(poolRoutes)        // mounts /api/pool/*
 await app.register(keeperHealthRoutes)// mounts /api/keeper/health
 

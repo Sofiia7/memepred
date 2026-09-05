@@ -35,7 +35,10 @@ export async function marketsRoutes(app: FastifyInstance) {
       feedSymbol:  r.feed_symbol,
       duration:    r.duration_secs,
       openTime:    Math.floor(new Date(r.open_time).getTime() / 1000),
-      closeTime:   Math.floor(new Date(r.close_time).getTime() / 1000),
+      // Null on rhc, where a market has no close time at all - and
+      // `new Date(null)` is the epoch, so the old expression served 0
+      // rather than "none", which a client cannot tell from 1970.
+      closeTime:   r.close_time === null ? null : Math.floor(new Date(r.close_time).getTime() / 1000),
       entryPrice:  r.entry_price ? parseFloat(r.entry_price) : null,
       exitPrice:   r.exit_price  ? parseFloat(r.exit_price)  : null,
       status:      r.status,
@@ -65,7 +68,7 @@ export async function marketsRoutes(app: FastifyInstance) {
       feedSymbol: r.feed_symbol,
       duration:   r.duration_secs,
       openTime:   Math.floor(new Date(r.open_time).getTime() / 1000),
-      closeTime:  Math.floor(new Date(r.close_time).getTime() / 1000),
+      closeTime:  r.close_time === null ? null : Math.floor(new Date(r.close_time).getTime() / 1000),
       entryPrice: r.entry_price ? parseFloat(r.entry_price) : null,
       exitPrice:  r.exit_price  ? parseFloat(r.exit_price)  : null,
       status:     r.status,
