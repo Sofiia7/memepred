@@ -603,9 +603,68 @@ async function indexReferrals(toBlock: bigint) {
 }
 
 // ── ENTRY ────────────────────────────────────────────────────
+/**
+ * Fill in payouts the event stream never carried.
+ *
+ * recordSettlementPayouts runs on each MatchSettled, which covers everything
+ * from here on. It cannot cover what settled before it existed, and it cannot
+ * cover a log that was ingested while it was broken - and both leave the same
+ * mark: an order the contract owes money to, whose row says it won nothing.
+ *
+ * That is not a cosmetic gap. market_order_obligations sums payout_usdc to
+ * compute the protocol's expected on-chain balance, so every missing payout
+ * shows up as invariant drift - and the monitor cannot tell a stale row from
+ * real money going missing, which is the one thing it exists to tell.
+ *
+ * So the reconciliation is here rather than in a one-off repair script: a
+ * deployment that adopts the fix heals itself, and so does one that missed a
+ * log for any other reason. Bounded per tick, oldest first, because it costs an
+ * RPC read per order and nothing about it is urgent.
+ */
+async function reconcilePayouts(limit = 20) {
+  const stale = await pg.query(
+    `SELECT o.market_address, o.order_id
+       FROM orders o
+      WHERE o.payout_usdc IS NULL
+        AND o.status IN ('MATCHED', 'SETTLED', 'CLAIMED')
+        AND EXISTS (
+          SELECT 1 FROM order_matches om
+          JOIN matches m ON m.market_address = om.market_address AND m.match_id = om.match_id
+          WHERE om.market_address = o.market_address AND om.order_id = o.order_id
+            AND m.settled = TRUE
+        )
+      ORDER BY o.placed_at
+      LIMIT $1`,
+    [limit],
+  )
+  if (stale.rowCount === 0) return
+
+  for (const { market_address, order_id } of stale.rows) {
+    try {
+      const o = await client.readContract({
+        address: market_address as Address,
+        abi: ORDER_VIEW_ABI,
+        functionName: 'getOrder',
+        args: [BigInt(order_id)],
+      })
+      // Zero is an answer too - a losing order really is owed nothing - so it
+      // is written rather than skipped, or this query returns it forever.
+      await pg.query(
+        `UPDATE orders SET payout_usdc = $1::numeric / ${UNIT_DIVISOR}
+          WHERE market_address = $2 AND order_id = $3`,
+        [o[9].toString(), market_address, order_id],
+      )
+    } catch (err) {
+      console.error(`[indexer] payout reconcile failed for ${market_address} order ${order_id}:`, err)
+    }
+  }
+  console.log(`[indexer] reconciled ${stale.rowCount} payout(s) the event stream had not carried`)
+}
+
 export async function indexerTick() {
   const head = await client.getBlockNumber()
   await indexFactory(head)
   await indexMarketEvents(head)
   await indexReferrals(head)
+  await reconcilePayouts()
 }
