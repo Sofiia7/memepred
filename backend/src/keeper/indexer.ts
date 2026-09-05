@@ -40,6 +40,18 @@ const E_ORDER_REFUNDED  = parseAbiItem('event OrderRefunded(uint256 indexed orde
 const E_CLAIMED         = parseAbiItem('event Claimed(uint256 indexed orderId, address trader, uint256 payout)')
 const E_REFERRAL_REGD   = parseAbiItem('event ReferralRegistered(address indexed referee, address indexed referrer)')
 
+/**
+ * Raw contract units to the human amounts this schema stores.
+ *
+ * Was a literal 1e6 in eight places, which is the width of USDC and not of
+ * anything else. On the rhc profile stakes are eighteen-decimal WETH, and a
+ * partial fill divided by 1e6 would be a million times too large - so this is
+ * the profile's currency, written as a SQL numeric literal because the
+ * division happens in Postgres rather than in JavaScript, where 1e18 would
+ * quietly lose precision on the way through a float.
+ */
+const UNIT_DIVISOR = `1e${CHAIN_PROFILE.currencyDecimals}`
+
 const CHUNK = 1_900n  // Sepolia public RPC caps log queries at ~2000 blocks.
 
 const DEFAULT_START_BLOCK = BigInt(process.env.INDEXER_START_BLOCK || '41926633')
@@ -207,14 +219,49 @@ async function indexFactory(toBlock: bigint) {
     for (const log of logs) {
       if (!(await markIngested(log.transactionHash!, log.logIndex!))) continue
       const { market, feedId, duration, timestamp } = (log as any).args
-      const closeTs = Number(timestamp) + Number(duration)
+      const { symbol, token } = await marketIdentity(feedId)
+      // close_time is a Base concept. On rhc a market has none - settleAt is
+      // set per match - so the column stays null rather than being given an
+      // invented far-future value that later code would have to believe.
+      const closeTs = CHAIN_PROFILE.rollsOverMarkets ? Number(timestamp) + Number(duration) : null
       await pg.query(`
-        INSERT INTO markets(market_address, feed_id, feed_symbol, duration_secs, open_time, close_time, status)
-        VALUES (LOWER($1), $2, $3, $4, to_timestamp($5), to_timestamp($6), 'OPEN')
+        INSERT INTO markets(market_address, feed_id, feed_symbol, duration_secs, open_time, close_time,
+                            status, chain_id, token_address)
+        VALUES (LOWER($1), $2, $3, $4, to_timestamp($5),
+                CASE WHEN $6::bigint IS NULL THEN NULL ELSE to_timestamp($6::bigint) END,
+                'OPEN', $7, $8)
         ON CONFLICT (market_address) DO NOTHING
-      `, [market, feedId, feedSymbolFromId(feedId), Number(duration), Number(timestamp), closeTs])
+      `, [market, feedId, symbol, Number(duration), Number(timestamp), closeTs,
+          CHAIN_PROFILE.chain.id, token])
     }
     await setCursor(stream, end)
+  }
+}
+
+/**
+ * What to call a market, and which token it is about.
+ *
+ * On base a feedId is a symbol right-padded into a bytes32, so decoding it is
+ * the whole answer. On rhc it is a pool address and the ticker belongs to the
+ * token on the other side of that pool - poolWatcher already read it when the
+ * pool was first seen, so this reads it back rather than making another RPC
+ * call per market.
+ *
+ * Falls back to a short form of the pool address. A market on a token whose
+ * symbol() reverts is still perfectly tradeable, and refusing to index it over
+ * a display string would lose real bets.
+ */
+async function marketIdentity(feedId: string): Promise<{ symbol: string; token: string | null }> {
+  if (CHAIN_PROFILE.name !== 'rhc') return { symbol: feedSymbolFromId(feedId), token: null }
+
+  const pool = `0x${feedId.slice(-40)}`.toLowerCase()
+  const r = await pg.query(
+    'SELECT token_symbol, token_address FROM pool_candidates WHERE pool_address = $1',
+    [pool],
+  )
+  return {
+    symbol: r.rows[0]?.token_symbol || `${pool.slice(0, 8)}…`,
+    token: r.rows[0]?.token_address ?? null,
   }
 }
 
@@ -295,7 +342,7 @@ async function indexMarketEvents(toBlock: bigint) {
       const ts = await blockTs(log.blockNumber!)
       await pg.query(`
         INSERT INTO orders(market_address, order_id, trader_address, direction, amount_usdc, placed_at, feed_symbol, placed_tx)
-        SELECT LOWER($1), $2, LOWER($3), $4, $5::numeric / 1e6, to_timestamp($6), m.feed_symbol, $7
+        SELECT LOWER($1), $2, LOWER($3), $4, $5::numeric / ${UNIT_DIVISOR}, to_timestamp($6), m.feed_symbol, $7
         FROM markets m WHERE m.market_address = LOWER($1)
         ON CONFLICT (market_address, order_id) DO NOTHING
       `, [log.address, a.orderId.toString(), a.trader,
@@ -311,7 +358,7 @@ async function indexMarketEvents(toBlock: bigint) {
       await pg.query(`
         INSERT INTO matches(market_address, match_id, is_lp_match, up_order_id, down_order_id,
                             amount_usdc, entry_price, matched_at, settle_at)
-        SELECT $1, $2, FALSE, $3, $4, $5::numeric / 1e6, $6::numeric,
+        SELECT $1, $2, FALSE, $3, $4, $5::numeric / ${UNIT_DIVISOR}, $6::numeric,
                to_timestamp($7), to_timestamp($7) + (m.duration_secs || ' seconds')::INTERVAL
         FROM markets m WHERE m.market_address = $1
         ON CONFLICT (market_address, match_id) DO NOTHING
@@ -321,14 +368,14 @@ async function indexMarketEvents(toBlock: bigint) {
       for (const side of [a.upId, a.downId]) {
         await pg.query(`
           INSERT INTO order_matches(market_address, order_id, match_id, matched_amount)
-          VALUES ($1, $2, $3, $4::numeric / 1e6)
+          VALUES ($1, $2, $3, $4::numeric / ${UNIT_DIVISOR})
           ON CONFLICT DO NOTHING
         `, [mkt, side.toString(), a.matchId.toString(), a.amount.toString()])
       }
       // Bump filled_amount on both orders.
       for (const side of [a.upId, a.downId]) {
         await pg.query(`
-          UPDATE orders SET filled_amount = filled_amount + $1::numeric / 1e6,
+          UPDATE orders SET filled_amount = filled_amount + $1::numeric / ${UNIT_DIVISOR},
                             matched_at = COALESCE(matched_at, to_timestamp($2))
           WHERE market_address = $3 AND order_id = $4
         `, [a.amount.toString(), ts, mkt, side.toString()])
@@ -344,7 +391,7 @@ async function indexMarketEvents(toBlock: bigint) {
       await pg.query(`
         INSERT INTO matches(market_address, match_id, is_lp_match, user_order_id,
                             amount_usdc, entry_price, matched_at, settle_at)
-        SELECT $1, $2, TRUE, $3, $4::numeric / 1e6, $5::numeric,
+        SELECT $1, $2, TRUE, $3, $4::numeric / ${UNIT_DIVISOR}, $5::numeric,
                to_timestamp($6), to_timestamp($6) + (m.duration_secs || ' seconds')::INTERVAL
         FROM markets m WHERE m.market_address = $1
         ON CONFLICT (market_address, match_id) DO NOTHING
@@ -352,11 +399,11 @@ async function indexMarketEvents(toBlock: bigint) {
           a.amount.toString(), a.entryPrice.toString(), ts])
       await pg.query(`
         INSERT INTO order_matches(market_address, order_id, match_id, matched_amount)
-        VALUES ($1, $2, $3, $4::numeric / 1e6)
+        VALUES ($1, $2, $3, $4::numeric / ${UNIT_DIVISOR})
         ON CONFLICT DO NOTHING
       `, [mkt, a.orderId.toString(), a.matchId.toString(), a.amount.toString()])
       await pg.query(`
-        UPDATE orders SET filled_amount = filled_amount + $1::numeric / 1e6,
+        UPDATE orders SET filled_amount = filled_amount + $1::numeric / ${UNIT_DIVISOR},
                           matched_at = COALESCE(matched_at, to_timestamp($2))
         WHERE market_address = $3 AND order_id = $4
       `, [a.amount.toString(), ts, mkt, a.orderId.toString()])
@@ -422,7 +469,7 @@ async function indexMarketEvents(toBlock: bigint) {
       const ts = await blockTs(log.blockNumber!)
       await pg.query(`
         UPDATE orders SET status = 'CLAIMED', claimed_at = to_timestamp($1),
-                          payout_usdc = $2::numeric / 1e6
+                          payout_usdc = $2::numeric / ${UNIT_DIVISOR}
         WHERE market_address = $3 AND order_id = $4
       `, [ts, a.payout.toString(), log.address.toLowerCase(), a.orderId.toString()])
     }

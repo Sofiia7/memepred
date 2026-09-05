@@ -2,11 +2,11 @@
 /**
  * Applies every migration to a real Postgres and checks what came out.
  *
- * Complements scripts/ci-db-smoke.mjs rather than replacing it: that one runs
- * against the timescale image CI provides, this one runs Postgres compiled to
- * WASM and needs no daemon, no container and no service. The point is that a
- * migration can be checked on a laptop with Docker stopped, which is exactly
- * the situation in which 005 was written.
+ * Complements scripts/ci-db-smoke.mjs rather than replacing it: that one only
+ * asserts the expected tables exist. This checks what 005 actually did, and it
+ * runs with or without a database - Postgres compiled to WASM needs no daemon,
+ * no container and no service, so a migration can be checked on a laptop with
+ * Docker stopped, which is exactly the situation 005 was written in.
  *
  * What it actually proves, beyond "the SQL parses":
  *
@@ -21,9 +21,16 @@
  *      widening exists to prevent: the indexer stores human amounts, so a
  *      partial fill below 1e-6 WETH would have rounded to zero.
  *
- * Usage: node scripts/check-migrations.mjs
+ * Runs against a real Postgres when DATABASE_URL is set - point it at the
+ * timescale image CI uses, so the hypertables are real - and against
+ * Postgres-in-WASM otherwise. The WASM path skips the two timescaledb
+ * statements it cannot run, which is the one thing it cannot check:
+ * prob_snapshots is a hypertable and 005 alters two of its columns.
+ *
+ * Usage:
+ *   node scripts/check-migrations.mjs
+ *   DATABASE_URL=postgres://... node scripts/check-migrations.mjs
  */
-import { PGlite } from '@electric-sql/pglite'
 import { readdirSync, readFileSync } from 'node:fs'
 import { join, resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -34,8 +41,37 @@ const MIGRATIONS_DIR = join(REPO_ROOT, 'backend', 'src', 'db', 'migrations')
 /** The migration whose view round-trip is being checked. */
 const ROUND_TRIP_AT = '005_rhc.sql'
 
-const db = new PGlite()
-const q = async (sql) => (await db.query(sql)).rows
+const DATABASE_URL = process.env.DATABASE_URL
+const usingRealPg = Boolean(DATABASE_URL)
+
+let exec, q, close
+if (usingRealPg) {
+  // `pg` is a backend dependency, and pnpm does not hoist it to the root, so
+  // a bare import from scripts/ resolves only by luck of the layout. Resolve
+  // it from the workspace that actually declares it.
+  const { createRequire } = await import('node:module')
+  const requireFromBackend = createRequire(join(REPO_ROOT, 'backend', 'package.json'))
+  const pgLib = requireFromBackend('pg')
+  const client = new pgLib.Client({ connectionString: DATABASE_URL })
+  // The container is usually still starting when this runs.
+  for (let i = 0; ; i++) {
+    try { await client.connect(); break } catch (err) {
+      if (i >= 30) throw err
+      await new Promise((r) => setTimeout(r, 1000))
+    }
+  }
+  exec = (sql) => client.query(sql)
+  q = async (sql) => (await client.query(sql)).rows
+  close = () => client.end()
+  console.log('checking against real Postgres, hypertables included\n')
+} else {
+  const { PGlite } = await import('@electric-sql/pglite')
+  const db = new PGlite()
+  exec = (sql) => db.exec(sql)
+  q = async (sql) => (await db.query(sql)).rows
+  close = async () => {}
+  console.log('checking against Postgres-in-WASM, no timescaledb\n')
+}
 
 /**
  * PGlite ships no timescaledb, and only price_history and prob_snapshots use
@@ -43,9 +79,11 @@ const q = async (sql) => (await db.query(sql)).rows
  * statements are dropped for this harness. CI still runs the real image.
  */
 const stripTimescale = (sql) =>
-  sql
-    .replace(/CREATE EXTENSION IF NOT EXISTS timescaledb;/g, '')
-    .replace(/SELECT create_hypertable\([^;]*\);/g, '')
+  usingRealPg
+    ? sql
+    : sql
+        .replace(/CREATE EXTENSION IF NOT EXISTS timescaledb;/g, '')
+        .replace(/SELECT create_hypertable\([^;]*\);/g, '')
 
 const viewDefs = async () =>
   Object.fromEntries(
@@ -68,7 +106,7 @@ let before = null
 for (const file of files) {
   if (file === ROUND_TRIP_AT) before = await viewDefs()
   try {
-    await db.exec(stripTimescale(readFileSync(join(MIGRATIONS_DIR, file), 'utf8')))
+    await exec(stripTimescale(readFileSync(join(MIGRATIONS_DIR, file), 'utf8')))
     console.log(`applied ${file}`)
   } catch (err) {
     fail(`${file}: ${err.message}`)
@@ -130,6 +168,24 @@ else console.log('pool_candidates exists')
 
 const idx = (await q(`SELECT indexname FROM pg_indexes WHERE tablename = 'markets'`)).map((r) => r.indexname)
 if (!idx.includes('idx_markets_feed_id')) fail('idx_markets_feed_id is missing')
+
+// The check the WASM path cannot do: prob_snapshots is a hypertable and 005
+// alters two of its columns, so on a real timescale server confirm it is still
+// a hypertable and that the widening actually took underneath it.
+if (usingRealPg) {
+  const ht = await q(`SELECT hypertable_name FROM timescaledb_information.hypertables
+                       WHERE hypertable_name = 'prob_snapshots'`)
+  if (!ht.length) fail('prob_snapshots stopped being a hypertable')
+  else {
+    const cols = await q(`SELECT column_name, numeric_scale FROM information_schema.columns
+                           WHERE table_name = 'prob_snapshots' AND column_name IN ('up_pool','down_pool')`)
+    const bad = cols.filter((c) => Number(c.numeric_scale) !== 18)
+    if (bad.length) fail(`hypertable columns not widened: ${bad.map((c) => c.column_name).join(', ')}`)
+    else console.log('prob_snapshots is still a hypertable, and its columns widened')
+  }
+}
+
+await close()
 
 if (process.exitCode) console.error('\nmigration check FAILED')
 else console.log('\nmigration check passed')
