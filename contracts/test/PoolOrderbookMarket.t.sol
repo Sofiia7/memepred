@@ -119,7 +119,7 @@ contract PoolOrderbookMarketTest is Test {
 
     // ── STAKE BOUNDS IN WETH ─────────────────────────────────
     function test_StakeBoundsAreStatedInWeth() public view {
-        assertEq(market.MIN_BET(), 0.004 ether);
+        assertEq(market.MIN_BET(), 0.005 ether);
         assertEq(market.MAX_BET(), 0.04 ether);
         assertEq(market.MAX_TRADER_LP_EXPOSURE(), 0.12 ether);
     }
@@ -129,7 +129,7 @@ contract PoolOrderbookMarketTest is Test {
     function test_BelowMinBetIsRejected() public {
         vm.prank(alice);
         vm.expectRevert("below min");
-        market.placeBet(OrderbookMarket.Direction.UP, 0.0039 ether, address(0), 1e18, 100);
+        market.placeBet(OrderbookMarket.Direction.UP, 0.0049 ether, address(0), 1e18, 100);
 
         // Exactly at the inherited USDC value, which must now be far too small.
         vm.prank(alice);

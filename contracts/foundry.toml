@@ -22,6 +22,11 @@ max_test_rejects = 65536
 [rpc_endpoints]
 base_mainnet = "${BASE_RPC_URL}"
 base_sepolia  = "https://sepolia.base.org"
+# Robinhood Chain. The public endpoints are rate limited and keep only ~8
+# minutes of state, so they serve scripts and eth_call but cannot back a
+# pinned-block fork test; see docs/rhc/measurements.
+rhc_mainnet = "https://rpc.mainnet.chain.robinhood.com"
+rhc_testnet = "https://rpc.testnet.chain.robinhood.com"
 
 [etherscan]
 base = { key = "${BASESCAN_API_KEY}", url = "https://api.basescan.org/api" }

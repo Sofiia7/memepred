@@ -67,36 +67,36 @@ contract PoolOrderbookMarket is OrderbookMarket {
      *
      *     0.01 * 2X > gas      i.e.      X > 50 * gas
      *
-     * Settlement on this path measures 105,572 gas of marginal cost per match
-     * (contracts/test/PoolSettlementGasBench.t.sol), plus 24,103 for the part
-     * the mock pool understates - its observe() walks a two-segment array where
-     * a real pool binary searches a populated ring, measured at 41,500 gas of
-     * execution against a live pool on chain. So 129,675 per match.
+     * Settlement costs 137,926 gas per additional match, measured on chain
+     * 46630 rather than derived: five matches in one batch cost 774,563 gas
+     * against 222,861 for one, so the marginal is (774,563 - 222,861) / 4 and
+     * the fixed part of the transaction is the remaining 84,935.
+     *
+     * That testnet runs a stand-in pool whose observe() is cheaper than a real
+     * one's binary search over a populated ring - measured at 17,397 against
+     * 41,500 on a live mainnet pool - so mainnet should be about 162,029.
      *
      * Batching does not rescue this: it removes 19%, not the "several times"
      * the design doc assumed, because the cost is per-match storage writes.
      *
-     * Robinhood Chain gas over the sampled period ran 0.383 to 3.059 gwei with
-     * a p90 of 0.612, which puts break-even at 0.00397 ETH. Hence 0.004.
+     * Gas over the sampled period ran 0.383 to 3.059 gwei with a p90 of 0.612.
+     * At 162,029 gas that puts break-even at 0.00496 ETH, so 0.005.
      *
      * p90 rather than the maximum on purpose: the spikes are short - the one
      * caught in the sample lasted four minutes - and a settlement is not
      * urgent, because its exit price is anchored to the match's own settleAt
      * rather than to whenever the keeper ran. The keeper waits the spike out.
-     * Pricing for the maximum instead would put the floor at 0.020 ETH against
+     * Pricing for the maximum instead would put the floor at 0.025 ETH against
      * a 0.04 ETH ceiling, which is not a product.
      *
-     * Worth being plain about the margin: at p90 this floor is break-even to
-     * within 1%, not comfortably above it. A minimum-size bet earns the
-     * protocol approximately nothing and everything larger earns the 1%. Moving
-     * to 0.005 ETH would buy headroom out to p95, at the cost of a $12 minimum.
-     * The gas sample is still short (see the measurements README), so this is a
-     * number to revisit before mainnet rather than one to treat as settled.
-     *
-     * Full working: docs/rhc/measurements/README.md.
+     * This was 0.004 until the live measurement. The bench alone had put the
+     * marginal at 129,675, which made 0.004 break-even to within 1%; the real
+     * chain is 25% dearer than that, and 0.004 covers gas only up to 0.494
+     * gwei - below the p90 it was supposed to clear. The gas sample is still
+     * short, so this is a number to check again before mainnet.
      */
     function MIN_BET() public view virtual override returns (uint256) {
-        return 0.004 ether;
+        return 0.005 ether;
     }
 
     /// Unaudited-protocol ceiling, the same posture as Base's $100 cap: small

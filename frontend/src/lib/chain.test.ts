@@ -56,15 +56,15 @@ describe('stake bounds', () => {
     expect(c.maxBet).toBe('100')
   })
 
-  it('matches PoolOrderbookMarket on rhc: 0.004 and 0.04 WETH', () => {
+  it('matches PoolOrderbookMarket on rhc: 0.005 and 0.04 WETH', () => {
     const c = resolveDeployment('rhc').currency
-    expect(c.minBet).toBe('0.004')
+    expect(c.minBet).toBe('0.005')
     expect(c.maxBet).toBe('0.04')
   })
 
   it('leaves room to show a stake at the floor', () => {
-    // 0.004 needs three decimals; showing two would render the minimum bet
-    // as 0.00.
+    // 0.005 needs three decimals; showing two would render the minimum bet
+    // as 0.01, which is twice the floor.
     const c = resolveDeployment('rhc').currency
     expect(Number(c.minBet).toFixed(c.displayDecimals)).not.toBe('0.0000'.slice(0, c.displayDecimals + 2))
     expect(c.displayDecimals).toBeGreaterThanOrEqual(3)

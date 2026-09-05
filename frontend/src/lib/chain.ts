@@ -54,11 +54,11 @@ const USDC: CurrencyConfig = {
   displayDecimals: 2,
 }
 
-/** PoolOrderbookMarket's overrides: 0.004 / 0.04 ETH, derived from gas. */
+/** PoolOrderbookMarket's overrides: 0.005 / 0.04 ETH, derived from gas. */
 const WETH: CurrencyConfig = {
   decimals: 18,
   symbol: 'WETH',
-  minBet: '0.004',
+  minBet: '0.005',
   maxBet: '0.04',
   displayDecimals: 4,
 }
