@@ -67,19 +67,31 @@ contract PoolOrderbookMarket is OrderbookMarket {
      *
      *     0.01 * 2X > gas      i.e.      X > 50 * gas
      *
-     * Settlement was measured at 110,641 gas of marginal cost per match
-     * (contracts/test/SettlementGasBench.t.sol - and note that batching moves
-     * this by 19%, not by the "several times" the design doc assumed, because
-     * the cost is per-match storage writes). Robinhood Chain gas over the
-     * sampled period ran 0.383 to 3.059 gwei with a p90 of 0.720, so at p90 one
-     * settlement costs 0.0000797 ETH and the floor lands at 0.004 ETH.
+     * Settlement on this path measures 105,572 gas of marginal cost per match
+     * (contracts/test/PoolSettlementGasBench.t.sol), plus 24,103 for the part
+     * the mock pool understates - its observe() walks a two-segment array where
+     * a real pool binary searches a populated ring, measured at 41,500 gas of
+     * execution against a live pool on chain. So 129,675 per match.
+     *
+     * Batching does not rescue this: it removes 19%, not the "several times"
+     * the design doc assumed, because the cost is per-match storage writes.
+     *
+     * Robinhood Chain gas over the sampled period ran 0.383 to 3.059 gwei with
+     * a p90 of 0.612, which puts break-even at 0.00397 ETH. Hence 0.004.
      *
      * p90 rather than the maximum on purpose: the spikes are short - the one
      * caught in the sample lasted four minutes - and a settlement is not
      * urgent, because its exit price is anchored to the match's own settleAt
      * rather than to whenever the keeper ran. The keeper waits the spike out.
-     * Pricing for the maximum instead would put the floor at 0.017 ETH against
+     * Pricing for the maximum instead would put the floor at 0.020 ETH against
      * a 0.04 ETH ceiling, which is not a product.
+     *
+     * Worth being plain about the margin: at p90 this floor is break-even to
+     * within 1%, not comfortably above it. A minimum-size bet earns the
+     * protocol approximately nothing and everything larger earns the 1%. Moving
+     * to 0.005 ETH would buy headroom out to p95, at the cost of a $12 minimum.
+     * The gas sample is still short (see the measurements README), so this is a
+     * number to revisit before mainnet rather than one to treat as settled.
      *
      * Full working: docs/rhc/measurements/README.md.
      */

@@ -430,6 +430,28 @@ contract PoolMarketFactoryTest is Test {
         impl.initialize(bytes32(uint256(1)), 60, multisig, 0);
     }
 
+    // ── COST ─────────────────────────────────────────────────
+    /**
+     * TZ §7 row 2: what onboarding one pool costs.
+     *
+     * This is the whole per-pool spend besides the observation ring, and it is
+     * paid three times per pool (once per duration). Reported rather than
+     * asserted: a threshold here would break on unrelated changes, and the
+     * number only means anything next to the gas price, which lives in
+     * docs/rhc/measurements.
+     */
+    function test_CreateMarketGas() public {
+        MockUniswapV3Pool pool = _goodPool();
+
+        vm.prank(anyone);
+        uint256 before = gasleft();
+        factory.createMarket(address(pool), D15);
+        uint256 used = before - gasleft();
+
+        emit log_named_uint("createMarket gas (clone + 5 gates + 3 authorisations)", used);
+        assertLt(used, 1_500_000, "a market must stay cheap enough to onboard freely");
+    }
+
     function test_ConstructorRejectsZeroAddresses() public {
         vm.expectRevert(PoolMarketFactory.ZeroAddress.selector);
         new PoolMarketFactory(
