@@ -51,6 +51,23 @@ const DEFAULT_CRIT = CHAIN_PROFILE.name === 'rhc' ? '0.05' : '10'
 const WARN_USDC = Number(process.env.INVARIANT_WARN_USDC ?? DEFAULT_WARN)
 const CRIT_USDC = Number(process.env.INVARIANT_CRIT_USDC ?? DEFAULT_CRIT)
 
+/**
+ * The block the off-chain projection currently reflects.
+ *
+ * The orderbook stream's cursor: every order, match and settlement up to it has
+ * been ingested, and nothing past it has. Undefined when there is no cursor yet
+ * or the value cannot be read, which the caller treats as "compare at head".
+ */
+async function indexedBlock(): Promise<bigint | undefined> {
+  try {
+    const r = await pg.query(`SELECT last_block FROM _indexer_cursor WHERE stream = 'orderbook'`)
+    if (r.rowCount === 0) return undefined
+    return BigInt(r.rows[0].last_block)
+  } catch {
+    return undefined
+  }
+}
+
 export async function invariantTick() {
   if (!CONTRACTS.USDC || CONTRACTS.USDC === '0x') return
 
@@ -66,7 +83,19 @@ export async function invariantTick() {
   const totalRefunded  = parseFloat(s.total_refunded)
   const expected       = parseFloat(s.expected_onchain_balance)
 
-  // 2. Sum on-chain USDC across all markets.
+  // 2. Sum on-chain balances across all markets, AT THE BLOCK THE PROJECTION
+  //    REFLECTS.
+  //
+  //    Reading at head compares two different moments: a bet that landed after
+  //    the indexer's last tick is in the market's balance and not yet in the
+  //    rows, so an active market sits at a permanent warn of about one stake.
+  //    An alarm that is always yellow is one nobody reads, which is the failure
+  //    mode this monitor is least able to afford.
+  //
+  //    Falls back to head when the block is unavailable - the public RPC keeps
+  //    roughly eight minutes of state on this chain - because a comparison
+  //    with a little race in it still beats none at all.
+  const at = await indexedBlock()
   const markets = await pg.query<{ market_address: string }>(
     `SELECT market_address FROM markets`,
   )
@@ -78,6 +107,7 @@ export async function invariantTick() {
         abi: USDC_BALANCE_ABI,
         functionName: 'balanceOf',
         args: [market_address as Address],
+        ...(at === undefined ? {} : { blockNumber: at }),
       })
       actualWei += bal
     } catch (err) {
