@@ -1,5 +1,19 @@
-import { config } from 'dotenv'
-config()
+/**
+ * First import, and it has to be an import rather than a call.
+ *
+ * ES module imports are hoisted above top-level statements, so the previous
+ * `import { config } from 'dotenv'; config()` ran AFTER every other import had
+ * already been evaluated - including db/pg.ts, which reads DATABASE_URL at
+ * module scope through config.ts. The API therefore started with no database
+ * password and died on a SASL error that named neither dotenv nor the cause.
+ *
+ * `dotenv/config` is a side-effecting import, so it is hoisted in order and
+ * runs first, and it honours DOTENV_CONFIG_PATH - which is how a second chain's
+ * profile gets loaded. Unset, it reads .env from the cwd exactly as before.
+ * keeper/index.ts has always done it this way, which is why the keeper worked
+ * against the rhc profile and the API did not.
+ */
+import 'dotenv/config'
 
 import Fastify from 'fastify'
 import { marketsRoutes }     from './routes/markets.js'
