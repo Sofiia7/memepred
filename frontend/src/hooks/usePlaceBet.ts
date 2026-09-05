@@ -16,7 +16,7 @@ import {
   usePublicClient,
 } from 'wagmi'
 import { parseUnits, maxUint256, decodeEventLog, type Address, type Hash, encodeFunctionData } from 'viem'
-import { CONTRACTS, ORDERBOOK_MARKET_ABI, ERC20_ABI } from '../lib/contracts'
+import { CONTRACTS, ORDERBOOK_MARKET_ABI, ERC20_ABI, CURRENCY_DECIMALS } from '../lib/contracts'
 import { getPendingReferrer } from '../lib/referral'
 import { fetchBetPayload, withPayload } from '../lib/oracle'
 import { useEnsureChain } from './useEnsureChain'
@@ -66,7 +66,7 @@ export function usePlaceBet({
   const [error, setError] = useState<string>()
   const [orderId, setOrderId] = useState<bigint>()
 
-  const amountWei = parseUnits(amountUsd || '0', 6)
+  const amountWei = parseUnits(amountUsd || '0', CURRENCY_DECIMALS)
 
   // ── 4.2: per-market feedId from the market contract ───
   const { data: marketFeedId } = useReadContract({

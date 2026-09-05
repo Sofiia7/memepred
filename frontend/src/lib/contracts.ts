@@ -1,4 +1,5 @@
 import { type Address } from 'viem'
+import { CURRENCY, IS_POOL_BACKED } from './chain'
 
 // ── ADDRESSES ──────────────────────────────────────────────
 export const CONTRACTS = {
@@ -12,12 +13,19 @@ export const CONTRACTS = {
   GENESIS_NFT:       import.meta.env.VITE_GENESIS_NFT              as Address,
 } as const
 
-// Mirrors OrderbookMarket.sol's MIN_BET/MAX_BET (1 USDC / 100 USDC). Not
-// read on-chain because it's a compile-time constant on the contract, not
-// per-market state - keeping it here lets the UI clamp/validate client-side
-// instead of letting users submit a tx that's guaranteed to revert.
-export const MIN_BET_USD = 1
-export const MAX_BET_USD = 100
+// Mirrors the market contract's MIN_BET/MAX_BET. Not read on-chain because
+// they are compile-time constants rather than per-market state - keeping them
+// here lets the UI clamp input instead of letting users submit a tx that is
+// guaranteed to revert.
+//
+// The values are per deployment: 1/100 USDC on Base, 0.004/0.04 WETH on
+// Robinhood Chain, where the floor is set by settlement gas rather than taste.
+// Re-exported through lib/chain so there is one place that knows the currency.
+export const MIN_BET = Number(CURRENCY.minBet)
+export const MAX_BET = Number(CURRENCY.maxBet)
+export const CURRENCY_SYMBOL = CURRENCY.symbol
+export const CURRENCY_DECIMALS = CURRENCY.decimals
+export { IS_POOL_BACKED }
 
 // Mirrors OrderbookMarket.SETTLE_GRACE (24 hours). Past settleAt + this, the
 // contract refuses to settle ("settlement window expired") and the only way to

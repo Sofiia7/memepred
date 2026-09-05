@@ -5,7 +5,7 @@ import { usePlaceBet } from '../../hooks/usePlaceBet'
 import { usePythPrice } from '../../hooks/usePythPrice'
 import { useConnectWallet } from '../../hooks/useConnectWallet'
 import { formatDuration } from '../../lib/symbols'
-import { MIN_BET_USD, MAX_BET_USD, LP_TAKER_FEE_BPS } from '../../lib/contracts'
+import { MIN_BET, MAX_BET, CURRENCY_SYMBOL, LP_TAKER_FEE_BPS } from '../../lib/contracts'
 import { Chev } from './icons'
 import type { PickedBet } from './MarketCard'
 
@@ -95,13 +95,13 @@ export function Composer({ picked, onClear }: { picked: PickedBet | null; onClea
           <input
             type="number"
             value={stake}
-            min={MIN_BET_USD}
-            max={MAX_BET_USD}
-            onChange={(e) => setStake(Math.min(MAX_BET_USD, Math.max(0, +e.target.value || 0)))}
+            min={MIN_BET}
+            max={MAX_BET}
+            onChange={(e) => setStake(Math.min(MAX_BET, Math.max(0, +e.target.value || 0)))}
           />
         </div>
       </div>
-      <div className="stake-hint">${MIN_BET_USD}–${MAX_BET_USD} per bet</div>
+      <div className="stake-hint">{MIN_BET}-{MAX_BET} {CURRENCY_SYMBOL} per bet</div>
 
       <div className="chips">
         {STAKE_CHIPS.map((c) => (
@@ -113,7 +113,7 @@ export function Composer({ picked, onClear }: { picked: PickedBet | null; onClea
 
       <button
         className={'cta' + (bet.isLoading ? ' disabled' : '')}
-        disabled={bet.isLoading || stake < MIN_BET_USD || stake > MAX_BET_USD}
+        disabled={bet.isLoading || stake < MIN_BET || stake > MAX_BET}
         onClick={() => {
           if (!isConnected) {
             connectWallet()

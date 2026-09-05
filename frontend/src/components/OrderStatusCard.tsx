@@ -17,6 +17,7 @@ import { useReadContract } from 'wagmi'
 import { useEffect, useState } from 'react'
 import type { Address } from 'viem'
 import { formatUnits } from 'viem'
+import { CURRENCY_DECIMALS } from '../lib/contracts'
 import { ORDERBOOK_MARKET_ABI, SETTLE_GRACE_SEC } from '../lib/contracts'
 import { useOrderStatus } from '../hooks/useOrderStatus'
 import { ShareCard } from './ShareCard'
@@ -82,9 +83,9 @@ export function OrderStatusCard({
   const unmatchedRef = order.unmatchedRefunded
   const dir          = order.direction === 0 ? 'UP' : 'DOWN'
 
-  const amountUsd = formatUnits(amount, 6)
-  const filledUsd = formatUnits(filled, 6)
-  const payoutUsd = formatUnits(payout, 6)
+  const amountUsd = formatUnits(amount, CURRENCY_DECIMALS)
+  const filledUsd = formatUnits(filled, CURRENCY_DECIMALS)
+  const payoutUsd = formatUnits(payout, CURRENCY_DECIMALS)
   const won       = payout > 0n
 
   // ── PENDING ────────────────────────────────────────────────

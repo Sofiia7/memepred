@@ -14,15 +14,15 @@
  *                    gate is behind you rather than being a single moment
  *                    the user scrolled past once.
  *
- * Remove both only when there is a real audit to point at - and if MAX_BET
- * is ever raised in the contract, update MAX_BET_USDC here in the same
- * change, or this text quietly becomes a false statement.
+ * Remove both only when there is a real audit to point at. The cap is read
+ * from lib/chain rather than restated here, because it used to be a literal
+ * and a literal in a disclosure becomes a false statement the moment the
+ * contract's own constant moves - which it does between deployments: 100 USDC
+ * on Base, 0.04 WETH on Robinhood Chain.
  */
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-
-/** Mirrors OrderbookMarket.MAX_BET (100e6, i.e. 100 USDC). */
-const MAX_BET_USDC = 100
+import { MAX_BET, CURRENCY_SYMBOL, IS_POOL_BACKED } from '../lib/contracts'
 
 const ACK_KEY = 'ftm_risk_ack_v1'
 
@@ -31,7 +31,7 @@ export function RiskStrip() {
     <div className="risk-strip" role="note">
       <b>UNAUDITED</b>
       <span className="sep">·</span>
-      <span>max bet {MAX_BET_USDC} USDC</span>
+      <span>max bet {MAX_BET} {CURRENCY_SYMBOL}</span>
       <span className="sep">·</span>
       <Link to="/terms">why</Link>
     </div>
@@ -79,11 +79,11 @@ export function RiskGate({ children }: { children: React.ReactNode }) {
           <li>
             <b>The smart contracts have not been audited.</b> No independent
             security firm has reviewed the code holding the money. A bug could
-            mean deposited USDC is lost permanently - there is no insurance,
-            no reversal, and no support desk that can get it back.
+            mean deposited {CURRENCY_SYMBOL} is lost permanently - there is no
+            insurance, no reversal, and no support desk that can get it back.
           </li>
           <li>
-            <b>That's why bets are capped at {MAX_BET_USDC} USDC.</b> The cap
+            <b>That's why bets are capped at {MAX_BET} {CURRENCY_SYMBOL}.</b> The cap
             is enforced by the contract itself, not by this interface. It
             exists so the worst case stays a size you chose to risk. Treat it
             as the ceiling it is, not as a per-bet limit to place ten of.
@@ -93,6 +93,19 @@ export function RiskGate({ children }: { children: React.ReactNode }) {
             perfect code - if the price goes the other way, the money goes to
             whoever took the other side. This is not investing.
           </li>
+          {IS_POOL_BACKED && (
+            <li>
+              <b>The price comes from the token's own liquidity pool, and a
+              thin pool can be pushed.</b> Settlement reads a time-weighted
+              average rather than the spot price, and a move too far from that
+              average refunds the bet instead of settling it - but a pool
+              holding a few ETH can still be moved by someone willing to spend
+              more than your bet is worth. The market will not exist at all
+              below a minimum pool depth, and short markets are harder to push
+              than long ones. It is not fully solved, and you should size your
+              bets knowing that.
+            </li>
+          )}
         </ol>
 
         <p className="risk-fine">

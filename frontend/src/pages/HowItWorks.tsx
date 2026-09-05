@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { ScreenTitle } from '../components/ui/AppShell'
-import { MAX_BET_USD, MIN_BET_USD } from '../lib/contracts'
+import { MAX_BET, MIN_BET, CURRENCY_SYMBOL } from '../lib/contracts'
 
 function Step({ n, title, children }: { n: number; title: string; children: ReactNode }) {
   return (
@@ -23,7 +23,7 @@ export function HowItWorksPage() {
       <div className="how-steps">
         <Step n={1} title="Pick a coin, a direction, and a timeframe">
           Choose UP or DOWN for a meme coin's USD price over a fixed window (5 min to 24h),
-          then stake between ${MIN_BET_USD} and ${MAX_BET_USD} USDC.
+          then stake between {MIN_BET} and {MAX_BET} {CURRENCY_SYMBOL}.
         </Step>
         <Step n={2} title="You get matched">
           Your stake is matched against a trader who picked the opposite side (peer match,

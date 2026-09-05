@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useReadContract, useWriteContract, useAccount, usePublicClient } from 'wagmi'
 import { parseUnits, maxUint256 } from 'viem'
-import { CONTRACTS, LIQUIDITY_POOL_ABI, ERC20_ABI } from '../lib/contracts'
+import { CONTRACTS, LIQUIDITY_POOL_ABI, ERC20_ABI, CURRENCY_DECIMALS } from '../lib/contracts'
 import { ScreenTitle } from '../components/ui/AppShell'
 import { StarIcon } from '../components/ui/icons'
 import { useConnectWallet } from '../hooks/useConnectWallet'
@@ -117,7 +117,7 @@ export function GenesisPage() {
     try {
       const chainCheck = await ensureChain()
       if (!chainCheck.ok) { setActionError(chainCheck.error); return }
-      const amount = parseUnits(depositAmount, 6)
+      const amount = parseUnits(depositAmount, CURRENCY_DECIMALS)
       if (usdcAllowance === undefined || usdcAllowance < amount) {
         const approveHash = await approve({
           address: CONTRACTS.USDC,
@@ -157,7 +157,7 @@ export function GenesisPage() {
     try {
       const chainCheck = await ensureChain()
       if (!chainCheck.ok) { setActionError(chainCheck.error); return }
-      const assets = parseUnits(withdrawAmount, 6)
+      const assets = parseUnits(withdrawAmount, CURRENCY_DECIMALS)
       await withdraw({
         address: CONTRACTS.LIQUIDITY_POOL,
         abi: LIQUIDITY_POOL_ABI,
