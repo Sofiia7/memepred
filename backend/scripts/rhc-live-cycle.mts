@@ -6,6 +6,7 @@
  *   npx tsx scripts/rhc-live-cycle.mts                # preflight, signs nothing
  *   PHASE=fund   npx tsx scripts/rhc-live-cycle.mts   # gas + WETH to the counterparty
  *   PHASE=market npx tsx scripts/rhc-live-cycle.mts   # create the markets
+ *   PHASE=unpause npx tsx scripts/rhc-live-cycle.mts  # undo an emergency stop
  *   PHASE=pvp    npx tsx scripts/rhc-live-cycle.mts   # the whole cycle
  *   PHASE=batch  npx tsx scripts/rhc-live-cycle.mts   # marginal settlement gas, live
  *
@@ -256,7 +257,8 @@ async function batch(market: Address) {
       })
       await pub.waitForTransactionReceipt({ hash })
     }
-    process.stdout.write(`   placed ${i + 1}/${pairs} pairs`)
+    process.stdout.write(`
+   placed ${i + 1}/${pairs} pairs`)
   }
   console.log()
 
@@ -279,6 +281,62 @@ async function batch(market: Address) {
    compare with a single-match settlement to get the marginal cost.`)
 }
 
+/**
+ * Undo an emergency stop.
+ *
+ * Deliberately two steps with two different keys, because the contracts are
+ * deliberately asymmetric: a low-trust hot wallet may stop trading, and only
+ * the multisig may restart it. The factory's feed flag gates new markets and is
+ * the owner's; each market's own pause is the multisig's, and the factory's
+ * sweep cannot undo it.
+ *
+ * Needed already: the watchdog paused every market on this chain before its
+ * per-profile ping existed, by asking a RedStone gateway for a symbol decoded
+ * out of a pool address and counting the failures. The stop chain worked
+ * exactly as designed, which is the good news inside the bad.
+ */
+async function unpause() {
+  const { readFileSync } = await import('node:fs')
+  const standin = JSON.parse(
+    readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), '../../.testwallets/multisig-standin.json'), 'utf8'),
+  ) as { privateKey: string; address: Address }
+  const M = signer('multisig', standin.privateKey)
+
+  const feedId = feedIdFor(POOL)
+  const paused = await pub.readContract({
+    address: FACTORY, abi: parseAbi(['function feedPaused(bytes32) view returns (bool)']),
+    functionName: 'feedPaused', args: [feedId],
+  })
+  console.log(`
+feedPaused ${paused}`)
+
+  if (paused) {
+    await wait(await A.wallet.writeContract({
+      address: FACTORY, abi: parseAbi(['function unpauseFeed(bytes32)']),
+      functionName: 'unpauseFeed', args: [feedId],
+    }), 'unpauseFeed')
+  }
+
+  // The multisig stand-in has never held gas on this chain.
+  const gas = await pub.getBalance({ address: M.account.address })
+  if (gas < parseEther('0.0002')) {
+    await wait(await A.wallet.sendTransaction({ to: M.account.address, value: parseEther('0.0004') }), 'gas to multisig')
+  }
+
+  const markets = await pub.readContract({
+    address: FACTORY, abi: POOL_MARKET_FACTORY_ABI, functionName: 'getActiveMarkets', args: [feedId],
+  })
+  for (const m of markets) {
+    const isPaused = await pub.readContract({
+      address: m, abi: parseAbi(['function paused() view returns (bool)']), functionName: 'paused',
+    })
+    if (!isPaused) { console.log(`   ${m} already live`); continue }
+    await wait(await M.wallet.writeContract({
+      address: m, abi: parseAbi(['function unpause()']), functionName: 'unpause',
+    }), `unpause ${m}`)
+  }
+}
+
 // ── MAIN ───────────────────────────────────────────────────
 const phase = process.env.PHASE
 const markets = await preflight()
@@ -287,6 +345,8 @@ if (!phase) {
   console.log('\npreflight only. Set PHASE=fund | market | pvp to act.')
 } else if (phase === 'fund') {
   await fund()
+} else if (phase === 'unpause') {
+  await unpause()
 } else if (phase === 'market') {
   await createMarkets()
 } else if (phase === 'batch') {
