@@ -112,6 +112,8 @@ const MARKET_ABI = [
   { name: 'MIN_BET', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint256' }] },
   { name: 'MAX_BET', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint256' }] },
   { name: 'nextOrderId', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint256' }] },
+  { name: 'getPendingDepth', type: 'function', stateMutability: 'view', inputs: [],
+    outputs: [{ name: 'up', type: 'uint256' }, { name: 'down', type: 'uint256' }] },
   { name: 'getOrder', type: 'function', stateMutability: 'view', inputs: [{ type: 'uint256' }], outputs: [
     { name: 'trader', type: 'address' }, { name: 'direction', type: 'uint8' }, { name: 'amount', type: 'uint256' },
     { name: 'filledAmount', type: 'uint256' }, { name: 'referrer', type: 'address' }, { name: 'status', type: 'uint8' },
@@ -229,7 +231,29 @@ async function actPlaceBet(bot: Bot) {
   // happen naturally: two bots rarely pick the same size.
   const steps = Number(maxBet / minBet)
   const amount = minBet * BigInt(1 + Math.floor(Math.random() * Math.max(1, steps)))
-  const dir = Math.random() < 0.5 ? 0 : 1
+
+  /**
+   * Take the thinner side of the book, not a coin flip.
+   *
+   * A fair coin over three bots produced 1 UP against 6 DOWN in the first
+   * hour - unlikely but perfectly possible - and an unmatched order is a
+   * refund, not a settlement. The soak is meant to exercise matching, payouts
+   * and claims, and a flow that never crosses exercises none of them.
+   *
+   * Standing opposite the queue is also closer to what a real counterparty
+   * does, so it is not only a way to force the interesting path. The coin flip
+   * survives as the tie-break, which is what keeps refunds and unmatched
+   * expiry in the mix.
+   */
+  let dir: number
+  try {
+    const [upDepth, downDepth] = await pub.readContract({
+      address: market, abi: MARKET_ABI, functionName: 'getPendingDepth',
+    })
+    dir = upDepth === downDepth ? (Math.random() < 0.5 ? 0 : 1) : upDepth > downDepth ? 1 : 0
+  } catch {
+    dir = Math.random() < 0.5 ? 0 : 1
+  }
 
   const allowance = await pub.readContract({
     address: STAKE, abi: ERC20_ABI, functionName: 'allowance', args: [bot.address, market],
