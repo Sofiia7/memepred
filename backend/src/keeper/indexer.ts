@@ -52,7 +52,16 @@ const E_REFERRAL_REGD   = parseAbiItem('event ReferralRegistered(address indexed
  */
 const UNIT_DIVISOR = `1e${CHAIN_PROFILE.currencyDecimals}`
 
-const CHUNK = 1_900n  // Sepolia public RPC caps log queries at ~2000 blocks.
+/**
+ * How many blocks one getLogs call may span.
+ *
+ * 1,900 is Base Sepolia's public cap, and it is not a universal one. Robinhood
+ * Chain serves 100,000 - which matters more than it sounds: blocks there are
+ * 82ms, so 1,900 of them is under three minutes of chain, and an indexer that
+ * has fallen an hour behind would need 23 round trips to catch up on one
+ * stream. Measured against the public endpoint, not assumed.
+ */
+const CHUNK = BigInt(process.env.INDEXER_CHUNK ?? (CHAIN_PROFILE.name === 'rhc' ? 100_000 : 1_900))
 
 const DEFAULT_START_BLOCK = BigInt(process.env.INDEXER_START_BLOCK || '41926633')
 

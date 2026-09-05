@@ -103,10 +103,27 @@ const fail = (msg) => {
 const files = readdirSync(MIGRATIONS_DIR).filter((f) => f.endsWith('.sql')).sort()
 let before = null
 
+// Record what was applied, exactly as backend/src/db/migrate.ts does.
+//
+// Without this the database is left looking unmigrated, and the next process
+// to run the real migrator re-applies 001 onward on top of a schema 005 has
+// already changed - which fails with "cannot drop columns from view", because
+// 003's version of market_usdc_flows has fewer columns than 004's. Found by
+// pointing the keeper at a database this script had prepared.
+await exec(`CREATE TABLE IF NOT EXISTS _migrations (
+  name TEXT PRIMARY KEY, applied_at TIMESTAMPTZ DEFAULT NOW()
+)`)
+const alreadyApplied = new Set((await q('SELECT name FROM _migrations')).map((r) => r.name))
+
 for (const file of files) {
+  if (alreadyApplied.has(file)) {
+    console.log(`skipped ${file} (already applied)`)
+    continue
+  }
   if (file === ROUND_TRIP_AT) before = await viewDefs()
   try {
     await exec(stripTimescale(readFileSync(join(MIGRATIONS_DIR, file), 'utf8')))
+    await exec(`INSERT INTO _migrations(name) VALUES ('${file}') ON CONFLICT DO NOTHING`)
     console.log(`applied ${file}`)
   } catch (err) {
     fail(`${file}: ${err.message}`)
@@ -130,6 +147,8 @@ if (before) {
     }
   }
   if (!drift) console.log(`\nviews: ${Object.keys(after).length} identical across ${ROUND_TRIP_AT}`)
+} else if (alreadyApplied.has(ROUND_TRIP_AT)) {
+  console.log(`\nviews: ${ROUND_TRIP_AT} was already applied, round-trip not re-checked`)
 } else {
   fail(`${ROUND_TRIP_AT} not found - the view round-trip was not checked`)
 }
