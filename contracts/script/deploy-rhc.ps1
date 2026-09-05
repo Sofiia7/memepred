@@ -4,6 +4,7 @@
 #   .\script\deploy-rhc.ps1 -Script fixtures -Broadcast   # deploy them
 #   .\script\deploy-rhc.ps1                              # simulate the stack
 #   .\script\deploy-rhc.ps1 -Broadcast                   # deploy the stack
+#   .\script\deploy-rhc.ps1 -Script addpool -Broadcast   # one more stand-in pool
 #   .\script\deploy-rhc.ps1 -Network mainnet -Broadcast   # 4663, needs RHC_HANDOVER=true
 #
 # The sibling of deploy.ps1, and it exists for the same two reasons: foundry.toml
@@ -19,7 +20,7 @@
 param(
   [switch]$Broadcast,
   [ValidateSet('testnet', 'mainnet')][string]$Network = 'testnet',
-  [ValidateSet('stack', 'fixtures')][string]$Script = 'stack'
+  [ValidateSet('stack', 'fixtures', 'addpool')][string]$Script = 'stack'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -45,10 +46,10 @@ $rpc = if ($Network -eq 'mainnet') {
   'https://rpc.testnet.chain.robinhood.com'
 }
 
-$file = if ($Script -eq 'fixtures') {
-  'script/DeployRhcFixtures.s.sol'
-} else {
-  'script/DeployRhc.s.sol'
+$file = switch ($Script) {
+  'fixtures' { 'script/DeployRhcFixtures.s.sol' }
+  'addpool'  { 'script/AddRhcPool.s.sol' }
+  default    { 'script/DeployRhc.s.sol' }
 }
 
 # The stack script reads these two and has no defaults on purpose: pointing it

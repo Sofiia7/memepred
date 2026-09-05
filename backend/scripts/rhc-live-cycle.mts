@@ -7,6 +7,8 @@
  *   PHASE=fund   npx tsx scripts/rhc-live-cycle.mts   # gas + WETH to the counterparty
  *   PHASE=market npx tsx scripts/rhc-live-cycle.mts   # create the markets
  *   PHASE=unpause npx tsx scripts/rhc-live-cycle.mts  # undo an emergency stop
+ *   PHASE=grace  npx tsx scripts/rhc-live-cycle.mts   # strand a match, start the 24h clock
+ *   PHASE=refund npx tsx scripts/rhc-live-cycle.mts   # claim it a day later
  *   PHASE=pvp    npx tsx scripts/rhc-live-cycle.mts   # the whole cycle
  *   PHASE=batch  npx tsx scripts/rhc-live-cycle.mts   # marginal settlement gas, live
  *
@@ -337,6 +339,138 @@ feedPaused ${paused}`)
   }
 }
 
+/**
+ * Set up the one refund path that has never run on any chain.
+ *
+ * emergencyRefundMatch is how money leaves a match the keeper cannot settle.
+ * It needs `block.timestamp > settleAt + SETTLE_GRACE`, and SETTLE_GRACE is a
+ * twenty-four hour constant - so it cannot be reached by waiting for the soak,
+ * which settles everything it opens, and it cannot be hurried on a real chain.
+ *
+ * So: match two bets on a pool of its own, then set that pool's liquidity to
+ * zero. The resolver refuses to price a drained pool - it quotes whatever the
+ * last swap left behind - and emits MatchUnpriceable instead, which is exactly
+ * what happens to a token whose pool dies under an open position. A day later
+ * the refund is claimable by anyone.
+ *
+ * Its own pool because doing this to the soak's would stop the soak.
+ */
+async function grace() {
+  const pool = process.env.RHC_GRACE_POOL as Address
+  if (!pool) throw new Error('RHC_GRACE_POOL not set; run deploy-rhc.ps1 -Script addpool')
+
+  const markets = await pub.readContract({
+    address: FACTORY, abi: POOL_MARKET_FACTORY_ABI, functionName: 'getActiveMarkets',
+    args: [feedIdFor(pool)],
+  })
+  if (!markets.length) throw new Error('no markets on the grace pool yet; poolWatcher creates them')
+
+  // The shortest one: its matches come due soonest, so the 24h clock starts
+  // sooner too.
+  let market = markets[0]!
+  let shortest = await pub.readContract({ address: market, abi: MARKET, functionName: 'duration' })
+  for (const m of markets.slice(1)) {
+    const d = await pub.readContract({ address: m, abi: MARKET, functionName: 'duration' })
+    if (d < shortest) { shortest = d; market = m }
+  }
+
+  const [minBet, strike] = await Promise.all([
+    pub.readContract({ address: market, abi: MARKET, functionName: 'MIN_BET' }),
+    pub.readContract({ address: RESOLVER, abi: RESOLVER_ABI, functionName: 'spotPriceWad', args: [feedIdFor(pool)] }),
+  ])
+
+  console.log(`
+-- grace setup ---------------------------------`)
+  console.log(`pool   ${pool}`)
+  console.log(`market ${market} (${shortest}s)`)
+  console.log(`stake  ${formatEther(minBet)} WETH each way`)
+
+  for (const [s, dir] of [[A, 0], [B, 1]] as const) {
+    const allowance = await pub.readContract({
+      address: WETH, abi: ERC20, functionName: 'allowance', args: [s.account.address, market],
+    })
+    if (allowance < minBet) {
+      await wait(await s.wallet.writeContract({
+        address: WETH, abi: ERC20, functionName: 'approve', args: [market, 2n ** 255n],
+      }), `${s.name} approve`)
+    }
+    await wait(await s.wallet.writeContract({
+      address: market, abi: MARKET, functionName: 'placeBet',
+      args: [dir, minBet, '0x0000000000000000000000000000000000000000', strike, 300n],
+    }), `${s.name} placeBet ${dir === 0 ? 'UP' : 'DOWN'}`)
+  }
+
+  const m = await pub.readContract({ address: market, abi: MARKET, functionName: 'getMatch', args: [1n] })
+  if (m[2] === 0n) throw new Error('the two bets did not match')
+  const settleAt = Number(m[4])
+
+  // Kill the pool. Only possible because this is a stand-in; a real pool is
+  // drained by its own holders, which is the case being reproduced.
+  await wait(await A.wallet.writeContract({
+    address: pool, abi: parseAbi(['function setLiquidity(uint128)']),
+    functionName: 'setLiquidity', args: [0n],
+  }), 'drain the pool')
+
+  const grace = await pub.readContract({
+    address: market, abi: parseAbi(['function SETTLE_GRACE() view returns (uint256)']),
+    functionName: 'SETTLE_GRACE',
+  })
+  const claimable = settleAt + Number(grace)
+
+  console.log(`
+matched ${formatEther(m[2])} WETH a side, settleAt ${new Date(settleAt * 1000).toISOString()}`)
+  // Not "the keeper will emit MatchUnpriceable": it simulates first and sends
+  // nothing when the simulation settles zero, so that event only ever happens
+  // inside the simulation. What the keeper does on chain is step past the
+  // window, and it says so in its log:
+  //   "1 ready match(es) at offset 0 cannot settle yet - stepping past them"
+  console.log(`pool drained; the keeper will now step past this match every tick without sending`)
+  console.log(`emergencyRefundMatch becomes callable at ${new Date(claimable * 1000).toISOString()}`)
+  console.log(`
+then: MARKET=${market} PHASE=refund npx tsx scripts/rhc-live-cycle.mts`)
+}
+
+/** Claim the refund the grace phase set up, once the day has passed. */
+async function refund() {
+  const market = process.env.MARKET as Address
+  if (!market) throw new Error('MARKET not set; use the address the grace phase printed')
+
+  const m = await pub.readContract({ address: market, abi: MARKET, functionName: 'getMatch', args: [1n] })
+  if (m[6]) throw new Error('that match already settled; it was never unpriceable')
+
+  const grace = await pub.readContract({
+    address: market, abi: parseAbi(['function SETTLE_GRACE() view returns (uint256)']),
+    functionName: 'SETTLE_GRACE',
+  })
+  const claimable = Number(m[4]) + Number(grace)
+  const now = Math.floor(Date.now() / 1000)
+  if (now <= claimable) {
+    const left = claimable - now
+    throw new Error(`too early by ${Math.ceil(left / 60)} minutes; callable at ${new Date(claimable * 1000).toISOString()}`)
+  }
+
+  const before = {
+    A: await pub.readContract({ address: WETH, abi: ERC20, functionName: 'balanceOf', args: [A.account.address] }),
+    B: await pub.readContract({ address: WETH, abi: ERC20, functionName: 'balanceOf', args: [B.account.address] }),
+  }
+
+  // Permissionless on purpose: a refund nobody can trigger is not a refund.
+  // Called from A here, but any address would do.
+  await wait(await A.wallet.writeContract({
+    address: market, abi: parseAbi(['function emergencyRefundMatch(uint256)']),
+    functionName: 'emergencyRefundMatch', args: [1n],
+  }), 'emergencyRefundMatch')
+
+  const after = {
+    A: await pub.readContract({ address: WETH, abi: ERC20, functionName: 'balanceOf', args: [A.account.address] }),
+    B: await pub.readContract({ address: WETH, abi: ERC20, functionName: 'balanceOf', args: [B.account.address] }),
+  }
+  console.log(`
+A got back ${formatEther(after.A - before.A)} WETH`)
+  console.log(`B got back ${formatEther(after.B - before.B)} WETH`)
+  console.log(`stake was  ${formatEther(m[2])} a side - both sides whole, nobody won`)
+}
+
 // ── MAIN ───────────────────────────────────────────────────
 const phase = process.env.PHASE
 const markets = await preflight()
@@ -345,6 +479,10 @@ if (!phase) {
   console.log('\npreflight only. Set PHASE=fund | market | pvp to act.')
 } else if (phase === 'fund') {
   await fund()
+} else if (phase === 'grace') {
+  await grace()
+} else if (phase === 'refund') {
+  await refund()
 } else if (phase === 'unpause') {
   await unpause()
 } else if (phase === 'market') {
