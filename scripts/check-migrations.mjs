@@ -1,0 +1,135 @@
+#!/usr/bin/env node
+/**
+ * Applies every migration to a real Postgres and checks what came out.
+ *
+ * Complements scripts/ci-db-smoke.mjs rather than replacing it: that one runs
+ * against the timescale image CI provides, this one runs Postgres compiled to
+ * WASM and needs no daemon, no container and no service. The point is that a
+ * migration can be checked on a laptop with Docker stopped, which is exactly
+ * the situation in which 005 was written.
+ *
+ * What it actually proves, beyond "the SQL parses":
+ *
+ *   1. Migration 005 has to widen 23 money columns from six decimal places to
+ *      eighteen, and Postgres refuses ALTER COLUMN TYPE on any column a view
+ *      selects. Seven views do. So 005 drops them, alters, and writes them out
+ *      again by hand - and hand-copied SQL is exactly the kind of thing that
+ *      comes back subtly different. This captures every view definition from
+ *      the catalog before 005 runs and again after, and fails on any change.
+ *
+ *   2. That nothing is left at six decimal places, which is the failure the
+ *      widening exists to prevent: the indexer stores human amounts, so a
+ *      partial fill below 1e-6 WETH would have rounded to zero.
+ *
+ * Usage: node scripts/check-migrations.mjs
+ */
+import { PGlite } from '@electric-sql/pglite'
+import { readdirSync, readFileSync } from 'node:fs'
+import { join, resolve, dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+const MIGRATIONS_DIR = join(REPO_ROOT, 'backend', 'src', 'db', 'migrations')
+
+/** The migration whose view round-trip is being checked. */
+const ROUND_TRIP_AT = '005_rhc.sql'
+
+const db = new PGlite()
+const q = async (sql) => (await db.query(sql)).rows
+
+/**
+ * PGlite ships no timescaledb, and only price_history and prob_snapshots use
+ * it. Neither's hypertable-ness is what any migration here changes, so the two
+ * statements are dropped for this harness. CI still runs the real image.
+ */
+const stripTimescale = (sql) =>
+  sql
+    .replace(/CREATE EXTENSION IF NOT EXISTS timescaledb;/g, '')
+    .replace(/SELECT create_hypertable\([^;]*\);/g, '')
+
+const viewDefs = async () =>
+  Object.fromEntries(
+    (
+      await q(`SELECT c.relname AS name, pg_get_viewdef(c.oid, true) AS def
+                 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+                WHERE c.relkind = 'v' AND n.nspname = 'public'
+                ORDER BY c.relname`)
+    ).map((r) => [r.name, r.def]),
+  )
+
+const fail = (msg) => {
+  console.error(`FAIL ${msg}`)
+  process.exitCode = 1
+}
+
+const files = readdirSync(MIGRATIONS_DIR).filter((f) => f.endsWith('.sql')).sort()
+let before = null
+
+for (const file of files) {
+  if (file === ROUND_TRIP_AT) before = await viewDefs()
+  try {
+    await db.exec(stripTimescale(readFileSync(join(MIGRATIONS_DIR, file), 'utf8')))
+    console.log(`applied ${file}`)
+  } catch (err) {
+    fail(`${file}: ${err.message}`)
+    process.exit(1)
+  }
+}
+
+// ── 1. The views came back unchanged ─────────────────────────────────────
+if (before) {
+  const after = await viewDefs()
+  const names = new Set([...Object.keys(before), ...Object.keys(after)])
+  let drift = 0
+  for (const name of names) {
+    if (!(name in after)) { fail(`view ${name} was dropped by ${ROUND_TRIP_AT} and never recreated`); drift++ }
+    else if (!(name in before)) continue // a genuinely new view is fine
+    else if (before[name] !== after[name]) {
+      fail(`view ${name} changed across ${ROUND_TRIP_AT}`)
+      console.error(`  before: ${before[name].replace(/\s+/g, ' ').slice(0, 200)}`)
+      console.error(`  after:  ${after[name].replace(/\s+/g, ' ').slice(0, 200)}`)
+      drift++
+    }
+  }
+  if (!drift) console.log(`\nviews: ${Object.keys(after).length} identical across ${ROUND_TRIP_AT}`)
+} else {
+  fail(`${ROUND_TRIP_AT} not found - the view round-trip was not checked`)
+}
+
+// ── 2. No money column left at six decimal places ────────────────────────
+const narrow = await q(
+  `SELECT table_name, column_name FROM information_schema.columns
+    WHERE table_schema = 'public' AND numeric_scale = 6
+    ORDER BY table_name, column_name`,
+)
+if (narrow.length) {
+  fail(`${narrow.length} column(s) still hold six decimal places:`)
+  for (const c of narrow) console.error(`  ${c.table_name}.${c.column_name}`)
+} else {
+  console.log('currency: no column left at six decimal places')
+}
+
+// ── 3. The rest of what 005 promised ─────────────────────────────────────
+const [closeTime] = await q(
+  `SELECT is_nullable FROM information_schema.columns
+    WHERE table_name = 'markets' AND column_name = 'close_time'`,
+)
+if (closeTime?.is_nullable !== 'YES') fail('markets.close_time is still NOT NULL')
+else console.log('markets.close_time is nullable')
+
+for (const [table, column] of [['markets', 'chain_id'], ['markets', 'token_address']]) {
+  const rows = await q(
+    `SELECT 1 FROM information_schema.columns WHERE table_name = '${table}' AND column_name = '${column}'`,
+  )
+  if (!rows.length) fail(`${table}.${column} is missing`)
+}
+
+const candidates = await q(`SELECT 1 FROM information_schema.tables WHERE table_name = 'pool_candidates'`)
+if (!candidates.length) fail('pool_candidates was not created')
+else console.log('pool_candidates exists')
+
+const idx = (await q(`SELECT indexname FROM pg_indexes WHERE tablename = 'markets'`)).map((r) => r.indexname)
+if (!idx.includes('idx_markets_feed_id')) fail('idx_markets_feed_id is missing')
+
+if (process.exitCode) console.error('\nmigration check FAILED')
+else console.log('\nmigration check passed')

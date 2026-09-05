@@ -1,3 +1,4 @@
+import { CHAIN_PROFILE } from '../chainProfile.js'
 /**
  * oracleWatchdog — Sprint 2.5 + 2.6
  *
@@ -31,7 +32,6 @@ import {
   type Address,
 } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
-import { base, baseSepolia } from 'viem/chains'
 import { CONTRACTS, SUPPORTED_FEED_IDS } from '../config.js'
 import { fetchPayload, bytes32ToFeedId, GatewayUnreachableError } from '../lib/redstone.js'
 import { nextFailStreak, isSystemicOutage, STALE_FAIL_LIMIT, type FeedPing } from './feedStreak.js'
@@ -43,10 +43,10 @@ import { gasGuard } from './gasGuardInstance.js'
 const REDIS_KEY = 'watchdog:state'
 const REDIS_TTL_SEC = 300 // state expires if keeper dies — surfaces as stale
 
-const chain = process.env.CHAIN_ID === '8453' ? base : baseSepolia
+const chain = CHAIN_PROFILE.chain
 const publicClient = createPublicClient({
   chain,
-  transport: http(process.env.BASE_RPC_URL),
+  transport: http(CHAIN_PROFILE.rpcUrl),
 })
 
 // ── Thresholds ────────────────────────────────────────────────

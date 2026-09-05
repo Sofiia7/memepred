@@ -1,3 +1,4 @@
+import { CHAIN_PROFILE } from '../chainProfile.js'
 /**
  * resolveKeeper — Sprint 2.1
  *
@@ -14,7 +15,6 @@ import {
   http,
   type Address,
 } from 'viem'
-import { base, baseSepolia } from 'viem/chains'
 import { pg } from '../db/pg.js'
 import { CONTRACTS } from '../config.js'
 import { fetchPayload, withPayload, bytes32ToFeedId } from '../lib/redstone.js'
@@ -22,7 +22,7 @@ import { getKeeperWalletClient, sendKeeperTx } from './keeperWallet.js'
 import { gasGuard, recordReceipt } from './gasGuardInstance.js'
 import { BATCH_FROM_SELECTOR, codeHasSelector } from './resolverAbi.js'
 
-const chain = process.env.CHAIN_ID === '8453' ? base : baseSepolia
+const chain = CHAIN_PROFILE.chain
 
 const ORACLE_RESOLVER_BATCH_ABI = [
   {
@@ -77,7 +77,7 @@ const MARKET_VIEW_ABI = [
 
 const publicClient = createPublicClient({
   chain,
-  transport: http(process.env.BASE_RPC_URL),
+  transport: http(CHAIN_PROFILE.rpcUrl),
 })
 
 /** Per-tx settle ceiling. ~25 matches fits comfortably in 1.5M gas. */

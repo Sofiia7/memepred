@@ -32,17 +32,59 @@
  * actually runs on, not that these exact numbers are sacred.
  */
 import { createPublicClient, http } from 'viem'
-import { base, baseSepolia } from 'viem/chains'
+import { CHAIN_PROFILE } from '../chainProfile.js'
 import { redis } from '../db/redis.js'
 import { createGasGuard, parseDecimalUnits, type Priority } from './gasGuard.js'
 
-const isMainnet = process.env.CHAIN_ID === '8453'
-const chain = isMainnet ? base : baseSepolia
-const publicClient = createPublicClient({ chain, transport: http(process.env.BASE_RPC_URL) })
+const publicClient = createPublicClient({ chain: CHAIN_PROFILE.chain, transport: http(CHAIN_PROFILE.rpcUrl) })
 
-const DEFAULTS = isMainnet
-  ? { maxFeeGwei: '0.15', dailyBudgetEth: '0.004' }
-  : { maxFeeGwei: '3',    dailyBudgetEth: '0.05'  }
+/**
+ * ArbGasInfo, the precompile that knows what execution actually costs.
+ *
+ * On Robinhood Chain `eth_gasPrice` answers 0.45-0.56 gwei while transactions
+ * execute at `perArbGasTotal`, measured at 1.7-1.8 gwei the same minute - about
+ * four times more. A guard reading the wrong one has both halves of its job
+ * wrong: it never throttles, because the quote is always under the ceiling, and
+ * it under-bills the daily budget by the same factor.
+ */
+const ARB_GAS_INFO_ABI = [
+  {
+    name: 'getPricesInWei',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [
+      { name: 'perL2Tx', type: 'uint256' },
+      { name: 'perL1CalldataByte', type: 'uint256' },
+      { name: 'perStorageAllocation', type: 'uint256' },
+      { name: 'perArbGasBase', type: 'uint256' },
+      { name: 'perArbGasCongestion', type: 'uint256' },
+      { name: 'perArbGasTotal', type: 'uint256' },
+    ],
+  },
+] as const
+
+const isMainnet = CHAIN_PROFILE.chain.id === 8453 || CHAIN_PROFILE.chain.id === 4663
+
+/**
+ * Robinhood Chain defaults, and why they are loose.
+ *
+ * Sampled 2026-09-04/05: perArbGasTotal ran 0.383 to 3.059 gwei with a p90 of
+ * 0.612, and the *baseline* itself moved from ~1.75 gwei one day to ~0.4 the
+ * next. A ceiling tuned to today's baseline would strangle the keeper the week
+ * congestion returns to last week's, so 4 gwei sits above everything observed
+ * including the spike, and still stops a genuine order-of-magnitude event.
+ *
+ * The budget covers routine work only, which here is onboarding pools:
+ * ~7.9M gas each (ring plus three markets), about 7 pools a day at the
+ * keeper's 20 ETH depth threshold, so ~0.034 ETH/day at p90. 0.1 leaves ~3x.
+ * Settlements are critical and are never budget-blocked.
+ */
+const DEFAULTS = CHAIN_PROFILE.name === 'rhc'
+  ? { maxFeeGwei: '4', dailyBudgetEth: '0.1' }
+  : isMainnet
+    ? { maxFeeGwei: '0.15', dailyBudgetEth: '0.004' }
+    : { maxFeeGwei: '3',    dailyBudgetEth: '0.05'  }
 
 const envWei = (name: string, fallback: string, decimals: number): bigint =>
   parseDecimalUnits(process.env[name] ?? fallback, decimals)
@@ -52,6 +94,14 @@ const GAS_SPENT_KEY_TTL_SEC = 60 * 60 * 48 // two days: yesterday stays readable
 export const gasGuard = createGasGuard(
   {
     getMaxFeePerGas: async () => {
+      if (CHAIN_PROFILE.usesArbGasInfo && CHAIN_PROFILE.addresses.arbGasInfo) {
+        const prices = await publicClient.readContract({
+          address: CHAIN_PROFILE.addresses.arbGasInfo,
+          abi: ARB_GAS_INFO_ABI,
+          functionName: 'getPricesInWei',
+        })
+        return prices[5] // perArbGasTotal
+      }
       const fees = await publicClient.estimateFeesPerGas()
       return fees.maxFeePerGas
     },

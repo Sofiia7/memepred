@@ -24,13 +24,13 @@
  * /api/keeper/health endpoint surfaces as 503.
  */
 import { createPublicClient, http, type Address } from 'viem'
-import { base, baseSepolia } from 'viem/chains'
+import { CHAIN_PROFILE } from '../chainProfile.js'
 import { pg } from '../db/pg.js'
 import { redis } from '../db/redis.js'
 import { CONTRACTS } from '../config.js'
 
-const chain = process.env.CHAIN_ID === '8453' ? base : baseSepolia
-const publicClient = createPublicClient({ chain, transport: http(process.env.BASE_RPC_URL) })
+const chain = CHAIN_PROFILE.chain
+const publicClient = createPublicClient({ chain, transport: http(CHAIN_PROFILE.rpcUrl) })
 
 const USDC_BALANCE_ABI = [
   { name: 'balanceOf', type: 'function', stateMutability: 'view',

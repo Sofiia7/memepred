@@ -1,6 +1,6 @@
 import { createPublicClient, http, encodeFunctionData, type Address } from 'viem'
-import { base, baseSepolia } from 'viem/chains'
-const chain = process.env.CHAIN_ID === '8453' ? base : baseSepolia
+import { CHAIN_PROFILE } from '../chainProfile.js'
+const chain = CHAIN_PROFILE.chain
 import { FEED_IDS, ORACLE_RESOLVER_ABI, CONTRACTS } from '../config.js'
 import { fetchPayload, withPayload } from '../lib/redstone.js'
 import { getKeeperWalletClient, sendKeeperTx } from './keeperWallet.js'
@@ -8,7 +8,7 @@ import { gasGuard, recordReceipt } from './gasGuardInstance.js'
 import { lastUserActivityMs } from '../lib/activity.js'
 import { pg } from '../db/pg.js'
 
-const publicClient = createPublicClient({ chain, transport: http(process.env.BASE_RPC_URL) })
+const publicClient = createPublicClient({ chain, transport: http(CHAIN_PROFILE.rpcUrl) })
 
 // ── IDLE BACKOFF (Sprint 5.6) ───────────────────────────────
 // What this loop is actually for, now that the bare `placeBet` overload is

@@ -1,3 +1,4 @@
+import { CHAIN_PROFILE } from '../chainProfile.js'
 import { bytes32ToFeedId } from '../lib/redstone.js'
 import { poolTotals } from './poolTotals.js'
 /**
@@ -20,10 +21,9 @@ import {
   type Address,
   type Log,
 } from 'viem'
-import { base, baseSepolia } from 'viem/chains'
 import { pg } from '../db/pg.js'
 
-const chain = process.env.CHAIN_ID === '8453' ? base : baseSepolia
+const chain = CHAIN_PROFILE.chain
 const RPC   = process.env.BASE_RPC_URL
 const client = createPublicClient({ chain, transport: http(RPC) })
 

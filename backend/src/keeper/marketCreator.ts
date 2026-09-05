@@ -1,3 +1,4 @@
+import { CHAIN_PROFILE } from '../chainProfile.js'
 /**
  * marketCreator — Sprint 3.6
  *
@@ -23,7 +24,6 @@ import {
   http,
   type Address,
 } from 'viem'
-import { base, baseSepolia } from 'viem/chains'
 import { pg } from '../db/pg.js'
 import { CONTRACTS, MARKET_FACTORY_ABI, SUPPORTED_FEED_IDS } from '../config.js'
 import { getKeeperWalletClient, sendKeeperTx } from './keeperWallet.js'
@@ -31,8 +31,8 @@ import { gasGuard, recordReceipt } from './gasGuardInstance.js'
 import { durationsToMaintain, isUserPresent } from './idleMatrix.js'
 import { lastUserActivityMs } from '../lib/activity.js'
 
-const chain = process.env.CHAIN_ID === '8453' ? base : baseSepolia
-const publicClient = createPublicClient({ chain, transport: http(process.env.BASE_RPC_URL) })
+const chain = CHAIN_PROFILE.chain
+const publicClient = createPublicClient({ chain, transport: http(CHAIN_PROFILE.rpcUrl) })
 
 const DURATIONS_SEC = (process.env.MARKET_DURATIONS_SEC || '300,900,3600,14400,86400')
   .split(',').map((s) => Number(s.trim())).filter((n) => n > 0)

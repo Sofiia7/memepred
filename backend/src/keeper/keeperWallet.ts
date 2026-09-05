@@ -20,11 +20,12 @@
  * fire close together queue instead of colliding.
  */
 import { createPublicClient, createWalletClient, http, nonceManager } from 'viem'
+import { CHAIN_PROFILE } from '../chainProfile.js'
 import { base, baseSepolia } from 'viem/chains'
 import { privateKeyToAccount, type PrivateKeyAccount } from 'viem/accounts'
 import { NonceEscalation, isStuckNonceError, isInsufficientFundsError, shouldCancelNonce, type Fees } from './feeEscalator.js'
 
-const chain = process.env.CHAIN_ID === '8453' ? base : baseSepolia
+const chain = CHAIN_PROFILE.chain
 
 // Precise inferred types (not the loose `WalletClient` alias) so call sites
 // don't need to re-supply `chain`/`account` per writeContract call.
@@ -52,7 +53,7 @@ export function getKeeperWalletClient(): KeeperWalletClient | null {
   const account = getKeeperAccount()
   if (!account) return null
   if (!cachedWallet) {
-    cachedWallet = createWalletClient({ account, chain, transport: http(process.env.BASE_RPC_URL) })
+    cachedWallet = createWalletClient({ account, chain, transport: http(CHAIN_PROFILE.rpcUrl) })
   }
   return cachedWallet
 }
@@ -71,7 +72,7 @@ export function getKeeperWalletClient(): KeeperWalletClient | null {
  * feeEscalator.ts for why it is keyed on the nonce and why the other failures
  * must not escalate.
  */
-const publicClient = createPublicClient({ chain, transport: http(process.env.BASE_RPC_URL) })
+const publicClient = createPublicClient({ chain, transport: http(CHAIN_PROFILE.rpcUrl) })
 
 const escalation = new NonceEscalation()
 

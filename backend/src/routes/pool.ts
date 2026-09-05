@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify'
 import { createPublicClient, http, type Address } from 'viem'
-import { base, baseSepolia } from 'viem/chains'
-const chain = process.env.CHAIN_ID === '8453' ? base : baseSepolia
+import { CHAIN_PROFILE } from '../chainProfile.js'
+const chain = CHAIN_PROFILE.chain
 
 const LIQUIDITY_POOL_ABI = [
   {
@@ -35,7 +35,7 @@ const LIQUIDITY_POOL_ABI = [
 export default async function poolRoutes(app: FastifyInstance) {
   const client = createPublicClient({
     chain,
-    transport: http(process.env.BASE_RPC_URL)
+    transport: http(CHAIN_PROFILE.rpcUrl)
   })
 
   const poolAddress = process.env.LIQUIDITY_POOL as Address

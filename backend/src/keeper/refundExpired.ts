@@ -1,6 +1,6 @@
 import { createPublicClient, http, type Address } from 'viem'
-import { base, baseSepolia } from 'viem/chains'
-const chain = process.env.CHAIN_ID === '8453' ? base : baseSepolia
+import { CHAIN_PROFILE } from '../chainProfile.js'
+const chain = CHAIN_PROFILE.chain
 import { pg } from '../db/pg.js'
 import { getKeeperWalletClient, sendKeeperTx } from './keeperWallet.js'
 import { gasGuard, recordReceipt } from './gasGuardInstance.js'
@@ -58,7 +58,7 @@ const ORDERBOOK_MARKET_ABI = [
 
 const publicClient = createPublicClient({
   chain,
-  transport: http(process.env.BASE_RPC_URL)
+  transport: http(CHAIN_PROFILE.rpcUrl)
 })
 
 /**

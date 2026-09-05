@@ -1,7 +1,7 @@
 import { createPublicClient, createWalletClient, http } from 'viem'
+import { CHAIN_PROFILE } from '../chainProfile.js'
 import { privateKeyToAccount } from 'viem/accounts'
-import { base, baseSepolia } from 'viem/chains'
-const chain = process.env.CHAIN_ID === '8453' ? base : baseSepolia
+const chain = CHAIN_PROFILE.chain
 import { pg }   from '../db/pg.js'
 import { BADGE_NFT_ABI, BADGE_NFT_ADDRESS, BASE_RPC_URL } from '../config.js'
 import { gasGuard, recordReceipt } from '../keeper/gasGuardInstance.js'
@@ -13,10 +13,10 @@ const account = process.env.BADGE_MINTER_KEY
   : null
 
 const client = account
-  ? createWalletClient({ account, chain, transport: http(BASE_RPC_URL) })
+  ? createWalletClient({ account, chain, transport: http(CHAIN_PROFILE.rpcUrl) })
   : null
 
-const publicClient = createPublicClient({ chain, transport: http(BASE_RPC_URL) })
+const publicClient = createPublicClient({ chain, transport: http(CHAIN_PROFILE.rpcUrl) })
 
 /** So a misconfiguration is reported once per process, not once per tick. */
 let warnedAboutAddress = false
