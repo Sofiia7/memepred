@@ -268,9 +268,31 @@ async function checkResolverEthBalance() {
   }
 }
 
-// ── 2.6 - Stale-oracle auto-pause ─────────────────────────────
-async function checkFeedsAndAutoPause() {
-  if (!CONTRACTS.MARKET_FACTORY) return
+/**
+ * The feeds this watchdog is responsible for.
+ *
+ * Two sources, because the two chains do not have the same notion of a feed.
+ *
+ * On base a feed is an entry in MarketFactory's whitelist, and the list is
+ * intersected with what the keeper actually carries a price for - it also holds
+ * feeds whitelisted for an oracle we no longer use, whose bytes32 decodes to
+ * nonsense, and pinging those advanced a fail streak toward auto-pausing
+ * markets that were never real.
+ *
+ * On rhc there is no whitelist at all: PoolMarketFactory has no getAllFeedIds,
+ * because any pool passing its gates may have a market. Calling it there threw
+ * a stack trace per tick and left the watchdog checking nothing - which is
+ * worse than it sounds, since a watchdog that checks nothing reports green.
+ * The list is instead the pools that actually have markets.
+ */
+async function watchedFeeds(): Promise<`0x${string}`[]> {
+  if (CHAIN_PROFILE.name === 'rhc') {
+    const r = await pg.query(
+      `SELECT DISTINCT feed_id FROM markets WHERE chain_id = $1 AND status = 'OPEN'`,
+      [CHAIN_PROFILE.chain.id],
+    )
+    return r.rows.map((row) => row.feed_id as `0x${string}`)
+  }
 
   let feeds: readonly `0x${string}`[]
   try {
@@ -281,20 +303,22 @@ async function checkFeedsAndAutoPause() {
     })
   } catch (err) {
     console.error('[watchdog] getAllFeedIds failed:', err)
-    return
+    return []
   }
 
-  // Only feeds we carry a price for. The factory's list also holds feeds
-  // whitelisted for an oracle we no longer use, whose bytes32 decodes to
-  // nonsense - pinging those produced a stack trace per feed per tick and,
-  // worse, advanced their fail streak toward auto-pausing markets that were
-  // never real. marketCreator intersects the same way.
   const priceable = feeds.filter((f) => SUPPORTED_FEED_IDS.has(f.toLowerCase()))
   if (priceable.length < feeds.length) {
-    console.warn(
-      `[watchdog] ignoring ${feeds.length - priceable.length} factory feed(s) with no price coverage`,
-    )
+    console.warn(`[watchdog] ignoring ${feeds.length - priceable.length} factory feed(s) with no price coverage`)
   }
+  return [...priceable]
+}
+
+// ── 2.6 - Stale-oracle auto-pause ─────────────────────────────
+async function checkFeedsAndAutoPause() {
+  if (!CONTRACTS.MARKET_FACTORY) return
+
+  const priceable = await watchedFeeds()
+  if (priceable.length === 0) return
 
   // Ping everything first, then judge. A per-feed decision taken inside the
   // loop cannot see that every other feed failed too, which is the difference

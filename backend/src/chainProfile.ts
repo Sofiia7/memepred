@@ -150,10 +150,18 @@ const RHC_PROFILE: ChainProfile = {
   watchesPools: true,
   usesArbGasInfo: true,
   addresses: {
-    // Read off the chain rather than from docs: WETH came from
+    // Mainnet values, read off the chain rather than from docs: WETH came from
     // SwapRouter02.WETH9(), the factory from the PoolCreated logs it emits.
-    weth: '0x0bd7d308f8e1639fab988df18a8011f41eacad73',
-    uniswapV3Factory: '0x1f7d7550b1b028f7571e69a784071f0205fd2efa',
+    //
+    // Overridable because the testnet has neither - both canonical addresses
+    // return empty code there, so it runs stand-ins at different addresses.
+    // Hardcoding cost an afternoon: poolWatcher listened to 0x1f7d7550 for
+    // PoolCreated, that address holds nothing on 46630, and the watcher
+    // reported no pools while looking perfectly healthy.
+    weth: (process.env.RHC_WETH_ADDRESS as `0x${string}`) ?? '0x0bd7d308f8e1639fab988df18a8011f41eacad73',
+    uniswapV3Factory:
+      (process.env.RHC_V3_FACTORY_ADDRESS as `0x${string}`) ?? '0x1f7d7550b1b028f7571e69a784071f0205fd2efa',
+    // A precompile: the same address on every Arbitrum chain.
     arbGasInfo: '0x000000000000000000000000000000000000006c',
   },
 }
