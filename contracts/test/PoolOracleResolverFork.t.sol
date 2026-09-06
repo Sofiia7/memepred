@@ -3,6 +3,11 @@ pragma solidity ^0.8.24;
 
 import "forge-std/Test.sol";
 import "../src/PoolOracleResolver.sol";
+import "../src/PoolMarketFactory.sol";
+import "../src/PoolLiquidityPool.sol";
+import "../src/FeeDistributor.sol";
+import "../src/ReferralRegistry.sol";
+import "../src/GenesisNFT.sol";
 
 /**
  * @notice PoolOracleResolver against the Uniswap v3 pools that actually exist
@@ -52,6 +57,8 @@ import "../src/PoolOracleResolver.sol";
  */
 contract PoolOracleResolverForkTest is Test {
     address constant WETH = 0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73;
+
+    address constant V3_FACTORY = 0x1f7d7550B1b028f7571E69A784071F0205FD2EfA;
 
     address constant POOL_RMHT = 0xabe3B1fF5Fc6a9638D0c46f2379B20f7e6173bEe; // card 1801
     address constant POOL_RBLX = 0x6d25417718A8D6c529130a8ccC4BfBf0a18219D3; // card 120
@@ -158,6 +165,82 @@ contract PoolOracleResolverForkTest is Test {
             vm.expectRevert();
             IUniswapV3Pool(pool).observe(ago);
         }
+    }
+
+    // ── THE GATES, AGAINST WHAT IS OUT THERE ──────────────
+
+    address constant DUMMY = address(0xDEAD);
+
+    /// @dev The real stack, wired the way DeployRhc wires it. Stubs will not do:
+    ///      createMarket authorizes the fresh clone on the vault, the fee
+    ///      distributor and the referral registry, and a call into an address
+    ///      with no code reverts with nothing to read.
+    function _factory() internal returns (PoolMarketFactory f) {
+        FeeDistributor feeDistrib = new FeeDistributor(WETH, DUMMY, DUMMY, DUMMY);
+        ReferralRegistry referralReg = new ReferralRegistry();
+        GenesisNFT genesisNFT = new GenesisNFT("ipfs://test/");
+        PoolLiquidityPool vault = new PoolLiquidityPool(IERC20(WETH), address(genesisNFT));
+
+        f = new PoolMarketFactory(
+            WETH, V3_FACTORY, address(resolver),
+            address(feeDistrib), address(referralReg), DUMMY, address(vault)
+        );
+
+        genesisNFT.setLiquidityPool(address(vault));
+        vault.setMarketFactory(address(f));
+        feeDistrib.setMarketFactory(address(f));
+        referralReg.setMarketFactory(address(f));
+    }
+
+    /**
+     * The end of the line: a real market, on a real pool, through every gate,
+     * on a fork of the chain this is meant to ship to.
+     *
+     * RMHT is the only one of the four pools with a grown ring that also clears
+     * the depth floor, which is to say it is roughly the only pool created in
+     * the measured day that could carry a market today without the keeper
+     * paying 6.7M gas to grow a ring first.
+     */
+    function test_CreatesARealMarketOnARealPool() public {
+        if (!active) return;
+        PoolMarketFactory f = _factory();
+
+        address market = f.createMarket(POOL_RMHT, 300);
+        assertTrue(market != address(0), "no market");
+        assertEq(f.marketFor(keccak256(abi.encodePacked(feedOf(POOL_RMHT), uint256(300)))), market, "not registered");
+
+        // And it prices, which is the only thing a market is for.
+        assertGt(resolver.spotPriceWad(feedOf(POOL_RMHT)), 0, "market cannot be priced");
+        emit log_named_address("market on a real RMHT pool", market);
+    }
+
+    /// @dev The gate that actually bites. RBLX is 136 ETH deep, canonical, on an
+    ///      allowed fee tier, and still cannot carry a market: its ring is 120,
+    ///      and 288 of the 292 WETH pools in the day's scan have a ring of 1.
+    function test_TheCardinalityGateIsTheOneThatRejectsRealPools() public {
+        if (!active) return;
+        PoolMarketFactory f = _factory();
+
+        (,,, uint16 card,,,) = IUniswapV3Pool(POOL_RBLX).slot0();
+        assertLt(card, 300, "RBLX grew its ring; the example needs another pool");
+        vm.expectRevert(abi.encodeWithSelector(PoolMarketFactory.CardinalityTooLow.selector, card, uint16(300)));
+        f.createMarket(POOL_RBLX, 300);
+
+        (,,, uint16 marsCard,,,) = IUniswapV3Pool(POOL_MARS).slot0();
+        vm.expectRevert(abi.encodeWithSelector(PoolMarketFactory.CardinalityTooLow.selector, marsCard, uint16(300)));
+        f.createMarket(POOL_MARS, 300);
+    }
+
+    /// @dev canServeWindow passes on all three, including the one-observation
+    ///      pool, for the same extrapolation reason as above. It is not the
+    ///      check that keeps a thin pool out; the cardinality and depth gates
+    ///      are, and this test exists so nobody mistakes it for one.
+    function test_CanServeWindowIsNotAQualityCheck() public {
+        if (!active) return;
+        PoolMarketFactory f = _factory();
+        assertTrue(f.canServeWindow(IUniswapV3Pool(POOL_MARS), 60), "one observation still serves a window");
+        assertTrue(f.canServeWindow(IUniswapV3Pool(POOL_RMHT), 60));
+        assertTrue(f.canServeWindow(IUniswapV3Pool(POOL_RBLX), 60));
     }
 
     function _meanTickOver(address pool, uint32 window) internal view returns (int24) {
