@@ -464,4 +464,57 @@ contract PoolMarketFactoryTest is Test {
             address(lp)
         );
     }
+
+    // ── WHY MIN_CARDINALITY IS 300 ────────────────────────
+
+    /**
+     * MIN_CARDINALITY is not a preference, it is arithmetic: the longest exit
+     * window plus however late the keeper is allowed to be.
+     *
+     * `_twapWadAt` asks the pool for `age + window` seconds of history, where
+     * `age` is how far past settleAt the settlement is running, and nothing
+     * caps age - MAX_PRICE_AGE only decides whether the live-price sanity check
+     * runs, not how far back observe() reaches. A pool trading every second
+     * writes one observation per second, so on a pump the ring holds exactly
+     * `cardinality` seconds and the delay budget is `cardinality - window`.
+     *
+     * That budget is what a market costs when it runs out: observe reverts OLD,
+     * the match is MatchUnpriceable, and the stake sits locked until
+     * emergencyRefundMatch opens a day later.
+     *
+     * Measured over 148 real settlements on 46630: p50 33s, p90 56s, p95 61s,
+     * p99 65s, bounded by the keeper's 60s tick. The one outlier at 16,983s was
+     * this machine rebooting, which no ring size survives.
+     *
+     * So 300 leaves 120 seconds, a little under twice the measured p99. This
+     * test exists because 200 was proposed as a 28% saving on onboarding, which
+     * would have left 20 seconds - below the p99 the system already produces
+     * when nothing is wrong.
+     */
+    function test_MinCardinalityIsTheLongestWindowPlusARealDelayBudget() public view {
+        uint256 longestWindow;
+        for (uint256 i = 0; i < 3; i++) {
+            uint256 w = factory.twapWindowFor(factory.allowedDurations(i));
+            if (w > longestWindow) longestWindow = w;
+        }
+        assertEq(longestWindow, 180, "longest exit window moved; the ring has to move with it");
+
+        uint256 budget = factory.MIN_CARDINALITY() - longestWindow;
+        assertGt(
+            budget,
+            65,
+            "delay budget is under the measured p99 settlement delay: matches will strand on a busy pool"
+        );
+        assertGe(budget, 120, "delay budget fell below two keeper ticks plus a gas spike");
+    }
+
+    /// @dev And the coupling in the other direction, so the saving is findable
+    ///      rather than lost: it is the 900s market that forces a 180s window.
+    ///      Without it the longest window is 60s, and the same delay budget
+    ///      would fit in a ring of 180 rather than 300.
+    function test_ItIsThe900sMarketThatForcesTheWindowTo180() public view {
+        assertEq(factory.twapWindowFor(900), 180);
+        assertEq(factory.twapWindowFor(300), 60);
+        assertEq(factory.twapWindowFor(60), 30);
+    }
 }
