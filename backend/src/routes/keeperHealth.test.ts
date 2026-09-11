@@ -270,3 +270,51 @@ describe('wedged nonce', () => {
     await app.close()
   })
 })
+
+/**
+ * The invariant monitor refuses to turn a partial balance read into a verdict
+ * and says so on its own key. A blip must not page. Being blind for long must,
+ * because the watchdog publishes its snapshot whatever the RPC does, so nothing
+ * else here would ever notice.
+ */
+describe('invariant monitor that cannot measure', () => {
+  const blind = (msAgo: number) => JSON.stringify({ since: NOW - msAgo, unread: 2, total: 6, at: NOW })
+
+  it('warns while the monitor has only just gone blind', async () => {
+    const app = await build({ 'watchdog:state': snapshot(), 'invariant:unmeasured': blind(60_000) })
+    const res = await app.inject({ url: '/health/deep' })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json().warn).toContain('invariant-unmeasured')
+    await app.close()
+  })
+
+  it('goes red once the monitor has been blind for a quarter of an hour', async () => {
+    const app = await build({ 'watchdog:state': snapshot(), 'invariant:unmeasured': blind(16 * 60_000) })
+    const res = await app.inject({ url: '/health/deep' })
+
+    expect(res.statusCode).toBe(503)
+    expect(res.json().reason).toBe('invariant-unmeasured')
+    await app.close()
+  })
+
+  it('still names real drift first when both are set', async () => {
+    const app = await build({
+      'watchdog:state':       snapshot(),
+      'invariant:critical':   JSON.stringify({ drift: 12.5 }),
+      'invariant:unmeasured': blind(16 * 60_000),
+    })
+
+    expect((await app.inject({ url: '/health/deep' })).json().reason).toBe('usdc-invariant-drift')
+    await app.close()
+  })
+
+  it('treats an unreadable record as just gone blind, not as silence', async () => {
+    const app = await build({ 'watchdog:state': snapshot(), 'invariant:unmeasured': '{not json' })
+    const res = await app.inject({ url: '/health/deep' })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json().warn).toContain('invariant-unmeasured')
+    await app.close()
+  })
+})

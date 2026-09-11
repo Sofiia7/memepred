@@ -21,7 +21,9 @@
  *        critical - drift > 10 USDC (real bug - page on-call)
  *
  * Alerts: critical writes a Redis flag `invariant:critical` which the
- * /api/keeper/health endpoint surfaces as 503.
+ * /api/keeper/health endpoint surfaces as 503. A tick that cannot read every
+ * balance writes `invariant:unmeasured` instead and renders no verdict at all,
+ * which the endpoint surfaces as a warning and, after long enough, as 503.
  */
 import { createPublicClient, http, type Address } from 'viem'
 import { CHAIN_PROFILE } from '../chainProfile.js'
@@ -36,6 +38,8 @@ const USDC_BALANCE_ABI = [
   { name: 'balanceOf', type: 'function', stateMutability: 'view',
     inputs: [{ name: 'a', type: 'address' }], outputs: [{ type: 'uint256' }] },
 ] as const
+
+const UNMEASURED_KEY = 'invariant:unmeasured'
 
 /**
  * Drift thresholds, in whole units of the stake currency.
@@ -95,12 +99,72 @@ export function classifyDrift(drift: number, warn: number, crit: number): AlertL
 }
 
 /**
- * NaN is a legal NUMERIC in Postgres and poisons every aggregate over the
- * column: one such row makes `max(abs(drift_usdc))` across a whole soak return
- * NaN. Store NULL instead, so the level carries the alarm and the history stays
- * queryable.
+ * Whether the off-chain projection summed to real numbers at all.
+ *
+ * Replaces `finite`, which mapped a non-number to NULL "so the level carries
+ * the alarm". It could not: every column of invariant_snapshots is NOT NULL, so
+ * the insert threw, the keeper's loop logged "[invariantMonitor] failed" and
+ * moved on, and the critical flag - set only after the insert - never went up.
+ * The one case that branch existed for was the one case in which it stayed
+ * silent. A projection that is not a number is now alarmed on first and stored
+ * nowhere.
  */
-export const finite = (n: number): number | null => (Number.isFinite(n) ? n : null)
+export function projectionIsReadable(values: number[]): boolean {
+  return values.every(Number.isFinite)
+}
+
+/**
+ * Sum every market's balance, retrying a failed read before giving up on it.
+ *
+ * A read that fails is not a balance of zero, and zero is what the old loop
+ * made it: the error was logged, the market contributed nothing, and a 47-hour
+ * soak recorded two CRITICAL alerts for money that had never moved - 0.6322
+ * WETH when two markets timed out, and 1.2705, the whole book, when every read
+ * did. The next tick matched to the wei both times. So a market that still
+ * cannot be read after the retry comes back by name, and the caller refuses to
+ * turn a partial sum into a verdict.
+ */
+export async function sumBalances(
+  addresses: string[],
+  read: (address: string) => Promise<bigint>,
+  retries = 1,
+): Promise<{ totalWei: bigint; unread: string[] }> {
+  let totalWei = 0n
+  const unread: string[] = []
+  for (const address of addresses) {
+    let got: bigint | undefined
+    for (let attempt = 0; attempt <= retries && got === undefined; attempt++) {
+      try {
+        got = await read(address)
+      } catch (err) {
+        if (attempt === retries) {
+          console.error(`[invariant] balanceOf ${address} failed ${retries + 1} times:`, err)
+        }
+      }
+    }
+    if (got === undefined) unread.push(address)
+    else totalWei += got
+  }
+  return { totalWei, unread }
+}
+
+/**
+ * The Redis record of a monitor that could not measure, carrying forward the
+ * moment it first went blind. One timeout is a warning; being blind for long is
+ * an outage of its own, and /api/keeper/health needs `since` to tell them apart.
+ */
+export function nextUnmeasured(prevRaw: string | null, now: number, unread: number, total: number): string {
+  let since = now
+  if (prevRaw) {
+    try {
+      const prev = JSON.parse(prevRaw) as { since?: unknown }
+      if (typeof prev.since === 'number' && prev.since <= now) since = prev.since
+    } catch {
+      // A corrupt record restarts the clock rather than hiding the blindness.
+    }
+  }
+  return JSON.stringify({ since, unread, total, at: now })
+}
 
 export async function invariantTick() {
   if (!CONTRACTS.USDC || CONTRACTS.USDC === '0x') return
@@ -127,6 +191,20 @@ export async function invariantTick() {
   const totalRefunded  = num(s.total_refunded)
   const expected       = num(s.expected_onchain_balance)
 
+  // Before any chain read: a projection that is not a number can neither be
+  // compared nor stored - every column is NOT NULL. Alarm, store nothing.
+  if (!projectionIsReadable([totalDeposited, totalClaimed, totalRefunded, expected])) {
+    await redis.setEx('invariant:critical', 300, JSON.stringify({
+      reason: 'projection-not-a-number', totalDeposited, totalClaimed, totalRefunded, expected, at: Date.now(),
+    }))
+    console.error(
+      '[invariant] CRITICAL the projection did not sum to numbers ' +
+      `(deposited ${totalDeposited}, claimed ${totalClaimed}, refunded ${totalRefunded}, expected ${expected}) - ` +
+      'nothing here vouches for the balances',
+    )
+    return
+  }
+
   // 2. Sum on-chain balances across all markets, AT THE BLOCK THE PROJECTION
   //    REFLECTS.
   //
@@ -143,21 +221,29 @@ export async function invariantTick() {
   const markets = await pg.query<{ market_address: string }>(
     `SELECT market_address FROM markets`,
   )
-  let actualWei = 0n
-  for (const { market_address } of markets.rows) {
-    try {
-      const bal = await publicClient.readContract({
-        address: CONTRACTS.USDC,
-        abi: USDC_BALANCE_ABI,
-        functionName: 'balanceOf',
-        args: [market_address as Address],
-        ...(at === undefined ? {} : { blockNumber: at }),
-      })
-      actualWei += bal
-    } catch (err) {
-      console.error(`[invariant] balanceOf ${market_address} failed:`, err)
-    }
+  const { totalWei: actualWei, unread } = await sumBalances(
+    markets.rows.map(r => r.market_address),
+    (market) => publicClient.readContract({
+      address: CONTRACTS.USDC,
+      abi: USDC_BALANCE_ABI,
+      functionName: 'balanceOf',
+      args: [market as Address],
+      ...(at === undefined ? {} : { blockNumber: at }),
+    }),
+  )
+
+  // No verdict from a partial sum. The previous one stands - the critical flag
+  // is neither set nor cleared - and the blindness goes on its own key, so it
+  // reads as "cannot see" rather than as money missing, or as all clear.
+  if (unread.length > 0) {
+    const prev = await redis.get(UNMEASURED_KEY)
+    await redis.setEx(UNMEASURED_KEY, 300, nextUnmeasured(prev, Date.now(), unread.length, markets.rows.length))
+    console.warn(
+      `[invariant] no verdict this tick: ${unread.length} of ${markets.rows.length} balance reads failed after a retry`,
+    )
+    return
   }
+  await redis.del(UNMEASURED_KEY)
   // The stake currency's width, not USDC's. This was a literal 1e6, which on
   // an eighteen-decimal chain reported the balance a trillion times too large
   // and made the invariant monitor cry CRITICAL on every tick - the one alarm
@@ -181,8 +267,7 @@ export async function invariantTick() {
         actual_balance, drift_usdc, alert_level)
      VALUES ($1, $2, $3, $4, $5, $6, $7)
      ON CONFLICT (snapshot_at) DO NOTHING`,
-    [finite(totalDeposited), finite(totalClaimed), finite(totalRefunded),
-     finite(expected), finite(actual), finite(drift), level],
+    [totalDeposited, totalClaimed, totalRefunded, expected, actual, drift, level],
   )
 
   // 4. Surface critical via Redis flag for /api/keeper/health.
@@ -190,12 +275,7 @@ export async function invariantTick() {
     await redis.setEx('invariant:critical', 300, JSON.stringify({
       drift, actual, expected, totalDeposited, totalClaimed, totalRefunded, at: Date.now(),
     }))
-    console.error(
-      Number.isFinite(drift)
-        ? `[invariant] CRITICAL drift = $${drift.toFixed(6)} (expected $${expected}, actual $${actual})`
-        : `[invariant] CRITICAL drift is not a number (expected ${expected}, actual ${actual}) - ` +
-          `the projection could not be summed, so nothing here vouches for the balances`,
-    )
+    console.error(`[invariant] CRITICAL drift = $${drift.toFixed(6)} (expected $${expected}, actual $${actual})`)
   } else {
     await redis.del('invariant:critical')
     if (level === 'warn') {

@@ -32,6 +32,15 @@ import { redis } from '../db/redis.js'
 const STATE_KEY       = 'watchdog:state'
 const INVARIANT_KEY   = 'invariant:critical'
 const STALE_THRESHOLD = 5 * 60_000 // 5 min
+const UNMEASURED_KEY  = 'invariant:unmeasured'
+/**
+ * How long the invariant monitor may go without reading every balance before
+ * that is an outage rather than a blip. One tick of failed reads used to be a
+ * CRITICAL "drift"; a quarter of an hour of them is a money monitor that is not
+ * watching, and nothing else here notices - the watchdog publishes its snapshot
+ * whatever the RPC does.
+ */
+const UNMEASURED_DOWN_MS = 15 * 60_000
 /** Escalations at one nonce before it counts as an outage rather than a retry. */
 const NONCE_WEDGED_LEVEL = 3
 
@@ -86,6 +95,7 @@ type Code =
   | 'nonce-wedged'
   | 'resolver-eth-critical'
   | 'settlements-stalled'
+  | 'invariant-unmeasured'
 
 /**
  * Green-but-degraded. A monitor that only distinguishes up from down learns
@@ -95,6 +105,7 @@ type Code =
  */
 type Warn = 'keeper-eth-low' | 'resolver-eth-low' | 'feed-degraded' | 'gas-throttled'
           | 'nonce-escalating' | 'settlements-overdue' | 'oracle-outage'
+          | 'invariant-unmeasured'
 
 interface Verdict {
   ok:         boolean
@@ -140,6 +151,21 @@ export async function evaluateKeeperHealth(get: Reader, now: number): Promise<Ve
   const invariantRaw = await get(INVARIANT_KEY)
   const invariant    = invariantRaw ? JSON.parse(invariantRaw) : null
 
+  // The invariant monitor could not read every balance and refused to render a
+  // verdict from a partial sum. Briefly, that is a timeout. For long, it is the
+  // monitor itself that is down, while every other signal here stays green.
+  const unmeasuredRaw = await get(UNMEASURED_KEY)
+  let blindMs = 0
+  if (unmeasuredRaw) {
+    try {
+      const since = (JSON.parse(unmeasuredRaw) as { since?: unknown }).since
+      blindMs = typeof since === 'number' ? Math.max(0, now - since) : 0
+    } catch {
+      // Unreadable: count it as having just gone blind - a warning, not silence.
+    }
+  }
+  const monitorBlind = !!unmeasuredRaw && blindMs >= UNMEASURED_DOWN_MS
+
   // Every other red condition here is about the keeper's ability to act - gas,
   // nonce, liveness. A keeper with a full tank and a clean nonce whose
   // settlements revert in simulation trips none of them, and the USDC
@@ -148,7 +174,7 @@ export async function evaluateKeeperHealth(get: Reader, now: number): Promise<Ve
   const overdue          = snap.settlementsOverdueSecs ?? 0
   const settlementsDead  = overdue >= SETTLEMENTS_DOWN_SECS
 
-  if (stale || crit || keeperCrit || nonceWedged || invariant || settlementsDead) {
+  if (stale || crit || keeperCrit || nonceWedged || invariant || settlementsDead || monitorBlind) {
     return {
       ok: false,
       code:
@@ -157,6 +183,7 @@ export async function evaluateKeeperHealth(get: Reader, now: number): Promise<Ve
         : keeperCrit      ? 'keeper-out-of-gas'
         : nonceWedged     ? 'nonce-wedged'
         : settlementsDead ? 'settlements-stalled'
+        : monitorBlind    ? 'invariant-unmeasured'
         :                   'resolver-eth-critical',
       reason:
         invariant       ? `usdc invariant drift $${invariant.drift?.toFixed?.(2) ?? '?'}`
@@ -164,6 +191,7 @@ export async function evaluateKeeperHealth(get: Reader, now: number): Promise<Ve
         : keeperCrit      ? `keeper wallet out of gas (${snap.keeperAddress ?? 'unknown'}) - nothing is being settled`
         : nonceWedged     ? `nonce ${snap.stuckNonce} wedged after ${snap.escalationLevel} fee escalations - no writes are landing`
         : settlementsDead ? `oldest match ${Math.round(overdue / 60)} min past its settleAt - settlement is not running`
+        : monitorBlind    ? `invariant monitor blind ${Math.round(blindMs / 60_000)} min - balance reads are failing`
         :                   'resolver eth critical',
       snapshot: snap,
       invariant,
@@ -182,6 +210,7 @@ export async function evaluateKeeperHealth(get: Reader, now: number): Promise<Ve
   // dead oracle stops both price pushes and settlement, so it must be visible
   // now rather than an hour later via the settlement backlog.
   if (snap.oracleOutage) warn.push('oracle-outage')
+  if (unmeasuredRaw) warn.push('invariant-unmeasured')
 
   return { ok: true, warn, snapshot: snap, ageMs: age }
 }

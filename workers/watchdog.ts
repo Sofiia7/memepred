@@ -378,7 +378,8 @@ async function tick(env: Env, now: number): Promise<State> {
       `Up and serving, but: ${warns.join(', ')}.\n\n` +
       'keeper-eth-low   -> top up the keeper wallet\n' +
       'resolver-eth-low -> send ETH to OracleResolver\n' +
-      'feed-degraded    -> an oracle feed is failing to publish\n\n' +
+      'feed-degraded    -> an oracle feed is failing to publish\n' +
+      'invariant-unmeasured -> the money monitor cannot read every balance; red after 15 min\n\n' +
       'https://api.flipthememe.com/api/keeper/health',
     )
     next.lastWarnDay = utcDay(now)
