@@ -133,7 +133,7 @@ auto-слиппедж 9.5%. У нас 1% от банка, потолок нел�
 | Валюта | 6 → 18 знаков: 9 мест в backend, 6 во фронтенде, 3 в харнессе. `MIN_BET`/`MAX_BET` - `constant` в контракте (1e6 / 100e6), переписать в 0.0005 / 0.04 ETH. | малый, но везде |
 | Кипер | **Удалить ролловер** (`closeExpiredMarkets` + пересоздание) и `onchainPriceRecorder` целиком - это и был весь recurring-расход. Новый цикл: `PoolCreated` → гейт по ликвидности → `increaseObservationCardinalityNext(60)` → `createMarket` один раз. Сеттлмент через существующий `resolveOrderbookMarketBatch`. | средний |
 | Рейк | `proposeNewFee(100)` → 48ч → `applyNewFee()`. Кода не требует. | ноль |
-| Конфиг | `keeperWallet.ts:27`, `wagmi.config.ts`, `subgraph.yaml` ×5, RPC на Alchemy WSS. | малый |
+| Конфиг | `keeperWallet.ts:27`, `wagmi.config.ts`, ~~`subgraph.yaml` ×5~~ (субграф удалён 05.09), RPC на Alchemy WSS. | малый |
 
 Не меняется: `OrderbookMarket` (матчинг, сеттлмент, клеймы, рефанды), `LiquidityPool`
 (капы 5%/10% - именно они защищают от тонких пулов), бейджи, `ReferralRegistry`, индексер
@@ -184,7 +184,7 @@ permissionless `createMarket` с гейтами. **Замерить газ се�
 
 **Неделя 2, сервисы.** Кипер: вотчер `PoolCreated` на Alchemy WSS, гейт, cardinality,
 разовый спавн. Удалить ролловер и price recorder. Индексер: символ из пула. Фронтенд:
-18 знаков, лента горячих пулов. Subgraph. **Соук с `bot-harness` на 46630.**
+18 знаков, лента горячих пулов. ~~Subgraph.~~ (удалён 05.09: его никто не читал, а смотрел он на фабрику двухдеплойной давности) **Соук с `bot-harness` на 46630.**
 
 **Неделя 3, мейннет и сдача.** Деплой на 4663, `MAX_BET` 0.04 ETH (позиция «маленькие
 деньги до аудита»), `proposeNewFee(100)` в начале недели чтобы 48 часов прошли к сдаче.

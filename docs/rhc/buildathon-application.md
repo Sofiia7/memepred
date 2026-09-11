@@ -122,12 +122,12 @@ flipthememe.com:
 - **Contracts:** EIP-1167 cloned markets, orderbook matching with partial fills,
   TWAP settlement with two independent spread anomaly checks and emergency refunds,
   ERC-4626 LP vault with exposure caps, fee distributor with referral split, badge NFTs.
-  Timelocked fee changes, bounded emergency pause, multisig-gated admin. **338 Foundry
+  Timelocked fee changes, bounded emergency pause, multisig-gated admin. **357 Foundry
   tests**, of which 276 are the Base suite and pass unchanged - the Robinhood Chain build
-  is additive, not a fork.
+  is additive, not a fork - and 9 run against live Robinhood Chain mainnet pools.
 - **Backend and keeper:** event indexer, market spawner, settlement keeper with nonce
   escalation and a gas budget, an invariant monitor reconciling on-chain balances against
-  the database, watchdog with deep health checks. **253 unit tests.**
+  the database, watchdog with deep health checks. **272 unit tests.**
 - **Frontend:** React, wagmi, viem, mobile-first, Coinbase Smart Wallet and MetaMask.
 - **Ops:** dockerised stack on a VPS behind a Cloudflare Worker edge (geo-block with an
   OFAC layer), external cron watchdog, Telegram alerting, database backups, dependency
@@ -164,12 +164,18 @@ chosen: the protocol may take at most 1% of a pot that is twice one stake, settl
 price and the floor lands at 0.005 ETH. `createMarket(pool, duration)` is permissionless
 behind on-chain gates, one test per gate. Deployed to testnet 46630.
 
-The one thing we could not do as planned: **fork tests against real pools are impossible on
-the public RPC**, which keeps 8.4 minutes of state - we binary-searched it. What stands in
-their place is a pool mock that integrates the tick over time and reverts `OLD` at the ring
-boundary, plus our vendored `TickMath` checked against **224 `(tick, sqrtPriceX96)` pairs
-read off live mainnet pools** - pairs that Uniswap's own deployed code produced, so
-agreement is evidence rather than self-consistency.
+Fork tests against real pools looked impossible at first: the public RPC keeps 8.4 minutes
+of state, so a pinned block cannot be replayed - we binary-searched it. A fork at `latest`
+does work, and it is now the strongest test we have: **`PoolOracleResolver` prices live
+mainnet pools, and `createMarket` creates a real market on a live pool, through every
+gate.** It also corrected us. We had asserted that a pool holding a single observation must
+refuse to price. It does not: `observe()` extrapolates forward from a stale newest
+observation at the current tick, which is correct, and which means the ring-size gate buys
+future history rather than present observability - it is the depth gates that keep a thin
+pool out. Alongside it, our vendored `TickMath` is checked against **224
+`(tick, sqrtPriceX96)` pairs read off live mainnet pools**, so agreement is evidence rather
+than self-consistency. Without a pinned block these cannot run in CI; they run on demand,
+against the chain as it is.
 
 **Week 2, services - done.** The keeper watches `PoolCreated` by polling rather than over a
 websocket, and that turned out to be the better fit: the watcher needs a durable cursor
@@ -183,9 +189,13 @@ on this profile at all. On chain, unaided:
     [poolWatcher] 0xc916... created 300s market
     [poolWatcher] 0xc916... created 900s market
 
-The soak is running now. Bets, partial fills, matches, settlements, claims and refunds have
-all happened on chain, and the invariant monitor reconciles the contracts' balances against
-the database to **zero drift**.
+The soak ran just under 47 hours, in two runs around a machine reboot: 1,113 orders, 278
+matches (56 of them against the LP vault), settlements, claims, refunds, and the one
+emergency refund path that had never run on any chain. The invariant monitor raised 56
+critical alerts along the way and **not one of them was money that was actually missing**:
+46 were the indexer lagging in the safe direction, 8 predate a decimals fix, and 2 were
+balance reads that timed out and were counted as zero - a monitor bug, since fixed. The
+final snapshot matched the chain to the wei.
 
 **Week 3, mainnet and submission.** Deploy to chain 4663 with a 0.04 ETH per-bet cap (the
 same "small money until audited" posture we run today), propose the 1% fee early enough for
