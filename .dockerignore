@@ -1,0 +1,21 @@
+# Applies to every `docker build` in this repo (currently just
+# deploy/backend.Dockerfile, context repo root). Keeps the build context
+# small and stops host-side artifacts - locally installed deps, local
+# secrets, test wallet private keys - from leaking into an image through
+# `COPY backend ./backend` or any other COPY instruction; .dockerignore is
+# applied before COPY ever sees the context, regardless of which path a
+# given COPY names.
+node_modules
+.git
+**/.env*
+contracts/
+frontend/dist
+**/*.log
+.testwallets/
+
+# Same reasoning, for build/tool output this image never needs from the host
+# (the Dockerfile builds backend/dist itself, inside the build stage).
+dist/
+**/dist
+.wrangler/
+**/.wrangler

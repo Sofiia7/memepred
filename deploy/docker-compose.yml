@@ -61,8 +61,13 @@ services:
     mem_limit: 768m
     logging: *default-logging
     build:
-      context:    ../backend
-      dockerfile: ../deploy/backend.Dockerfile
+      # Repo root, not backend/ alone: backend.Dockerfile installs with pnpm
+      # against the root pnpm-workspace.yaml/pnpm-lock.yaml (workspace
+      # overrides for the ws/axios advisories live there, not in any single
+      # package's own manifest), so it needs that lockfile in the build
+      # context.
+      context:    ..
+      dockerfile: deploy/backend.Dockerfile
     restart: unless-stopped
     depends_on:
       postgres: { condition: service_healthy }
@@ -93,8 +98,9 @@ services:
     mem_limit: 768m
     logging: *default-logging
     build:
-      context:    ../backend
-      dockerfile: ../deploy/backend.Dockerfile
+      # Same image as `backend` above, same reason for the root context.
+      context:    ..
+      dockerfile: deploy/backend.Dockerfile
     command: ["node", "dist/keeper/index.js"]
     restart: unless-stopped
     depends_on:
