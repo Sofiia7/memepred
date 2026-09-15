@@ -2,8 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main, master]
+    branches: [main, master, robinhood-chain]
   pull_request:
+    branches: [main, master, robinhood-chain]
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -20,13 +21,26 @@ jobs:
     name: contracts (forge)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with: { submodules: recursive }
 
       - name: Install Foundry
-        uses: foundry-rs/foundry-toolchain@v1
+        uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
         with:
           version: v1.7.1
+
+      # RedStone's consumer contracts (@redstone-finance/evm-connector,
+      # @redstone-finance/protocol) ship only on npm - excluded from their
+      # public GitHub monorepo, so forge install cannot reach them - and are
+      # reached instead through the foundry.toml remapping into
+      # node_modules/. Without this, forge build/test fail to resolve that
+      # remapping. contracts/package-lock.json is gitignored and not
+      # committed (see contracts/package.json's own description), so this is
+      # `npm install`, not `npm ci` - see the CI observation in the final
+      # task report about that gap.
+      - name: npm install (RedStone consumer contracts)
+        working-directory: contracts
+        run: npm install
 
       - name: forge fmt --check
         working-directory: contracts
@@ -36,8 +50,20 @@ jobs:
         working-directory: contracts
         run: forge build --sizes
 
+      # PoolOracleResolverFork.t.sol and PoolRingCostFork.t.sol (11 test
+      # functions total) silently `return` with zero assertions when
+      # RHC_MAINNET_RPC is unset - vm.envOr("RHC_MAINNET_RPC", string(""))
+      # then `if (bytes(rpc).length == 0) return;`. RHC_MAINNET_RPC is not
+      # currently configured as a secret in this repo's GitHub settings, so
+      # today those 11 tests report PASS without testing anything - a green
+      # `forge test` here does not mean fork behavior was exercised. The env
+      # line below is a no-op until someone adds the RHC_MAINNET_RPC secret
+      # in GitHub repo settings; once added, these tests activate with no
+      # further workflow change needed.
       - name: forge test
         working-directory: contracts
+        env:
+          RHC_MAINNET_RPC: ${{ secrets.RHC_MAINNET_RPC }}
         run: forge test -vv
 
   # ─────────────────────────────────────────────────────────────
@@ -49,11 +75,19 @@ jobs:
     name: contracts (slither, informational)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with: { submodules: recursive }
 
-      - uses: foundry-rs/foundry-toolchain@v1
+      - uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
         with: { version: v1.7.1 }
+
+      # Same gap as the contracts job above: --foundry-ignore-compile=false
+      # below makes slither run a real forge compile, which needs RedStone's
+      # npm-only consumer contracts resolved first or the compile - and so
+      # the whole informational check - fails silently under `|| true`.
+      - name: npm install (RedStone consumer contracts)
+        working-directory: contracts
+        run: npm install
 
       - name: Install Slither
         run: pip3 install slither-analyzer
@@ -88,12 +122,12 @@ jobs:
       DATABASE_URL: postgres://flipthememe:flipthememe@localhost:5432/flipthememe_ci
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
         with: { version: '${{ env.PNPM_VERSION }}' }
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version-file: '.nvmrc'
           cache: pnpm
@@ -119,12 +153,12 @@ jobs:
     name: frontend (tsc + vite build)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
         with: { version: '${{ env.PNPM_VERSION }}' }
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version-file: '.nvmrc'
           cache: pnpm
@@ -172,12 +206,12 @@ jobs:
     name: workers (typecheck)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
         with: { version: '${{ env.PNPM_VERSION }}' }
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version-file: '.nvmrc'
           cache: pnpm
@@ -198,13 +232,13 @@ jobs:
     name: dependency audit (informational)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version-file: '.nvmrc'
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
         with: { version: '${{ env.PNPM_VERSION }}' }
 
       # This job used to run `npm audit` with no install step and no committed

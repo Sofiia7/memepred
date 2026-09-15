@@ -27,6 +27,22 @@ $ forge build
 $ forge test
 ```
 
+`test/PoolOracleResolverFork.t.sol` and `test/PoolRingCostFork.t.sol` (11 test
+functions between them) fork Robinhood Chain mainnet and need `RHC_MAINNET_RPC`
+set to a real archive RPC URL. Without it, each test hits
+`vm.envOr("RHC_MAINNET_RPC", string(""))`, sees an empty string, and returns
+immediately with zero assertions run - `forge test` reports them as PASS
+either way, so a green run does not by itself mean fork behavior was
+exercised. Check the test output for what actually ran, e.g.:
+
+```shell
+$ RHC_MAINNET_RPC=https://your-archive-node forge test -vv
+```
+
+In CI, `RHC_MAINNET_RPC` is wired into the `contracts` job as an optional
+secret (`.github/workflows/ci.yml`) but is not currently configured in this
+repo's GitHub settings, so these 11 tests are vacuous on every CI run today.
+
 ### Format
 
 ```shell
