@@ -226,6 +226,47 @@ contract LiquidityPoolTest is RedstoneTest {
         assertFalse(pool.isAuthorizedMarket(address(market)));
     }
 
+    /// Deauthorizing must stop NEW matches, not strand OPEN ones. Before this
+    /// fix, onMatchSettled/onMatchRefunded were gated on current
+    /// authorization, so a match opened while a market was authorized became
+    /// unsettleable - both the trader's stake and the LP's stake stuck -
+    /// the moment the owner deauthorized it, with no way back except
+    /// re-authorizing (which re-exposes the pool to every OTHER open match on
+    /// that market too).
+    function test_Deauthorize_DoesNotStrandAnAlreadyOpenMatch() public {
+        _addLP("lp", 1000e6);
+        uint256 taken = _openMatch(1, 100e6); // pool takes the DOWN side
+
+        pool.deauthorizeMarket(address(market));
+
+        vm.prank(address(market));
+        pool.onMatchSettled(1, false); // DOWN (the pool) won - must not revert
+        assertEq(pool.totalExposure(), 0, "exposure released even though the market is now deauthorized");
+        taken; // silence unused-var warning; the amount itself isn't asserted here
+    }
+
+    function test_Deauthorize_DoesNotStrandAnAlreadyOpenMatch_Refund() public {
+        _addLP("lp", 1000e6);
+        _openMatch(2, 100e6);
+
+        pool.deauthorizeMarket(address(market));
+
+        vm.prank(address(market));
+        pool.onMatchRefunded(2); // must not revert
+        assertEq(pool.totalExposure(), 0);
+    }
+
+    /// A contract that was never authorized still cannot forge a settlement:
+    /// removing the authorization check from the two callbacks is safe only
+    /// because activeMatches is keyed by msg.sender, and nothing writes an
+    /// entry there except tryMatch, which IS still authorization-gated.
+    function test_NeverAuthorizedCaller_CannotForgeASettlement() public {
+        address stranger = makeAddr("stranger");
+        vm.prank(stranger);
+        vm.expectRevert(bytes("match not found"));
+        pool.onMatchSettled(1, true);
+    }
+
     // ─── LP WIN: SHARE PRICE GROWS ────────────────────────
     function test_LP_Wins_SharePrice_Grows() public {
         address lp = _addLP("lp", 500e6);

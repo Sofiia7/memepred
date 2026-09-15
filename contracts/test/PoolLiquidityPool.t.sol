@@ -6,7 +6,9 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "../src/LiquidityPool.sol";
 import "../src/PoolLiquidityPool.sol";
 import "../src/GenesisNFT.sol";
+import "../src/OrderbookMarket.sol";
 import "./mocks/MockToken.sol";
+import "./mocks/MockMarketRegistry.sol";
 
 /**
  * @notice The Genesis sweep, priced on both vaults.
@@ -104,5 +106,148 @@ contract PoolLiquidityPoolTest is Test {
         assertEq(rhc.GLOBAL_MAX_EXPOSURE_BPS(), base.GLOBAL_MAX_EXPOSURE_BPS());
         assertEq(rhc.PER_MARKET_MAX_EXPOSURE_BPS(), base.PER_MARKET_MAX_EXPOSURE_BPS());
         assertEq(rhc.FEE_BPS_ON_LP_WIN(), base.FEE_BPS_ON_LP_WIN());
+    }
+
+    function test_AllDurationsOfOneFeedShareTheRhcExposureCap() public {
+        MockMarketRegistry registry = new MockMarketRegistry();
+        rhc.setMarketFactory(address(registry));
+
+        bytes32 feed = bytes32(uint256(123));
+        OrderbookMarket first = new OrderbookMarket(
+            address(weth), makeAddr("resolver"), address(rhc), makeAddr("fees"), address(0), makeAddr("admin"), feed, 300
+        );
+        OrderbookMarket second = new OrderbookMarket(
+            address(weth), makeAddr("resolver2"), address(rhc), makeAddr("fees2"), address(0), makeAddr("admin2"), feed, 900
+        );
+        registry.register(address(first));
+        registry.register(address(second));
+        rhc.authorizeMarket(address(first));
+        rhc.authorizeMarket(address(second));
+
+        weth.mint(address(this), 10 ether);
+        weth.approve(address(rhc), 10 ether);
+        rhc.deposit(10 ether, address(this));
+
+        vm.prank(address(first));
+        assertEq(rhc.tryMatch(1, 0.5 ether, true, 1), 0.5 ether);
+        assertEq(rhc.feedExposure(feed), 0.5 ether);
+
+        vm.prank(address(second));
+        assertEq(rhc.tryMatch(2, 0.5 ether, true, 1), 0, "same feed cannot use another duration cap");
+    }
+
+    // ── LP is opt-in: an unauthorized market must be DECLINED, not REVERTED ──
+    //
+    // PoolMarketFactory.createMarket no longer authorizes new markets on the
+    // vault (that is now a separate owner action). But every order that is not
+    // fully filled by the PvP queue still falls through to _tryLpMatch, which
+    // calls tryMatch with no try/catch. If tryMatch reverts for an
+    // unauthorized market, that revert is the whole placeBet transaction's
+    // revert - so once the vault holds ANY assets, an unauthorized market can
+    // no longer accept a single resting order, PvP included.
+
+    function _unauthorizedMarket(bytes32 feed) internal returns (OrderbookMarket m) {
+        MockMarketRegistry registry = new MockMarketRegistry();
+        rhc.setMarketFactory(address(registry));
+        m = new OrderbookMarket(
+            address(weth), makeAddr("resolver"), address(rhc), makeAddr("fees"), address(0), makeAddr("admin"), feed, 300
+        );
+        registry.register(address(m));
+        // Deliberately NOT calling rhc.authorizeMarket(address(m)) - this is
+        // the state every freshly created RHC market is left in now.
+    }
+
+    function test_UnauthorizedMarket_TryMatchDeclinesRatherThanReverts() public {
+        OrderbookMarket m = _unauthorizedMarket(bytes32(uint256(123)));
+
+        weth.mint(address(this), 10 ether);
+        weth.approve(address(rhc), 10 ether);
+        rhc.deposit(10 ether, address(this)); // vault now holds assets
+
+        vm.prank(address(m));
+        assertEq(
+            rhc.tryMatch(1, 0.5 ether, true, 1),
+            0,
+            "an unauthorized market must be told 'nothing available', not reverted"
+        );
+    }
+
+    function test_UnauthorizedMarket_EmptyVaultStillDeclinesCleanly() public {
+        // Before this fix the empty-vault case already worked by accident
+        // (feedCap is 0 against an empty totalAssets(), so feedAvail short-
+        // circuits to 0 before the authorization check is ever reached). This
+        // pins that the fix does not change that path.
+        OrderbookMarket m = _unauthorizedMarket(bytes32(uint256(456)));
+        vm.prank(address(m));
+        assertEq(rhc.tryMatch(1, 0.5 ether, true, 1), 0);
+    }
+
+    // ── Deauthorizing a market must not strand its already-open matches ──
+    //
+    // authorizeMarket/deauthorizeMarket used to be a rare emergency lever
+    // (Base auto-authorizes every market it creates). Now that RHC leaves
+    // every market unauthorized until the owner reviews it, deauthorizing is
+    // an ordinary curation action - and onMatchSettled/onMatchRefunded were
+    // gated on CURRENT authorization, so deauthorizing a market with an open
+    // LP match froze that match's funds (both the user's stake and the LP's)
+    // until someone re-authorized it.
+
+    function test_DeauthorizedMarket_CanStillSettleAnAlreadyOpenMatch() public {
+        MockMarketRegistry registry = new MockMarketRegistry();
+        rhc.setMarketFactory(address(registry));
+        bytes32 feed = bytes32(uint256(789));
+        OrderbookMarket m = new OrderbookMarket(
+            address(weth), makeAddr("resolver"), address(rhc), makeAddr("fees"), address(0), makeAddr("admin"), feed, 300
+        );
+        registry.register(address(m));
+        rhc.authorizeMarket(address(m));
+
+        weth.mint(address(this), 10 ether);
+        weth.approve(address(rhc), 10 ether);
+        rhc.deposit(10 ether, address(this));
+
+        vm.prank(address(m));
+        assertEq(rhc.tryMatch(1, 0.5 ether, true, 1), 0.5 ether);
+
+        rhc.deauthorizeMarket(address(m));
+        assertFalse(rhc.isAuthorizedMarket(address(m)));
+
+        vm.prank(address(m));
+        rhc.onMatchSettled(1, true); // must NOT revert
+        assertEq(rhc.feedExposure(feed), 0, "exposure released even though the market is now deauthorized");
+    }
+
+    function test_DeauthorizedMarket_CanStillRefundAnAlreadyOpenMatch() public {
+        MockMarketRegistry registry = new MockMarketRegistry();
+        rhc.setMarketFactory(address(registry));
+        bytes32 feed = bytes32(uint256(101112));
+        OrderbookMarket m = new OrderbookMarket(
+            address(weth), makeAddr("resolver"), address(rhc), makeAddr("fees"), address(0), makeAddr("admin"), feed, 300
+        );
+        registry.register(address(m));
+        rhc.authorizeMarket(address(m));
+
+        weth.mint(address(this), 10 ether);
+        weth.approve(address(rhc), 10 ether);
+        rhc.deposit(10 ether, address(this));
+
+        vm.prank(address(m));
+        assertEq(rhc.tryMatch(1, 0.5 ether, true, 1), 0.5 ether);
+
+        rhc.deauthorizeMarket(address(m));
+
+        vm.prank(address(m));
+        rhc.onMatchRefunded(1); // must NOT revert
+        assertEq(rhc.feedExposure(feed), 0);
+    }
+
+    // A market that was NEVER authorized still cannot forge a settlement -
+    // there is no activeMatches record under its address, so removing the
+    // modifier does not open a new hole.
+    function test_NeverAuthorizedMarket_CannotForgeASettlement() public {
+        OrderbookMarket m = _unauthorizedMarket(bytes32(uint256(131415)));
+        vm.prank(address(m));
+        vm.expectRevert(bytes("match not found"));
+        rhc.onMatchSettled(1, true);
     }
 }

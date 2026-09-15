@@ -373,7 +373,8 @@ contract LiquidityPool is ERC4626, ReentrancyGuard, Pausable, Ownable {
 
     // ── MATCHING (called by OrderbookMarket) ───────────────
     function tryMatch(uint256 orderId, uint256 amount, bool userIsUp, uint256 matchId)
-        external
+        public
+        virtual
         onlyAuthorizedMarket
         nonReentrant
         returns (uint256 matchedAmount)
@@ -415,12 +416,26 @@ contract LiquidityPool is ERC4626, ReentrancyGuard, Pausable, Ownable {
     }
 
     /**
-     * @notice Called by an authorized market when a match is emergency-refunded
-     *         (matched but never settled within OrderbookMarket.SETTLE_GRACE).
-     *         Just unlocks exposure — market has already returned the LP stake.
+     * @notice Called by a market when a match is emergency-refunded (matched
+     *         but never settled within OrderbookMarket.SETTLE_GRACE). Just
+     *         unlocks exposure — market has already returned the LP stake.
      *         No P&L change; no fee accrual.
+     *
+     * @dev    Deliberately NOT onlyAuthorizedMarket. That modifier gated this
+     *         on CURRENT authorization, so deauthorizing a market while one of
+     *         its LP matches was still open froze that match - both the
+     *         trader's stake and the LP's - until someone re-authorized the
+     *         whole market, re-exposing the pool to every other open match on
+     *         it too. Deauthorization used to be a rare emergency action; on a
+     *         permissionless-market chain where LP access is opted in per
+     *         market, it is an ordinary curation action, so this had to stop
+     *         being a trap. Safe without the modifier: activeMatches is keyed
+     *         by msg.sender, and the only writer of a match there is
+     *         tryMatch, which IS still onlyAuthorizedMarket - so a caller with
+     *         no active match under its own address hits "match not found"
+     *         regardless of its authorization state.
      */
-    function onMatchRefunded(uint256 matchId) external onlyAuthorizedMarket nonReentrant {
+    function onMatchRefunded(uint256 matchId) public virtual nonReentrant {
         address market = msg.sender;
         ActiveMatch storage am = activeMatches[market][matchId];
         require(am.amount > 0, "match not found");
@@ -433,7 +448,8 @@ contract LiquidityPool is ERC4626, ReentrancyGuard, Pausable, Ownable {
         emit MatchResult(market, matchId, false, am.amount);
     }
 
-    function onMatchSettled(uint256 matchId, bool upWon) external onlyAuthorizedMarket nonReentrant {
+    /// @dev Deliberately NOT onlyAuthorizedMarket - see onMatchRefunded above.
+    function onMatchSettled(uint256 matchId, bool upWon) public virtual nonReentrant {
         address market = msg.sender;
         ActiveMatch storage am = activeMatches[market][matchId];
         require(am.amount > 0, "match not found");

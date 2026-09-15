@@ -3,6 +3,10 @@ pragma solidity ^0.8.24;
 
 import "./LiquidityPool.sol";
 
+interface IPoolMarketMetadata {
+    function feedId() external view returns (bytes32);
+}
+
 /**
  * @title  PoolLiquidityPool
  * @notice LiquidityPool for a chain that stakes an eighteen-decimal token.
@@ -34,10 +38,56 @@ import "./LiquidityPool.sol";
 contract PoolLiquidityPool is LiquidityPool {
     /// @notice Ten times PoolOrderbookMarket.MIN_BET.
     uint256 public constant MIN_DEPOSIT_WEI = 0.05 ether;
+    /// @notice All durations of one price source share this exposure ceiling.
+    /// A per-market 5% cap alone lets the same token consume 15% through the
+    /// 60/300/900 second markets before the vault's global 10% cap catches it.
+    uint256 public constant MAX_FEED_EXPOSURE_BPS = 500;
+    mapping(bytes32 => uint256) public feedExposure;
 
     constructor(IERC20 _weth, address _genesisNFT) LiquidityPool(_weth, _genesisNFT) {}
 
     function MIN_DEPOSIT() public view virtual override returns (uint256) {
         return MIN_DEPOSIT_WEI;
+    }
+
+    function tryMatch(uint256 orderId, uint256 amount, bool userIsUp, uint256 matchId)
+        public
+        virtual
+        override
+        returns (uint256 matchedAmount)
+    {
+        // Declined, not reverted. PoolMarketFactory.createMarket no longer
+        // authorizes new markets on this vault - LP access is a separate
+        // owner action now - so an unreviewed market is the ordinary case,
+        // not an attack. super.tryMatch() would revert here via
+        // onlyAuthorizedMarket, and _tryLpMatch calls this with no try/catch,
+        // which turned every order not fully filled by the PvP queue into a
+        // guaranteed-revert placeBet the moment the vault held any assets -
+        // including plain maker orders on an empty book. Same reasoning as
+        // the paused() early return this mirrors.
+        if (!isAuthorizedMarket[msg.sender]) return 0;
+
+        bytes32 feed = IPoolMarketMetadata(msg.sender).feedId();
+        uint256 feedCap = (totalAssets() * MAX_FEED_EXPOSURE_BPS) / 10_000;
+        uint256 feedAvail = feedCap > feedExposure[feed] ? feedCap - feedExposure[feed] : 0;
+        if (feedAvail == 0) return 0;
+
+        uint256 cappedAmount = amount < feedAvail ? amount : feedAvail;
+        matchedAmount = super.tryMatch(orderId, cappedAmount, userIsUp, matchId);
+        if (matchedAmount > 0) feedExposure[feed] += matchedAmount;
+    }
+
+    function onMatchRefunded(uint256 matchId) public virtual override {
+        bytes32 feed = IPoolMarketMetadata(msg.sender).feedId();
+        uint256 amount = activeMatches[msg.sender][matchId].amount;
+        super.onMatchRefunded(matchId);
+        feedExposure[feed] -= amount;
+    }
+
+    function onMatchSettled(uint256 matchId, bool upWon) public virtual override {
+        bytes32 feed = IPoolMarketMetadata(msg.sender).feedId();
+        uint256 amount = activeMatches[msg.sender][matchId].amount;
+        super.onMatchSettled(matchId, upWon);
+        feedExposure[feed] -= amount;
     }
 }
