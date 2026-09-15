@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { useState } from 'react'
 import { render, screen, cleanup, waitFor } from '@testing-library/react'
 import { usePlaceBet } from './usePlaceBet'
 
@@ -17,10 +18,19 @@ import { usePlaceBet } from './usePlaceBet'
  */
 
 const MARKET = '0x00000000000000000000000000000000000000aa' as const
+const MARKET_2 = '0x00000000000000000000000000000000000000cc' as const
 const calls: string[] = []
 
 let approvalMined!: () => void
 let approveCallArgs: any
+
+/**
+ * Controls what useWaitForTransactionReceipt reports for the BET transaction
+ * once it has a hash to watch. 'pending' mirrors the old static mock (no
+ * receipt yet); tests that care about the outcome switch this before
+ * rendering.
+ */
+let mockBetReceipt: 'pending' | 'success' | 'reverted' = 'pending'
 
 vi.mock('wagmi', () => ({
   useAccount: () => ({ address: '0x00000000000000000000000000000000000000bb' }),
@@ -50,7 +60,17 @@ vi.mock('wagmi', () => ({
     sendTransactionAsync: async () => { calls.push('bet'); return '0xbethash' },
     data: undefined,
   }),
-  useWaitForTransactionReceipt: () => ({ data: undefined, isSuccess: false }),
+  useWaitForTransactionReceipt: ({ hash, query }: any) => {
+    if (!hash || query?.enabled === false || mockBetReceipt === 'pending') {
+      return { data: undefined, isSuccess: false, isError: false, error: undefined }
+    }
+    return {
+      data: { status: mockBetReceipt, transactionHash: hash, logs: [] },
+      isSuccess: true,
+      isError: false,
+      error: undefined,
+    }
+  },
 }))
 
 vi.mock('../hooks/useEnsureChain', () => ({ useEnsureChain: () => async () => ({ ok: true }) }))
@@ -62,23 +82,33 @@ vi.mock('../lib/oracle', () => ({
 vi.mock('../lib/referral', () => ({ getPendingReferrer: () => '0x0000000000000000000000000000000000000000' }))
 
 function Probe() {
+  const [market, setMarket] = useState<string>(MARKET)
+  const [direction, setDirection] = useState<0 | 1>(0)
   const bet = usePlaceBet({
-    marketAddress: MARKET,
-    direction: 0,
+    marketAddress: market as `0x${string}`,
+    direction,
     amountUsd: '10',
     expectedPrice: 1_000_000_000_000_000_000n,
     slippageBps: 100,
   })
-  return <button onClick={() => { void bet.execute() }}>go</button>
+  return (
+    <>
+      <button onClick={() => { void bet.execute() }}>go</button>
+      <button onClick={() => setMarket(MARKET_2)}>switch market</button>
+      <button onClick={() => setDirection(1)}>switch direction</button>
+      <div data-testid="step">{bet.step}</div>
+      <div data-testid="error">{bet.error ?? ''}</div>
+    </>
+  )
 }
 
-beforeEach(() => { calls.length = 0; approveCallArgs = undefined })
+beforeEach(() => { calls.length = 0; approveCallArgs = undefined; mockBetReceipt = 'pending' })
 afterEach(cleanup)
 
 describe('usePlaceBet, approval ordering', () => {
   it('does not send the bet until the approval has been mined', async () => {
     render(<Probe />)
-    screen.getByRole('button').click()
+    screen.getByRole('button', { name: 'go' }).click()
 
     await waitFor(() => expect(calls).toContain('approval-receipt'))
 
@@ -103,12 +133,85 @@ describe('usePlaceBet, bounded approval', () => {
    */
   it('approves only the stake amount, never an unlimited allowance', async () => {
     render(<Probe />)
-    screen.getByRole('button').click()
+    screen.getByRole('button', { name: 'go' }).click()
 
     await waitFor(() => expect(approveCallArgs).toBeDefined())
 
     // Probe bets amountUsd: '10' at the default (6-decimal) test currency.
     expect(approveCallArgs.args[1]).toBe(10_000_000n)
     expect(approveCallArgs.args[1]).not.toBe(2n ** 256n - 1n) // maxUint256
+  })
+})
+
+describe('usePlaceBet, step tracks the actual receipt', () => {
+  /**
+   * Before this, `step` was set to 'betting' at submission and nothing ever
+   * moved it off that based on what actually happened on chain - only
+   * `isConfirmed` was derived from the receipt, and the Composer button reads
+   * `step`, not `isConfirmed`. A reverted or dropped bet left the CTA reading
+   * "PLACING BET..." forever, with no way to retell it apart from a slow
+   * confirmation, and no way to retry.
+   */
+  it('moves to error, not stuck on betting, when the bet reverts on-chain', async () => {
+    mockBetReceipt = 'reverted'
+    render(<Probe />)
+    screen.getByRole('button', { name: 'go' }).click()
+
+    await waitFor(() => expect(calls).toContain('approval-receipt'))
+    approvalMined()
+    await waitFor(() => expect(calls).toContain('bet'))
+
+    await waitFor(() => expect(screen.getByTestId('step').textContent).toBe('error'))
+    expect(screen.getByTestId('error').textContent?.toLowerCase()).toContain('revert')
+  })
+
+  it('moves to confirmed once the receipt reports success', async () => {
+    mockBetReceipt = 'success'
+    render(<Probe />)
+    screen.getByRole('button', { name: 'go' }).click()
+
+    await waitFor(() => expect(calls).toContain('approval-receipt'))
+    approvalMined()
+    await waitFor(() => expect(calls).toContain('bet'))
+
+    await waitFor(() => expect(screen.getByTestId('step').textContent).toBe('confirmed'))
+  })
+})
+
+describe('usePlaceBet, stale status does not follow a new pick', () => {
+  /**
+   * marketAddress/direction come through as plain props, not a remount, so
+   * nothing used to clear a previous bet's error/orderId/step when the user
+   * picked a different market or flipped direction - an old "RETRY" banner
+   * (or a stale orderId) could bleed into an unrelated new bet.
+   */
+  it('clears a stale error when the user switches to a different market', async () => {
+    mockBetReceipt = 'reverted'
+    render(<Probe />)
+    screen.getByRole('button', { name: 'go' }).click()
+
+    await waitFor(() => expect(calls).toContain('approval-receipt'))
+    approvalMined()
+    await waitFor(() => expect(screen.getByTestId('step').textContent).toBe('error'))
+
+    screen.getByRole('button', { name: 'switch market' }).click()
+
+    await waitFor(() => expect(screen.getByTestId('step').textContent).toBe('idle'))
+    expect(screen.getByTestId('error').textContent).toBe('')
+  })
+
+  it('clears a stale error when the user switches direction on the same market', async () => {
+    mockBetReceipt = 'reverted'
+    render(<Probe />)
+    screen.getByRole('button', { name: 'go' }).click()
+
+    await waitFor(() => expect(calls).toContain('approval-receipt'))
+    approvalMined()
+    await waitFor(() => expect(screen.getByTestId('step').textContent).toBe('error'))
+
+    screen.getByRole('button', { name: 'switch direction' }).click()
+
+    await waitFor(() => expect(screen.getByTestId('step').textContent).toBe('idle'))
+    expect(screen.getByTestId('error').textContent).toBe('')
   })
 })

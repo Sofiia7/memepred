@@ -93,10 +93,54 @@ export function usePlaceBet({
 
   const { sendTransactionAsync: sendBet, data: betTxHash } = useSendTransaction()
   const finalBetHash = betTxHash ?? submittedHash
-  const { data: betReceipt, isSuccess: betReceiptOk } = useWaitForTransactionReceipt({
+  const {
+    data: betReceipt,
+    isSuccess: betReceiptOk,
+    isError: betReceiptErrored,
+    error: betReceiptError,
+  } = useWaitForTransactionReceipt({
     hash: finalBetHash,
     query: { enabled: !!finalBetHash },
   })
+
+  // ── step, driven by what the receipt actually says ────────
+  // Submitting a transaction only means the wallet accepted it - it does not
+  // mean it landed, and it says nothing about whether it reverted. Before
+  // this, `step` was set to 'betting' at submission and nothing ever moved it
+  // off that: a reverted or dropped bet left the CTA reading "PLACING BET…"
+  // forever, because the Composer button renders `step`, not `isConfirmed`.
+  useEffect(() => {
+    if (!finalBetHash) return
+    if (betReceiptOk && betReceipt) {
+      if (betReceipt.status === 'success') {
+        setStep('confirmed')
+      } else {
+        // 'reverted' - landed on chain but the call itself failed (stale
+        // price, slippage, expired allowance, and so on).
+        setStep('error')
+        setError('Transaction reverted on-chain - nothing was bet.')
+      }
+    } else if (betReceiptErrored) {
+      // The receipt never resolved at all - dropped, replaced, or the RPC
+      // gave up waiting. Distinct from a revert: the chain never gave a
+      // final answer, so say so rather than implying the bet was rejected.
+      setStep('error')
+      setError(betReceiptError?.message || 'Could not confirm the transaction - it may have been dropped. Please retry.')
+    }
+  }, [finalBetHash, betReceiptOk, betReceipt, betReceiptErrored, betReceiptError])
+
+  // ── a different market or direction is a different bet ────
+  // marketAddress/direction arrive as plain props, not a remount (Composer
+  // keeps this hook mounted across picks), so nothing else clears a stale
+  // 'error'/'confirmed' status, error message or orderId from the last pick
+  // when the user switches to a new one. Deliberately narrow: the stake or
+  // expected price changing should not wipe an in-flight or just-finished bet.
+  useEffect(() => {
+    setStep('idle')
+    setError(undefined)
+    setOrderId(undefined)
+    setSubmittedHash(undefined)
+  }, [marketAddress, direction])
 
   // ── 4.1: decode OrderPlaced log → orderId state ───────────
   useEffect(() => {
@@ -114,8 +158,16 @@ export function usePlaceBet({
           setOrderId(decoded.args.orderId as bigint)
           break
         }
+        // Anything else - LPMatched, MatchTied, a settle/refund event that
+        // happened to land in the same block - is simply not what this
+        // effect is looking for. Falling through here (rather than treating
+        // an unrecognised eventName as an error) is what keeps this loop from
+        // ever throwing on a log shape it does not know about.
       } catch {
-        // not an OrderPlaced log - skip
+        // Not decodable against this ABI at all - skip. decodeEventLog throws
+        // on a log this ABI has no matching event for, which is expected and
+        // frequent: a bet's receipt can carry logs from other contracts
+        // (fee transfers, LP bookkeeping) that were never going to be OrderPlaced.
       }
     }
   }, [betReceiptOk, betReceipt, marketAddress])
@@ -227,6 +279,10 @@ export function usePlaceBet({
     betTxHash: finalBetHash,
     orderId, // Sprint 4.1: now populated after confirmation
     isLoading: step === 'approving' || step === 'betting',
-    isConfirmed: betReceiptOk,
+    // Derived from `step`, not from the receipt query directly: a fetched
+    // receipt for a REVERTED transaction used to read as "confirmed" here
+    // too (isSuccess only means the fetch succeeded, not that the call did),
+    // which is exactly the class of bug this hook's step machine now closes.
+    isConfirmed: step === 'confirmed',
   }
 }
