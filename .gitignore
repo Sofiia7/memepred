@@ -14,6 +14,20 @@
 !backend/**/*.json
 !contracts/**/*.json
 !assets/**/*.json
+# The re-includes above exist for legitimate committed config json
+# (tsconfig.json, package.json, vercel.json, etc.) living under these
+# directories - they are not meant to un-ignore a stray env file that
+# happens to end in .json. Re-ignore those specifically, after the
+# negations above so this wins: without this, backend/.env.json (or the
+# same under frontend/contracts/assets/.github) would NOT be gitignored,
+# because *.json is ignored at the top of this file but the per-directory
+# negation above re-includes anything under these dirs matching *.json,
+# .env.json included.
+.github/**/.env*
+frontend/**/.env*
+backend/**/.env*
+contracts/**/.env*
+assets/**/.env*
 secrets.json
 
 # Foundry / build artifacts inside contracts that we still want ignored
@@ -53,6 +67,13 @@ contracts/lib/openzeppelin-contracts/
 contracts/out/
 contracts/cache/
 .testwallets/
+
+# docker-compose's db-backup service writes .sql.gz dumps here - real user
+# data, must never be committed.
+deploy/backups/
+
+# Local wrangler secrets (read by `wrangler dev`); never commit.
+workers/.dev.vars
 
 # Claude session state
 .claude/
