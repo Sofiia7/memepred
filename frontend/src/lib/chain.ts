@@ -27,7 +27,9 @@ export const robinhoodChainTestnet = defineChain({
   name: 'Robinhood Chain Testnet',
   nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
   rpcUrls: { default: { http: ['https://rpc.testnet.chain.robinhood.com'] } },
-  blockExplorers: { default: { name: 'Blockscout', url: 'https://robinhoodchain.blockscout.com' } },
+  // Was robinhoodchain.blockscout.com - that's mainnet 4663's explorer.
+  // Testnet 46630 has its own, confirmed in docs/rhc/DEPLOYMENTS.md.
+  blockExplorers: { default: { name: 'Blockscout', url: 'https://explorer.testnet.chain.robinhood.com' } },
   testnet: true,
 })
 

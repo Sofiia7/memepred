@@ -37,6 +37,20 @@ describe('resolveDeployment', () => {
     expect(d.chain.testnet).toBe(true)
   })
 
+  /**
+   * robinhoodchain.blockscout.com is mainnet 4663's explorer. Testnet 46630
+   * has its own (docs/rhc/DEPLOYMENTS.md), and the two are not
+   * interchangeable - an address that resolves on one 404s on the other.
+   */
+  it('points the testnet at its own explorer, not mainnet\'s', () => {
+    expect(robinhoodChainTestnet.blockExplorers?.default.url).toBe(
+      'https://explorer.testnet.chain.robinhood.com',
+    )
+    expect(robinhoodChainTestnet.blockExplorers?.default.url).not.toBe(
+      robinhoodChain.blockExplorers?.default.url,
+    )
+  })
+
   it('ignores casing and surrounding whitespace', () => {
     expect(resolveDeployment('  RHC  ').chain).toBe(robinhoodChain)
     expect(resolveDeployment('Mainnet').chain).toBe(base)
