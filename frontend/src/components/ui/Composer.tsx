@@ -14,10 +14,18 @@ import type { PickedBet } from './MarketCard'
 
 const STAKE_CHIPS = IS_POOL_BACKED ? [0.005, 0.01, 0.02, 0.04] : [5, 10, 25, 100]
 
-/** Never throws: a bad stake should fail the button, not the render. */
-function safeParseStake(stake: number): bigint {
+/**
+ * Never throws: a bad stake should fail the button, not the render.
+ *
+ * Takes the raw typed string directly rather than a number. Round-tripping a
+ * tiny stake through Number(...).toString() is exactly how "0.0000001"
+ * becomes "1e-7" - a form parseUnits rejects outright - so the input's own
+ * text is kept as the source of truth throughout and never reconstructed
+ * from a parsed float.
+ */
+function safeParseStake(raw: string): bigint {
   try {
-    return parseUnits(String(stake || 0), CURRENCY_DECIMALS)
+    return parseUnits(raw || '0', CURRENCY_DECIMALS)
   } catch {
     return 0n
   }
@@ -29,7 +37,12 @@ export function Composer({ picked, onClear }: { picked: PickedBet | null; onClea
   const ensureChain = useEnsureChain()
   const publicClient = usePublicClient()
   const navigate = useNavigate()
-  const [stake, setStake] = useState<number>(STAKE_CHIPS[1])
+  // The input's own text, kept as a string throughout - see safeParseStake's
+  // comment for why. Number(stakeInput) below is derived, read-only, and
+  // never written back into this state.
+  const [stakeInput, setStakeInput] = useState<string>(String(STAKE_CHIPS[1]))
+  const stakeNum = Number(stakeInput)
+  const stake = Number.isFinite(stakeNum) ? stakeNum : 0
   const { raw: pythRaw } = usePythPrice(picked?.feedId)
   const { data: feeBps = 0n } = useReadContract({
     address: (picked?.marketAddress ?? '0x0000000000000000000000000000000000') as `0x${string}`,
@@ -52,7 +65,7 @@ export function Composer({ picked, onClear }: { picked: PickedBet | null; onClea
   const [wrapping, setWrapping] = useState(false)
   const [wrapError, setWrapError] = useState<string>()
 
-  const stakeWei = safeParseStake(stake)
+  const stakeWei = safeParseStake(stakeInput)
   const insufficientWeth = IS_POOL_BACKED && wethBalance !== undefined && wethBalance < stakeWei
   const wrapShortfall = insufficientWeth ? stakeWei - (wethBalance ?? 0n) : 0n
 
@@ -84,7 +97,7 @@ export function Composer({ picked, onClear }: { picked: PickedBet | null; onClea
   const bet = usePlaceBet({
     marketAddress: (picked?.marketAddress ?? '0x0000000000000000000000000000000000000000') as `0x${string}`,
     direction: picked?.side === 'up' ? 0 : 1,
-    amountUsd: String(stake),
+    amountUsd: stakeInput,
     expectedPrice: pythRaw,
     slippageBps: 100,
   })
@@ -156,10 +169,17 @@ export function Composer({ picked, onClear }: { picked: PickedBet | null; onClea
           <span className="ccy">{CURRENCY_SYMBOL}</span>
           <input
             type="number"
-            value={stake}
+            value={stakeInput}
             min={MIN_BET}
             max={MAX_BET}
-            onChange={(e) => setStake(Math.min(MAX_BET, Math.max(0, +e.target.value || 0)))}
+            // Stored verbatim, not clamped-and-reformatted on every keystroke:
+            // that round-trip (parse to a number, write it back as the input's
+            // value) is what used to turn an in-progress "0.0000001" into a
+            // silently-rewritten value and, at submit time, the exponential
+            // notation that crashed the render. Out-of-range values are still
+            // rejected - by the BUY button's disabled check below, not by
+            // fighting what the user is typing.
+            onChange={(e) => setStakeInput(e.target.value)}
           />
         </div>
       </div>
@@ -186,7 +206,7 @@ export function Composer({ picked, onClear }: { picked: PickedBet | null; onClea
 
       <div className="chips">
         {STAKE_CHIPS.map((c) => (
-          <button key={c} className={'chip ' + (stake === c ? 'sel' : '')} onClick={() => setStake(c)}>
+          <button key={c} className={'chip ' + (stake === c ? 'sel' : '')} onClick={() => setStakeInput(String(c))}>
             {c} {CURRENCY_SYMBOL}
           </button>
         ))}

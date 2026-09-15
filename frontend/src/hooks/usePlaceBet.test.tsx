@@ -81,13 +81,13 @@ vi.mock('../lib/oracle', () => ({
 }))
 vi.mock('../lib/referral', () => ({ getPendingReferrer: () => '0x0000000000000000000000000000000000000000' }))
 
-function Probe() {
+function Probe({ amountUsd = '10' }: { amountUsd?: string } = {}) {
   const [market, setMarket] = useState<string>(MARKET)
   const [direction, setDirection] = useState<0 | 1>(0)
   const bet = usePlaceBet({
     marketAddress: market as `0x${string}`,
     direction,
-    amountUsd: '10',
+    amountUsd,
     expectedPrice: 1_000_000_000_000_000_000n,
     slippageBps: 100,
   })
@@ -213,5 +213,26 @@ describe('usePlaceBet, stale status does not follow a new pick', () => {
 
     await waitFor(() => expect(screen.getByTestId('step').textContent).toBe('idle'))
     expect(screen.getByTestId('error').textContent).toBe('')
+  })
+})
+
+describe('usePlaceBet, malformed stake does not crash the render', () => {
+  /**
+   * `Number(x).toString()` for a very small value (e.g. typing 0.0000001)
+   * produces exponential notation ("1e-7"), and viem's parseUnits throws on
+   * that rather than returning 0. The hook computed amountWei unconditionally
+   * in its body - not inside execute()'s try/catch - so this threw during
+   * render itself, on every render, with no error boundary anywhere in the
+   * app to catch it: a white screen from typing one too many zeros.
+   */
+  it('does not throw when amountUsd is exponential notation', () => {
+    expect(() => render(<Probe amountUsd="1e-7" />)).not.toThrow()
+  })
+
+  it('does not throw for other malformed amounts (empty, partial, garbage)', () => {
+    for (const bad of ['', '.', '-', 'abc', '1.2.3']) {
+      expect(() => render(<Probe amountUsd={bad} />)).not.toThrow()
+      cleanup()
+    }
   })
 })

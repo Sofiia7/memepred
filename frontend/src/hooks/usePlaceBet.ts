@@ -67,7 +67,19 @@ export function usePlaceBet({
   const [orderId, setOrderId] = useState<bigint>()
   const [submittedHash, setSubmittedHash] = useState<Hash>()
 
-  const amountWei = parseUnits(amountUsd || '0', CURRENCY_DECIMALS)
+  // Computed on every render, not inside execute()'s try/catch - so it must
+  // never throw on its own. parseUnits rejects anything that isn't plain
+  // decimal digits: exponential notation (a tiny stake like 0.0000001
+  // round-tripped through Number().toString() becomes "1e-7"), a bare ".",
+  // a trailing "-", or any other malformed in-progress input. Falling back to
+  // 0n is the same "nothing to bet" state amountUsd === '' already produces,
+  // not a crash during render with no error boundary to catch it.
+  let amountWei: bigint
+  try {
+    amountWei = parseUnits(amountUsd || '0', CURRENCY_DECIMALS)
+  } catch {
+    amountWei = 0n
+  }
 
   // ── 4.2: per-market feedId from the market contract ───
   const { data: marketFeedId } = useReadContract({
