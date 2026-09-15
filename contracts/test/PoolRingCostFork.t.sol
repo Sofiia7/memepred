@@ -52,10 +52,7 @@ contract PoolRingCostForkTest is Test {
 
         uint16[5] memory sizes = [uint16(64), 128, 180, 200, 300];
         for (uint256 i = 0; i < sizes.length; i++) {
-            emit log_named_uint(
-                string.concat("cardinality ", vm.toString(sizes[i]), " gas"),
-                _cost(sizes[i])
-            );
+            emit log_named_uint(string.concat("cardinality ", vm.toString(sizes[i]), " gas"), _cost(sizes[i]));
         }
     }
 

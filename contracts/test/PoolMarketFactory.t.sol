@@ -504,9 +504,7 @@ contract PoolMarketFactoryTest is Test {
 
         uint256 budget = factory.MIN_CARDINALITY() - longestWindow;
         assertGt(
-            budget,
-            65,
-            "delay budget is under the measured p99 settlement delay: matches will strand on a busy pool"
+            budget, 65, "delay budget is under the measured p99 settlement delay: matches will strand on a busy pool"
         );
         assertGe(budget, 120, "delay budget fell below two keeper ticks plus a gas spike");
     }

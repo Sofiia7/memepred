@@ -87,9 +87,7 @@ contract PoolOracleResolverForkTest is Test {
         (uint160 sqrtPriceX96,,,,,,) = IUniswapV3Pool(pool).slot0();
         bool baseIsToken0 = IUniswapV3Pool(pool).token0() != WETH;
         uint256 ratioX192 = uint256(sqrtPriceX96) * sqrtPriceX96;
-        return baseIsToken0
-            ? Math.mulDiv(ratioX192, 1e18, 1 << 192)
-            : Math.mulDiv(1 << 192, 1e18, ratioX192);
+        return baseIsToken0 ? Math.mulDiv(ratioX192, 1e18, 1 << 192) : Math.mulDiv(1 << 192, 1e18, ratioX192);
     }
 
     function _pricesRealPool(address pool, string memory label) internal {
@@ -136,11 +134,7 @@ contract PoolOracleResolverForkTest is Test {
         uint256 price = resolver.spotPriceWad(feedOf(POOL_MARS));
         assertGt(price, 0, "a one-observation pool still gets a price");
 
-        assertEq(
-            _meanTickOver(POOL_MARS, 60),
-            spotTick,
-            "expected the extrapolated mean to be exactly the spot tick"
-        );
+        assertEq(_meanTickOver(POOL_MARS, 60), spotTick, "expected the extrapolated mean to be exactly the spot tick");
     }
 
     /// @dev And it is not particular to cardinality 1: a deep ring nobody has
@@ -182,8 +176,7 @@ contract PoolOracleResolverForkTest is Test {
         PoolLiquidityPool vault = new PoolLiquidityPool(IERC20(WETH), address(genesisNFT));
 
         f = new PoolMarketFactory(
-            WETH, V3_FACTORY, address(resolver),
-            address(feeDistrib), address(referralReg), DUMMY, address(vault)
+            WETH, V3_FACTORY, address(resolver), address(feeDistrib), address(referralReg), DUMMY, address(vault)
         );
 
         genesisNFT.setLiquidityPool(address(vault));

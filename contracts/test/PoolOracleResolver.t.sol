@@ -312,7 +312,9 @@ contract PoolOracleResolverTest is Test {
 
         vm.warp(settleAt + 1);
         vm.prank(keeper);
-        assertEq(resolver.resolveOrderbookMarketBatch(address(market), 10), 1, "a 2-second spike must not block settlement");
+        assertEq(
+            resolver.resolveOrderbookMarketBatch(address(market), 10), 1, "a 2-second spike must not block settlement"
+        );
         (, uint256 exitPrice) = market.settlements(0);
         // Close to the honest window average, not the manipulated spot.
         assertLt(exitPrice, 1050000000000000000, "exit priced off the diluted window, not the spike");
@@ -335,9 +337,7 @@ contract PoolOracleResolverTest is Test {
         pool.pushTick(uint32(block.timestamp), 5000); // live price has since moved far away
 
         vm.prank(keeper);
-        assertEq(
-            resolver.resolveOrderbookMarketBatch(address(market), 10), 1, "prompt settlement is no longer guarded"
-        );
+        assertEq(resolver.resolveOrderbookMarketBatch(address(market), 10), 1, "prompt settlement is no longer guarded");
         (, uint256 exitPrice) = market.settlements(0);
         assertEq(exitPrice, 1e18, "still the anchored window price, not the live one");
     }

@@ -690,7 +690,9 @@ contract OrderbookMarket is ReentrancyGuard, Pausable, PrimaryProdDataServiceCon
                 // for the register() call at placement time (harmless there,
                 // since register() itself already ignores a second address);
                 // it is simply no longer what payout reads.
-                address ref = referralRegistry != address(0) ? IReferralRegistry(referralRegistry).referrerOf(o.trader) : address(0);
+                address ref = referralRegistry != address(0)
+                    ? IReferralRegistry(referralRegistry).referrerOf(o.trader)
+                    : address(0);
                 IFeeDistributor(feeDistributor).distributeFee(fee, ref);
             }
         }

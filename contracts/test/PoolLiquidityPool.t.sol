@@ -114,10 +114,24 @@ contract PoolLiquidityPoolTest is Test {
 
         bytes32 feed = bytes32(uint256(123));
         OrderbookMarket first = new OrderbookMarket(
-            address(weth), makeAddr("resolver"), address(rhc), makeAddr("fees"), address(0), makeAddr("admin"), feed, 300
+            address(weth),
+            makeAddr("resolver"),
+            address(rhc),
+            makeAddr("fees"),
+            address(0),
+            makeAddr("admin"),
+            feed,
+            300
         );
         OrderbookMarket second = new OrderbookMarket(
-            address(weth), makeAddr("resolver2"), address(rhc), makeAddr("fees2"), address(0), makeAddr("admin2"), feed, 900
+            address(weth),
+            makeAddr("resolver2"),
+            address(rhc),
+            makeAddr("fees2"),
+            address(0),
+            makeAddr("admin2"),
+            feed,
+            900
         );
         registry.register(address(first));
         registry.register(address(second));
@@ -150,7 +164,14 @@ contract PoolLiquidityPoolTest is Test {
         MockMarketRegistry registry = new MockMarketRegistry();
         rhc.setMarketFactory(address(registry));
         m = new OrderbookMarket(
-            address(weth), makeAddr("resolver"), address(rhc), makeAddr("fees"), address(0), makeAddr("admin"), feed, 300
+            address(weth),
+            makeAddr("resolver"),
+            address(rhc),
+            makeAddr("fees"),
+            address(0),
+            makeAddr("admin"),
+            feed,
+            300
         );
         registry.register(address(m));
         // Deliberately NOT calling rhc.authorizeMarket(address(m)) - this is
@@ -197,7 +218,14 @@ contract PoolLiquidityPoolTest is Test {
         rhc.setMarketFactory(address(registry));
         bytes32 feed = bytes32(uint256(789));
         OrderbookMarket m = new OrderbookMarket(
-            address(weth), makeAddr("resolver"), address(rhc), makeAddr("fees"), address(0), makeAddr("admin"), feed, 300
+            address(weth),
+            makeAddr("resolver"),
+            address(rhc),
+            makeAddr("fees"),
+            address(0),
+            makeAddr("admin"),
+            feed,
+            300
         );
         registry.register(address(m));
         rhc.authorizeMarket(address(m));
@@ -222,7 +250,14 @@ contract PoolLiquidityPoolTest is Test {
         rhc.setMarketFactory(address(registry));
         bytes32 feed = bytes32(uint256(101112));
         OrderbookMarket m = new OrderbookMarket(
-            address(weth), makeAddr("resolver"), address(rhc), makeAddr("fees"), address(0), makeAddr("admin"), feed, 300
+            address(weth),
+            makeAddr("resolver"),
+            address(rhc),
+            makeAddr("fees"),
+            address(0),
+            makeAddr("admin"),
+            feed,
+            300
         );
         registry.register(address(m));
         rhc.authorizeMarket(address(m));
