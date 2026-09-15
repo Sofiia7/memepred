@@ -72,7 +72,7 @@ export function RiskGate({ children }: { children: React.ReactNode }) {
         <h2>Before you use this</h2>
 
         <p className="risk-lead">
-          Three things you should know while you can still walk away.
+          A few things you should know while you can still walk away.
         </p>
 
         <ol className="risk-points">
@@ -97,13 +97,17 @@ export function RiskGate({ children }: { children: React.ReactNode }) {
             <li>
               <b>The price comes from the token's own liquidity pool, and a
               thin pool can be pushed.</b> Settlement reads a time-weighted
-              average rather than the spot price, and a move too far from that
-              average refunds the bet instead of settling it - but a pool
-              holding a few ETH can still be moved by someone willing to spend
-              more than your bet is worth. The market will not exist at all
-              below a minimum pool depth, and short markets are harder to push
-              than long ones. It is not fully solved, and you should size your
-              bets knowing that.
+              average rather than the spot price, but that window scales{' '}
+              <b>down</b> with a market's own duration - so a shorter market is
+              actually easier to move than a longer one, not harder. A move
+              too far from that average does not refund your bet: it delays
+              settlement until the price comes back in line (retried
+              automatically), and only refunds both stakes - no fee, no
+              winner - if it still hasn't after 24 hours. A pool holding a
+              few ETH can still be moved by someone willing to spend more
+              than your bet is worth. The market will not exist at all below
+              a minimum pool depth. It is not fully solved, and you should
+              size your bets knowing that.
             </li>
           )}
         </ol>
