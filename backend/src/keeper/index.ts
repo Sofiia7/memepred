@@ -48,7 +48,12 @@ async function loop(label: string, fn: () => Promise<unknown>, intervalMs: numbe
 }
 
 async function start() {
-  await pg.connect()
+  // A connectivity check, not a connection to hold: pg.connect() checks a
+  // client OUT of the pool, and this discarded the return value without
+  // ever releasing it - a permanently leaked connection, one pool slot
+  // smaller for the rest of the process's life, on every single start.
+  // pg.query() checks a client out AND back in on its own.
+  await pg.query('SELECT 1')
   await runMigrations()
   await redis.connect()
   console.log('Connected to DB + Redis, migrations applied')

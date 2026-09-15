@@ -41,6 +41,7 @@ const E_ORDER_MATCHED   = parseAbiItem('event OrderMatched(uint256 indexed match
 const E_LP_MATCHED      = parseAbiItem('event LPMatched(uint256 indexed matchId, uint256 orderId, uint256 amount, uint256 entryPrice)')
 const E_ORDER_FILLED    = parseAbiItem('event OrderFilled(uint256 indexed orderId, uint256 totalFilled)')
 const E_MATCH_SETTLED   = parseAbiItem('event MatchSettled(uint256 indexed matchId, bool upWon, uint256 entry, uint256 exit)')
+const E_MATCH_TIED      = parseAbiItem('event MatchTied(uint256 indexed matchId, uint256 price)')
 const E_ORDER_REFUNDED  = parseAbiItem('event OrderRefunded(uint256 indexed orderId, address trader, uint256 amount)')
 const E_CLAIMED         = parseAbiItem('event Claimed(uint256 indexed orderId, address trader, uint256 payout)')
 const E_REFERRAL_REGD   = parseAbiItem('event ReferralRegistered(address indexed referee, address indexed referrer)')
@@ -396,7 +397,7 @@ async function indexMarketEvents(toBlock: bigint) {
         address: slice,
         events: [
           E_ORDER_PLACED, E_ORDER_MATCHED, E_LP_MATCHED, E_ORDER_FILLED,
-          E_MATCH_SETTLED, E_ORDER_REFUNDED, E_CLAIMED,
+          E_MATCH_SETTLED, E_MATCH_TIED, E_ORDER_REFUNDED, E_CLAIMED,
         ],
         fromBlock: start,
         toBlock:   end,
@@ -420,8 +421,33 @@ async function indexMarketEvents(toBlock: bigint) {
     const lpMatched = byName('LPMatched')
     const filled    = byName('OrderFilled')
     const settled   = byName('MatchSettled')
+    const tied      = byName('MatchTied')
     const refunded  = byName('OrderRefunded')
     const claimed   = byName('Claimed')
+
+    // A tie emits OrderRefunded for BOTH sides in the SAME transaction as
+    // MatchTied - OrderbookMarket._refundTiedMatch runs first, settleMatch
+    // emits MatchTied right after. The generic OrderRefunded handler below
+    // must not also touch those specific orders: it sets
+    // unmatched_refunded=TRUE (wrong - nothing was "unmatched", the whole
+    // matched amount came back) and only promotes status when
+    // filled_amount==0, so a fully-filled tied order stayed MATCHED forever
+    // (a tie emits no MatchSettled to promote it the normal way). The
+    // dedicated tied-match handler further below does both correctly
+    // instead. Matched by (market, orderId), not by transaction hash - one
+    // settlement transaction can carry several matches, and a coarser
+    // tx-hash filter would also swallow an unrelated order's genuine
+    // unmatched-tail refund riding in the same batch.
+    const tiedOrderKeys = new Set<string>()
+    for (const log of tied) {
+      const a = (log as any).args
+      const mkt = log.address.toLowerCase()
+      const linked = await pg.query(
+        `SELECT order_id FROM order_matches WHERE market_address = $1 AND match_id = $2`,
+        [mkt, a.matchId.toString()],
+      )
+      for (const row of linked.rows) tiedOrderKeys.add(`${mkt}:${row.order_id}`)
+    }
 
     // OrderPlaced → INSERT orders
     for (const log of placed) {
@@ -539,6 +565,8 @@ async function indexMarketEvents(toBlock: bigint) {
     for (const log of refunded) {
       if (!(await markIngested(log.transactionHash!, log.logIndex!))) continue
       const a = (log as any).args
+      const mkt = log.address.toLowerCase()
+      if (tiedOrderKeys.has(`${mkt}:${a.orderId.toString()}`)) continue // handled below instead
       const ts = await blockTs(log.blockNumber!)
       await pg.query(`
         UPDATE orders SET
@@ -550,6 +578,34 @@ async function indexMarketEvents(toBlock: bigint) {
           END
         WHERE market_address = $2 AND order_id = $3
       `, [ts, log.address.toLowerCase(), a.orderId.toString()])
+    }
+
+    // MatchTied → settle the match with no winner, and promote its orders.
+    // Their own OrderRefunded logs were deliberately skipped above; this is
+    // the correct promotion for them instead - the same rule MatchSettled
+    // uses (SETTLED once nothing is left pending), but without setting
+    // unmatched_refunded, since the whole matched amount came back via the
+    // tie rather than an unmatched remainder.
+    for (const log of tied) {
+      if (!(await markIngested(log.transactionHash!, log.logIndex!))) continue
+      const a = (log as any).args
+      const ts = await blockTs(log.blockNumber!)
+      const mkt = log.address.toLowerCase()
+      await pg.query(`
+        UPDATE matches SET settled = TRUE, tied = TRUE, exit_price = $1::numeric,
+                          settled_at = to_timestamp($2)
+        WHERE market_address = $3 AND match_id = $4
+      `, [a.price.toString(), ts, mkt, a.matchId.toString()])
+      await pg.query(`
+        UPDATE orders o SET status = 'SETTLED', settled_at = to_timestamp($1)
+        WHERE o.market_address = $2 AND o.status IN ('MATCHED', 'PENDING')
+          AND NOT EXISTS (
+            SELECT 1 FROM order_matches om
+            JOIN matches m ON m.market_address = om.market_address AND m.match_id = om.match_id
+            WHERE om.market_address = o.market_address AND om.order_id = o.order_id
+              AND m.settled = FALSE
+          )
+      `, [ts, mkt])
     }
 
     // Claimed → status CLAIMED, payout recorded, streak/profit update
@@ -564,9 +620,10 @@ async function indexMarketEvents(toBlock: bigint) {
       `, [ts, a.payout.toString(), log.address.toLowerCase(), a.orderId.toString()])
     }
 
-    // Only worth re-checking markets that just had a settlement land.
-    if (settled.length > 0) {
-      await markResolvedMarkets([...new Set(settled.map((l) => l.address as Address))])
+    // Only worth re-checking markets that just had a settlement (or a tie,
+    // which settles a match just as finally) land.
+    if (settled.length > 0 || tied.length > 0) {
+      await markResolvedMarkets([...new Set([...settled, ...tied].map((l) => l.address as Address))])
     }
 
     // Any of these events can move committed money, and a refund can move it

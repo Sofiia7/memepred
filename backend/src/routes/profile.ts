@@ -27,7 +27,23 @@ const WON_EXPR = `EXISTS (
   WHERE om.market_address = o.market_address
     AND om.order_id       = o.order_id
     AND m.settled
+    AND NOT m.tied
     AND ((o.direction = 'UP') = m.up_won)
+)`
+
+/**
+ * Whether ANY of this order's matches tied. A tie is neither a win nor a
+ * loss - the frontend needs to tell it apart from both rather than folding
+ * it into whichever WON_EXPR would otherwise report (false, i.e. "lost").
+ */
+const TIED_EXPR = `EXISTS (
+  SELECT 1
+  FROM order_matches om
+  JOIN matches m
+    ON m.market_address = om.market_address AND m.match_id = om.match_id
+  WHERE om.market_address = o.market_address
+    AND om.order_id       = o.order_id
+    AND m.tied
 )`
 
 /**
@@ -42,7 +58,8 @@ const WON_EXPR = `EXISTS (
  * winner as a total loss.
  */
 const PNL_EXPR = `COALESCE((
-  SELECT SUM(CASE WHEN (o.direction = 'UP') = m.up_won
+  SELECT SUM(CASE WHEN m.tied THEN 0
+                  WHEN (o.direction = 'UP') = m.up_won
                   THEN m.amount_usdc ELSE -m.amount_usdc END)
   FROM order_matches om
   JOIN matches m
@@ -99,6 +116,9 @@ export async function profileRoutes(app: FastifyInstance) {
              CASE WHEN o.status IN ('PENDING', 'MATCHED') THEN NULL
                   ELSE ${WON_EXPR}
              END                          AS won,
+             CASE WHEN o.status IN ('PENDING', 'MATCHED') THEN NULL
+                  ELSE ${TIED_EXPR}
+             END                          AS tied,
              -- The frontend Bet type expects "claimed"; the API only ever sent
              -- claimed_at, so the UI negation was always true and an
              -- already-claimed order stayed in the "ready to claim" list.

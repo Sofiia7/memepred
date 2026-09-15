@@ -116,12 +116,6 @@ export async function refundExpiredOrders() {
     const marketAddress = row.market_address as Address
 
     try {
-      const nextOrderId = await publicClient.readContract({
-        address:      marketAddress,
-        abi:          ORDERBOOK_MARKET_ABI,
-        functionName: 'nextOrderId'
-      })
-
       const now = BigInt(Math.floor(Date.now() / 1000))
       const matchTimeout = await publicClient.readContract({
         address:      marketAddress,
@@ -129,18 +123,36 @@ export async function refundExpiredOrders() {
         functionName: 'MATCH_TIMEOUT'
       })
 
-      const startId = nextOrderId > MAX_SCAN_PER_MARKET
-        ? nextOrderId - MAX_SCAN_PER_MARKET
-        : 1n
-      if (startId > 1n) {
+      // The market-level filter above already proves SOME order here is
+      // PENDING/MATCHED; ask the DB which ones, rather than reading every
+      // orderId in a range one at a time. A market on this chain never
+      // closes, so a market that has accumulated thousands of orders but
+      // currently has only a handful actually pending does not pay for the
+      // thousands just to find them - this was up to 500 getOrder calls per
+      // market per tick regardless of how many were ever actually
+      // candidates. The DB can be a tick stale (an OrderPlaced the indexer
+      // has not caught up to yet), which is the same trade the market-level
+      // filter above already makes: refundExpired is permissionless on-chain
+      // and the order page's own button does not depend on this loop, so a
+      // missed row here is a convenience gap, not a funds-at-risk one - and
+      // every candidate this DOES find is still confirmed on-chain via
+      // getOrder + isRefundable before a single wei of gas is spent.
+      const candidates = await pg.query(
+        `SELECT order_id FROM orders
+          WHERE market_address = $1 AND status IN ('PENDING', 'MATCHED')
+          ORDER BY order_id
+          LIMIT $2`,
+        [marketAddress.toLowerCase(), MAX_SCAN_PER_MARKET.toString()],
+      )
+      if (BigInt(candidates.rowCount ?? 0) >= MAX_SCAN_PER_MARKET) {
         console.warn(
-          `refundExpired: ${marketAddress} has ${nextOrderId - 1n} orders, ` +
-          `scanning the newest ${MAX_SCAN_PER_MARKET}; ` +
-          `orders 1..${startId - 1n} are left to the refund button in the UI`
+          `refundExpired: ${marketAddress} has ${MAX_SCAN_PER_MARKET}+ pending/matched orders in the DB, ` +
+          `truncating to the oldest ${MAX_SCAN_PER_MARKET}`,
         )
       }
 
-      for (let orderId = startId; orderId < nextOrderId; orderId++) {
+      for (const { order_id } of candidates.rows) {
+        const orderId = BigInt(order_id)
         try {
           const order = await publicClient.readContract({
             address:      marketAddress,

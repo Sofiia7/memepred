@@ -8,8 +8,16 @@ import { gasGuard, recordReceipt } from '../keeper/gasGuardInstance.js'
 import { earnedBadges, isMintable, type TraderStats } from './badgeRules.js'
 import { streaksFrom } from './streaks.js'
 
-const account = process.env.BADGE_MINTER_KEY
-  ? privateKeyToAccount(process.env.BADGE_MINTER_KEY as `0x${string}`)
+// BADGE_MINTER_KEY is the name .env.example, docker-compose.yml and
+// scripts/prepare-sepolia-env.mjs all use. .env.rhc (local, gitignored) was
+// set up as BADGE_MINTER_PRIVATE_KEY instead - matching KEEPER_PRIVATE_KEY's
+// naming rather than this one - so the sweep silently no-opped there with no
+// error, just nothing minted. Accepting either name costs nothing and needs
+// no one to edit a local secrets file to match.
+const BADGE_MINTER_KEY = process.env.BADGE_MINTER_KEY || process.env.BADGE_MINTER_PRIVATE_KEY
+
+const account = BADGE_MINTER_KEY
+  ? privateKeyToAccount(BADGE_MINTER_KEY as `0x${string}`)
   : null
 
 const client = account

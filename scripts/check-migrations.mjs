@@ -41,6 +41,20 @@ const MIGRATIONS_DIR = join(REPO_ROOT, 'backend', 'src', 'db', 'migrations')
 /** The migration whose view round-trip is being checked. */
 const ROUND_TRIP_AT = '005_rhc.sql'
 
+/**
+ * Views this check would otherwise flag as "changed across 005_rhc.sql",
+ * because a LATER migration deliberately changes them again for its own,
+ * separate reason - not because 005's drop-and-recreate came out wrong.
+ *
+ * stale_settlements: 006_match_tied.sql adds an upper bound
+ * (settle_at > NOW() - 25 hours) so a match that will never get settled=TRUE
+ * in this projection - which a tie was, before 006, and which a permissionless
+ * emergencyRefundMatch still is, since the indexer has no event handler for
+ * it - ages back out of "currently overdue" instead of pinning /health/deep
+ * red forever. See 006_match_tied.sql's own comment.
+ */
+const EXPECTED_FURTHER_CHANGES = new Set(['stale_settlements'])
+
 const DATABASE_URL = process.env.DATABASE_URL
 const usingRealPg = Boolean(DATABASE_URL)
 
@@ -139,6 +153,7 @@ if (before) {
   for (const name of names) {
     if (!(name in after)) { fail(`view ${name} was dropped by ${ROUND_TRIP_AT} and never recreated`); drift++ }
     else if (!(name in before)) continue // a genuinely new view is fine
+    else if (EXPECTED_FURTHER_CHANGES.has(name)) continue // deliberately changed again, later - see the comment above
     else if (before[name] !== after[name]) {
       fail(`view ${name} changed across ${ROUND_TRIP_AT}`)
       console.error(`  before: ${before[name].replace(/\s+/g, ' ').slice(0, 200)}`)

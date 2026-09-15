@@ -95,7 +95,10 @@ app.get('/api/geo', async (req, reply) => {
 })
 
 try {
-  await pg.connect()
+  // A connectivity check, not a connection to hold - see keeper/index.ts's
+  // identical fix. pg.connect() checks a client OUT of the pool; discarding
+  // the result without releasing it leaked one permanently on every start.
+  await pg.query('SELECT 1')
   await runMigrations()
   await redis.connect()
   await app.listen({ port: PORT, host: '0.0.0.0' })

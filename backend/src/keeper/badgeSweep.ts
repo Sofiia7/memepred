@@ -32,7 +32,9 @@ const MAX_PER_TICK = Number(process.env.BADGE_SWEEP_MAX ?? '20')
 const LOOKBACK = '2 days'
 
 export async function badgeSweepTick() {
-  if (!process.env.BADGE_MINTER_KEY) return // nothing to sign with; stay quiet
+  // See badgeService.ts: accepts BADGE_MINTER_PRIVATE_KEY too, since that is
+  // what .env.rhc was actually set up with.
+  if (!process.env.BADGE_MINTER_KEY && !process.env.BADGE_MINTER_PRIVATE_KEY) return // nothing to sign with; stay quiet
 
   const { rows } = await pg.query<{ trader_address: string }>(
     `SELECT DISTINCT o.trader_address

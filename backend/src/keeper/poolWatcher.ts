@@ -61,8 +61,16 @@ const ERC20_ABI = [
 
 const client = createPublicClient({ chain: CHAIN_PROFILE.chain, transport: http(CHAIN_PROFILE.rpcUrl) })
 
-const DURATIONS = (process.env.RHC_DURATIONS_SEC || '60,300,900')
+// One five-minute market is the production default. Extra durations are an
+// explicit experiment, not a reason to spend keeper gas creating three empty
+// books for every candidate pool.
+const DURATIONS = (process.env.RHC_DURATIONS_SEC || '300')
   .split(',').map((s) => Number(s.trim())).filter((n) => n > 0)
+
+// Discovery and admission remain automatic; spending money to create a market
+// is opt-in. This prevents a numerical depth gate from silently becoming a
+// listing policy for every newly launched token.
+const AUTO_CREATE_MARKETS = process.env.RHC_AUTO_CREATE_MARKETS === 'true'
 
 export const POLICY: AdmissionPolicy = {
   weth: CHAIN_PROFILE.addresses.weth ?? '0x',
@@ -249,6 +257,17 @@ async function payForCardinality(pool: Address, target: number) {
   const receipt = await client.waitForTransactionReceipt({ hash })
   await recordReceipt(receipt, 'routine')
 
+  // waitForTransactionReceipt resolves for a reverted tx too - it waits for
+  // inclusion, not success. Marking cardinality_paid_at unconditionally
+  // meant a reverted payment was recorded as if it had landed, and nothing
+  // ever retries a pool once that column is set - it stalls there forever,
+  // spent real gas and gained nothing.
+  if (receipt.status !== 'success') {
+    console.error(`[poolWatcher] ${pool}: increaseObservationCardinalityNext reverted on-chain, tx=${hash}`)
+    await record(pool, 'PENDING', `cardinality payment reverted, will retry`)
+    return
+  }
+
   await pg.query(
     `UPDATE pool_candidates SET cardinality_paid_at = NOW(), updated_at = NOW() WHERE pool_address = $1`,
     [pool.toLowerCase()],
@@ -275,6 +294,14 @@ async function createMarkets(pool: Address, durations: number[], reason: string)
     )
     const receipt = await client.waitForTransactionReceipt({ hash })
     await recordReceipt(receipt, 'routine')
+    // Same reasoning as payForCardinality: a receipt resolves on inclusion,
+    // not success, and logging "created" for a reverted tx (e.g. a race
+    // against another permissionless caller creating the same slot first)
+    // would misreport a market that does not exist.
+    if (receipt.status !== 'success') {
+      console.error(`[poolWatcher] ${pool}: createMarket(${d}s) reverted on-chain, tx=${hash}`)
+      continue
+    }
     console.log(`[poolWatcher] ${pool} created ${d}s market (${reason})`)
   }
 }
@@ -310,11 +337,29 @@ export async function poolWatcherTick() {
           break
         case 'increaseCardinality':
           await record(row.pool_address, 'PENDING', decision.reason, extra)
-          await payForCardinality(row.pool_address as Address, decision.target)
+          // Same gate as market creation, and for the same reason: this is
+          // real keeper spend (~6.7M gas, measured) on a pool nobody has
+          // reviewed yet. The previous fix only gated the 'create' branch -
+          // increaseObservationCardinalityNext kept firing unconditionally
+          // for any pool deep enough, so a numerical depth gate was still
+          // silently acting as the spending policy for this half of it.
+          if (AUTO_CREATE_MARKETS) {
+            await payForCardinality(row.pool_address as Address, decision.target)
+          } else {
+            console.log(
+              `[poolWatcher] ${row.pool_address} needs cardinality growth: manual review required before spending on it`,
+            )
+          }
           break
         case 'create':
           await record(row.pool_address, 'READY', decision.reason, extra)
-          await createMarkets(row.pool_address as Address, decision.durations, decision.reason)
+          if (AUTO_CREATE_MARKETS) {
+            await createMarkets(row.pool_address as Address, decision.durations, decision.reason)
+          } else {
+            console.log(
+              `[poolWatcher] ${row.pool_address} READY: manual review required before market creation`,
+            )
+          }
           break
         case 'done':
           await record(row.pool_address, 'ONBOARDED', decision.reason, extra)
