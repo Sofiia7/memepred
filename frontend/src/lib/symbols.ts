@@ -36,6 +36,16 @@ export function shortAddr(a?: string | null): string {
   return `${a.slice(0, 4)}…${a.slice(-4)}`
 }
 
+/**
+ * Recovers the pool address a market's feedId encodes on IS_POOL_BACKED
+ * chains: PoolMarketFactory.feedIdFor computes bytes32(uint256(uint160(pool))),
+ * i.e. the 20-byte address left-padded with zeros to 32 bytes. Meaningless on
+ * Base, where feedId is a RedStone feed id rather than an encoded address.
+ */
+export function feedIdToAddress(feedId: string): string {
+  return '0x' + feedId.slice(-40)
+}
+
 export function countdown(closeTime: number): string {
   const secs = Math.max(0, closeTime - Math.floor(Date.now() / 1000))
   const m = Math.floor(secs / 60)

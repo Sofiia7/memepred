@@ -3,8 +3,9 @@ import type { Address } from 'viem'
 import type { Market } from '../../hooks/useMarkets'
 import { useOdds } from '../../hooks/useOdds'
 import { useNow, countdownFrom } from '../../hooks/useNow'
-import { symbolMeta, formatPrice, formatDuration } from '../../lib/symbols'
+import { symbolMeta, formatPrice, formatDuration, shortAddr, feedIdToAddress } from '../../lib/symbols'
 import { Chev } from './icons'
+import { IS_POOL_BACKED } from '../../lib/chain'
 
 export interface PickedBet {
   marketAddress: Address
@@ -17,6 +18,14 @@ export interface PickedBet {
 
 interface Props {
   symbol: string
+  /**
+   * The pool address this card's markets are grouped under (IS_POOL_BACKED
+   * only - feedId is a RedStone feed id on Base, not an address worth
+   * showing). Shown shortened so a look-alike token sharing a real one's
+   * symbol is still distinguishable on the card itself, not just in the
+   * grouping logic upstream.
+   */
+  feedId?: string
   livePrice?: number
   chg24h?: number
   markets: Market[]                 // all open markets for this symbol (different durations)
@@ -24,15 +33,13 @@ interface Props {
   onPick: (b: PickedBet) => void
 }
 
-const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
-
-function MarketOdds({ market, side }: { market: Market; side: 'up' | 'down' }) {
-  const { probUp } = useOdds(market.address as Address)
-  const pct = side === 'up' ? probUp : 1 - probUp
-  return <span className="pct">{Math.round(pct * 100)}%</span>
+function MarketQueue({ market, side }: { market: Market; side: 'up' | 'down' }) {
+  const { upDepth, downDepth } = useOdds(market.address as Address)
+  const count = side === 'up' ? upDepth : downDepth
+  return <span className="pct">{count.toString()} waiting</span>
 }
 
-export function MarketCardUI({ symbol, livePrice = 0, chg24h = 0, markets, picked, onPick }: Props) {
+export function MarketCardUI({ symbol, feedId, livePrice = 0, chg24h = 0, markets, picked, onPick }: Props) {
   const meta = symbolMeta(symbol)
   const sorted = useMemo(() => [...markets].sort((a, b) => a.duration - b.duration), [markets])
   const [activeIdx, setActiveIdx] = useState(0)
@@ -44,7 +51,6 @@ export function MarketCardUI({ symbol, livePrice = 0, chg24h = 0, markets, picke
   const safeIdx = Math.min(activeIdx, Math.max(0, sorted.length - 1))
   const active = sorted[safeIdx]
   const now = useNow(1000)
-  const { probUp } = useOdds((active?.address ?? ZERO_ADDRESS) as Address)
   if (!active) return null
   const isSelHere = picked?.marketAddress.toLowerCase() === active.address.toLowerCase()
 
@@ -54,12 +60,18 @@ export function MarketCardUI({ symbol, livePrice = 0, chg24h = 0, markets, picke
         <div className="coin-l">
           <div className={'coin-icon ' + meta.iconClass}>{meta.glyph}</div>
           <div>
-            <div className="coin-name">{symbol}<span className="pair"> / USD</span></div>
-            <div className="coin-sub">{meta.name}</div>
+            <div className="coin-name">{symbol}<span className="pair"> / {IS_POOL_BACKED ? 'WETH' : 'USD'}</span></div>
+            <div className="coin-sub">
+              {meta.name}
+              {/* A look-alike token can share a real one's symbol - the pool
+                  address is what actually identifies this card, so it is
+                  shown even though the symbol above is the prominent part. */}
+              {IS_POOL_BACKED && feedId && <> · {shortAddr(feedIdToAddress(feedId))}</>}
+            </div>
           </div>
         </div>
         <div className="coin-r">
-          <div className="coin-price">${formatPrice(livePrice)}</div>
+          <div className="coin-price">{IS_POOL_BACKED ? formatPrice(livePrice) + ' WETH' : '$' + formatPrice(livePrice)}</div>
           <div className={'coin-chg ' + (chg24h < 0 ? 'dn' : '')}>
             <Chev dir={chg24h < 0 ? 'down' : 'up'} /> {Math.abs(chg24h).toFixed(2)}%
           </div>
@@ -88,11 +100,11 @@ export function MarketCardUI({ symbol, livePrice = 0, chg24h = 0, markets, picke
             symbol,
             durationSec: active.duration,
             side: 'up',
-            oddsPct: Math.round(probUp * 100),
+            oddsPct: 0,
           })}
         >
           <span className="side"><Chev dir="up" /> UP</span>
-          <MarketOdds market={active} side="up" />
+          <MarketQueue market={active} side="up" />
         </button>
         <button
           className={'b b-dn ' + (isSelHere && picked?.side === 'down' ? 'sel' : '')}
@@ -102,11 +114,11 @@ export function MarketCardUI({ symbol, livePrice = 0, chg24h = 0, markets, picke
             symbol,
             durationSec: active.duration,
             side: 'down',
-            oddsPct: Math.round((1 - probUp) * 100),
+            oddsPct: 0,
           })}
         >
           <span className="side"><Chev dir="down" /> DOWN</span>
-          <MarketOdds market={active} side="down" />
+          <MarketQueue market={active} side="down" />
         </button>
       </div>
     </div>
