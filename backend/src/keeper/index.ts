@@ -3,7 +3,7 @@ import { recordAllPrices, snapshotProbabilities } from './priceRecorder.js'
 import { refundExpiredOrders }    from './refundExpired.js'
 import { indexerTick }            from './indexer.js'
 import { recordPricesOnChain }    from './onchainPriceRecorder.js'
-import { settlePendingMarkets }   from './resolveKeeper.js'
+import { settlePendingMarkets, refundOverdueMatches } from './resolveKeeper.js'
 import { oracleWatchdogTick }     from './oracleWatchdog.js'
 import { createMissingMarkets }   from './marketCreator.js'
 import { badgeSweepTick } from './badgeSweep.js'
@@ -15,6 +15,25 @@ import { pg }                     from '../db/pg.js'
 import { redis }                  from '../db/redis.js'
 
 console.log(`Starting FlipTheMeme Keeper on the ${CHAIN_PROFILE.name} profile (chain ${CHAIN_PROFILE.chain.id})…`)
+
+/**
+ * A positive interval in milliseconds, or `fallback` when `raw` is missing,
+ * blank, or not a positive number.
+ *
+ * `Number('')` is 0 and `Number('15s')` is NaN - either fed straight to
+ * setInterval turns a mistyped env var into a hot loop (0ms/NaN both run as
+ * fast as the event loop allows) instead of the intended cadence. `min`
+ * additionally floors a value that parsed fine but is unreasonably small.
+ */
+function positiveIntervalMs(raw: string | undefined, fallback: number, min = 1000): number {
+  if (!raw) return fallback
+  const n = Number(raw)
+  if (!Number.isFinite(n) || n < min) {
+    console.warn(`[keeper] ignoring interval "${raw}" (must be a number >= ${min}ms), using ${fallback}ms`)
+    return fallback
+  }
+  return n
+}
 
 async function loop(label: string, fn: () => Promise<unknown>, intervalMs: number) {
   let running = false
@@ -44,10 +63,23 @@ async function start() {
   // check do not care where a price came from.
   await start('probSnapshots',   snapshotProbabilities, 60_000)
   await start('indexer',         indexerTick,           45_000)
-  await start('resolveKeeper',   settlePendingMarkets,  60_000)
+  // On RHC a match is priced at its own expiry, so a faster tick does not
+  // alter the outcome. It does cut the user-visible delay after expiry while
+  // preserving bounded batch settlement.
+  const settlementInterval = CHAIN_PROFILE.name === 'rhc'
+    ? positiveIntervalMs(process.env.RHC_SETTLEMENT_INTERVAL_MS, 15_000)
+    : 60_000
+  await start('resolveKeeper',   settlePendingMarkets,  settlementInterval)
   await start('refundExpired',   refundExpiredOrders,   5 * 60_000)
   await start('oracleWatchdog',  oracleWatchdogTick,    90_000)
   await start('invariantMonitor', invariantTick,        60_000)
+  // Nothing else ever called emergencyRefundMatch - see its doc comment in
+  // resolveKeeper.ts. Slow on purpose: a match only qualifies after 24h+,
+  // so there is no urgency to check more than a few times an hour.
+  await start(
+    'overdueRefund', refundOverdueMatches,
+    positiveIntervalMs(process.env.OVERDUE_REFUND_INTERVAL_MS, 10 * 60_000),
+  )
 
   /**
    * The two loops that only make sense when a keeper is responsible for
@@ -65,15 +97,18 @@ async function start() {
   if (CHAIN_PROFILE.rollsOverMarkets) {
     // 30s, not 5 min: while idle this tick creates nothing, and when a visitor
     // arrives it is how fast the 5m and 15m markets come back onto the board.
-    await start('marketCreator', createMissingMarkets, Number(process.env.CREATE_INTERVAL_MS ?? 30_000))
+    await start('marketCreator', createMissingMarkets, positiveIntervalMs(process.env.CREATE_INTERVAL_MS, 30_000))
   }
   /** The rhc counterpart to a feed whitelist: onboard pools worth paying for. */
   if (CHAIN_PROFILE.watchesPools) {
-    await start('poolWatcher', poolWatcherTick, Number(process.env.POOL_WATCH_INTERVAL_MS ?? 60_000))
+    await start('poolWatcher', poolWatcherTick, positiveIntervalMs(process.env.POOL_WATCH_INTERVAL_MS, 60_000))
   }
   // Slow on purpose: nothing about a badge is time-critical, and it is the one
   // loop here that mints for cosmetic reasons.
-  await start('badgeSweep', badgeSweepTick, Number(process.env.BADGE_SWEEP_INTERVAL_MS ?? 10 * 60_000))
+  await start(
+    'badgeSweep', badgeSweepTick,
+    positiveIntervalMs(process.env.BADGE_SWEEP_INTERVAL_MS, 10 * 60_000),
+  )
 
   // Listing what actually started, rather than a hardcoded sentence that would
   // keep claiming a price recorder on a chain that has none.

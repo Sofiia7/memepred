@@ -21,8 +21,19 @@ import { fetchPayload, withPayload, bytes32ToFeedId } from '../lib/redstone.js'
 import { getKeeperWalletClient, sendKeeperTx } from './keeperWallet.js'
 import { gasGuard, recordReceipt } from './gasGuardInstance.js'
 import { BATCH_FROM_SELECTOR, codeHasSelector } from './resolverAbi.js'
+import { settlementGasLimit, RHC_SETTLEMENT_GAS } from './settlementGas.js'
 
 const chain = CHAIN_PROFILE.chain
+
+const MARKET_REFUND_ABI = [
+  {
+    name: 'emergencyRefundMatch',
+    type: 'function',
+    stateMutability: 'nonpayable',
+    inputs: [{ name: 'matchId', type: 'uint256' }],
+    outputs: [],
+  },
+] as const
 
 const ORACLE_RESOLVER_BATCH_ABI = [
   {
@@ -193,7 +204,20 @@ export async function settlePendingMarkets() {
           functionName: 'getReadySettlements',
           args: [canPaginate ? offset : 0n, BigInt(MAX_PER_TX)],
         })
-        if (ready.length === 0) break
+        if (ready.length === 0) {
+          if (!canPaginate) break // no way to step past a window on this resolver
+          // Empty here does NOT mean nothing is ready further out. It
+          // equally means this window's matches already settled on an
+          // earlier iteration while a permanently-stuck match still pins the
+          // head (see the offset comment above) - offset resets to 0 on
+          // every success below, so a growing settled stretch between the
+          // stuck head and the fresh frontier used to hide the fresh matches
+          // behind an ever-larger "nothing here" window that this loop gave
+          // up on. Stepping past it costs one free view call; breaking here
+          // is what let one stuck match hide an unbounded amount behind it.
+          offset += BigInt(MAX_PER_TX)
+          continue
+        }
 
         const encoded = canPaginate
           ? encodeFunctionData({
@@ -289,10 +313,19 @@ export async function settlePendingMarkets() {
         // here for the warning it logs and for the spend accounting below.
         await gasGuard.check('critical')
 
+        // Sized to the batch, not a flat 1.8M - see settlementGas.ts. Base
+        // keeps the old fixed ceiling exactly (unmeasured and unchanged by
+        // this session); RHC's measured per-match cost means a batch of
+        // 13+ matches - which one busy order can approach on its own -
+        // needs more than 1.8M, and a smaller batch does not need that much.
+        const gasLimit = CHAIN_PROFILE.name === 'rhc'
+          ? settlementGasLimit(ready.length, RHC_SETTLEMENT_GAS)
+          : 1_800_000n
+
         const hash = await sendKeeperTx(fees => wallet.sendTransaction({
           to:   CONTRACTS.ORACLE_RESOLVER as Address,
           data: settleCallData,
-          gas:  1_800_000n,
+          gas:  gasLimit,
           ...fees,
         }), 'settle')
         const receipt = await publicClient.waitForTransactionReceipt({ hash })
@@ -313,6 +346,92 @@ export async function settlePendingMarkets() {
       }
     } catch (err) {
       console.error(`[resolver] market ${market} failed:`, err)
+    }
+  }
+}
+
+// ── OVERDUE MATCHES: nobody was calling emergencyRefundMatch ──────
+/**
+ * Sweep matches more than SETTLE_GRACE overdue and call the market's own
+ * permissionless emergencyRefundMatch on each.
+ *
+ * Nothing else did this. A match the resolver can never settle - a pool
+ * that died under the position, or one that keeps failing the internal
+ * spread guard - sits in the settlement queue forever once it passes
+ * SETTLE_GRACE: settlePendingMarkets above steps PAST it (so newer matches
+ * stay reachable) but never claims the refund that would let the market's
+ * own pendingSettlementsHead advance past it, so the stretch of
+ * already-settled matches between the stuck head and the fresh frontier
+ * only grows, tick over tick. This is what actually bounds that growth:
+ * once a match is old enough that emergencyRefundMatch is the only valid
+ * outcome left for it, do that, rather than waiting on a human to notice
+ * and call it by hand. Applies to both chain profiles - OrderbookMarket's
+ * SETTLE_GRACE and emergencyRefundMatch are the shared contract, and a
+ * stuck match costs a real user their stake either way.
+ */
+const OVERDUE_GRACE_SECONDS = 24 * 60 * 60 // OrderbookMarket.SETTLE_GRACE
+const OVERDUE_BUFFER_SECONDS = 10 * 60 // clock skew + query latency margin
+const OVERDUE_BATCH_LIMIT = Number(process.env.OVERDUE_REFUND_LIMIT ?? '20')
+
+async function overdueMatches(): Promise<Array<{ market: Address; matchId: bigint }>> {
+  const r = await pg.query(
+    `SELECT market_address, match_id
+       FROM matches
+      WHERE settled = FALSE
+        AND settle_at <= NOW() - make_interval(secs => $1)
+      ORDER BY settle_at ASC
+      LIMIT $2`,
+    [OVERDUE_GRACE_SECONDS + OVERDUE_BUFFER_SECONDS, OVERDUE_BATCH_LIMIT],
+  )
+  return r.rows.map((x) => ({ market: x.market_address as Address, matchId: BigInt(x.match_id) }))
+}
+
+export async function refundOverdueMatches() {
+  const wallet = getKeeperWalletClient()
+  if (!wallet) return
+
+  const candidates = await overdueMatches()
+  for (const { market, matchId } of candidates) {
+    try {
+      const data = encodeFunctionData({
+        abi: MARKET_REFUND_ABI,
+        functionName: 'emergencyRefundMatch',
+        args: [matchId],
+      })
+
+      // Simulate first. The DB can be a tick stale - already refunded by a
+      // user, or by this same sweep a moment ago - and OrderbookMarket
+      // reverts "already settled" harmlessly for that; a free read already
+      // tells us that without spending real gas to discover it on-chain.
+      try {
+        await publicClient.call({ account: wallet.account, to: market, data })
+      } catch (simErr: any) {
+        console.warn(
+          `[overdueRefund] ${market} match ${matchId}: would revert, skipping ` +
+          `(${simErr?.shortMessage ?? simErr?.message ?? 'unknown'})`,
+        )
+        continue
+      }
+
+      // Critical, same reasoning as settlement: a match this old has no
+      // path left except this one, and leaving it stuck costs someone their
+      // stake indefinitely.
+      await gasGuard.check('critical')
+
+      // Measured on-chain (DEPLOYMENTS.md): 143,875 gas. Margin above that.
+      const hash = await sendKeeperTx(fees => wallet.sendTransaction({
+        to: market, data, gas: 220_000n, ...fees,
+      }), 'emergencyRefund')
+      const receipt = await publicClient.waitForTransactionReceipt({ hash })
+      await recordReceipt(receipt, 'critical')
+
+      if (receipt.status === 'success') {
+        console.log(`[overdueRefund] ${market} match ${matchId} refunded tx=${hash}`)
+      } else {
+        console.error(`[overdueRefund] ${market} match ${matchId}: refund tx reverted on-chain, tx=${hash}`)
+      }
+    } catch (err) {
+      console.error(`[overdueRefund] ${market} match ${matchId} failed:`, err)
     }
   }
 }
