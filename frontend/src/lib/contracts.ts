@@ -624,3 +624,20 @@ export const ERC20_ABI = [
     outputs: [{ type: 'uint256' }]
   }
 ] as const
+
+// Standard WETH9, layered on ERC20_ABI. Only reachable on IS_POOL_BACKED
+// builds, where the stake currency is WETH and a wallet otherwise holds only
+// the native ETH this wraps. CONTRACTS.USDC is the address to call: on this
+// chain it IS the stake token contract (see .env.rhc - USDC_ADDRESS is named
+// for the backend config key it fills, "the stand-in WETH, because this
+// testnet has no real one", not for what token it actually is here).
+export const WETH_ABI = [
+  ...ERC20_ABI,
+  {
+    name: 'deposit',
+    type: 'function',
+    stateMutability: 'payable',
+    inputs: [],
+    outputs: []
+  }
+] as const
