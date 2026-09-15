@@ -8,6 +8,9 @@
  * anywhere in the frontend until now).
  */
 import { useAccount } from 'wagmi'
+import { IS_POOL_BACKED } from '../lib/chain'
+import { formatUnits } from 'viem'
+import { CURRENCY_DECIMALS, CURRENCY_SYMBOL } from '../lib/contracts'
 import { useQuery } from '@tanstack/react-query'
 import { useReferral } from '../hooks/useReferral'
 import { useConnectWallet } from '../hooks/useConnectWallet'
@@ -32,7 +35,10 @@ export function ReferPage() {
   const refLink = r.myCode && r.myCode !== '0x000000000000'
     ? `${window.location.origin}/?ref=${r.myCode}`
     : null
-  const claimable = Number(r.claimableRewards ?? 0n) / 1e6
+  const claimable = Number(formatUnits(r.claimableRewards ?? 0n, CURRENCY_DECIMALS))
+  const displayAmount = IS_POOL_BACKED
+    ? `${claimable.toFixed(4)} ${CURRENCY_SYMBOL}`
+    : `$${claimable.toFixed(2)}`
 
   const { data: friends } = useQuery<ReferredFriend[]>({
     queryKey: ['referral-list', address],
@@ -55,25 +61,23 @@ export function ReferPage() {
           Earn on every friend you invite
         </div>
         <h3 className="gh-title">
-          Get <em>40%</em> of the protocol fee your friends' bets generate.
+          Get <em>{IS_POOL_BACKED ? '10%' : '40%'}</em> of the protocol fee your friends' bets generate.
         </h3>
         <div className="gh-sub">
           Share your link. Once someone bets using it, they're yours forever - you
-          earn on their bets for as long as they trade on FlipTheMeme.
+          earn a share of the protocol fee whenever one of their bets wins, for as
+          long as they trade on FlipTheMeme. A losing bet pays no protocol fee, so
+          there's nothing to earn from those.
         </div>
-        {/*
-          Said plainly because it is currently the whole story: the protocol fee
-          is 0% today, so a referral earns nothing yet. The 1% charged when you
-          beat the LP pool is not the protocol fee - it goes to the pool and
-          never reaches a referrer. Promising "40% of every bet" while the real
-          number is zero is the kind of thing this project has already decided
-          not to do about the audit and the cap.
-        */}
         <div className="gh-sub" style={{ marginTop: 8, opacity: 0.75 }}>
-          Worth knowing: the protocol fee is <b>0% right now</b>, so referrals
-          currently earn nothing. Peer-matched bets carry no protocol fee at all.
-          Your link keeps working, and starts paying if and when a fee is
-          switched on - the live rate is always in the contract.
+          {IS_POOL_BACKED
+            // The protocol fee applies to every winning bet on this chain, matched
+            // against another trader or against the LP pool alike - it is only the
+            // separate LP taker fee that is LP-match-only, and that one is not
+            // shared with referrers. Composer.tsx's payout math already reflects
+            // this; this line used to contradict it.
+            ? 'On Robinhood Chain, every winning bet pays the protocol fee (currently capped at 1%, set by the contract) - a referrer receives 10% of that. A bet matched against the LP pool additionally pays a separate 1% LP taker fee when it wins, which is not shared with referrers.'
+            : 'Peer-matched bets carry no protocol fee. The live fee rate is always set by the contract.'}
         </div>
       </div>
 
@@ -87,7 +91,7 @@ export function ReferPage() {
           <StatStrip
             items={[
               { k: 'Friends Referred', v: String(Number(r.myReferralCount ?? 0n)) },
-              { k: 'Claimable', v: `$${claimable.toFixed(2)}`, tone: claimable > 0 ? 'up' : undefined },
+              { k: 'Claimable', v: displayAmount, tone: claimable > 0 ? 'up' : undefined },
             ]}
           />
 
@@ -107,7 +111,7 @@ export function ReferPage() {
           {claimable > 0 && (
             <button className="cta" style={{ marginBottom: 14 }} onClick={r.claimRewards} disabled={r.busy}>
               {r.busy ? <span className="spinner" /> : <span className="basesq" />}
-              CLAIM ${claimable.toFixed(2)}
+              CLAIM {displayAmount}
             </button>
           )}
 
@@ -120,9 +124,9 @@ export function ReferPage() {
                 <div key={f.referee_address} className="lb-row" style={{ gridTemplateColumns: '1fr auto' }}>
                   <div style={{ minWidth: 0 }}>
                     <div className="lb-name">{shortAddr(f.referee_address)}</div>
-                    <div className="lb-sub">${Number(f.volume).toFixed(0)} volume</div>
+                    <div className="lb-sub">{IS_POOL_BACKED ? `${Number(f.volume).toFixed(4)} ${CURRENCY_SYMBOL}` : `$${Number(f.volume).toFixed(0)}`} volume</div>
                   </div>
-                  <div className="lb-pnl">+${Number(f.earned).toFixed(2)}</div>
+                  <div className="lb-pnl">{IS_POOL_BACKED ? `+${Number(f.earned).toFixed(4)} ${CURRENCY_SYMBOL}` : `+$${Number(f.earned).toFixed(2)}`}</div>
                 </div>
               ))}
             </div>
