@@ -91,16 +91,19 @@ contract PoolMarketFactoryTest is Test {
         assertEq(factory.getActiveMarkets(factory.feedIdFor(address(pool))).length, 1);
     }
 
-    /// The market must come out authorised on all three pieces of shared infra
-    /// in the same transaction, or it is a market that cannot pay anyone.
-    function test_MarketIsAuthorisedOnSharedInfra() public {
+    /// PvP infrastructure is immediate. LP capital remains opt-in and is only
+    /// granted by the vault owner after the specific market is reviewed.
+    function test_MarketDoesNotAutomaticallyReceiveLpCapital() public {
         MockUniswapV3Pool pool = _goodPool();
         vm.prank(anyone);
         address market = factory.createMarket(address(pool), D15);
 
-        assertTrue(lp.isAuthorizedMarket(market), "liquidity pool");
+        assertFalse(lp.isAuthorizedMarket(market), "LP must be opt-in");
         assertTrue(feeDistributor.isAuthorizedMarket(market), "fee distributor");
         assertTrue(referralRegistry.authorizedMarkets(market), "referral registry");
+
+        lp.authorizeMarket(market);
+        assertTrue(lp.isAuthorizedMarket(market), "owner may opt this market into LP");
     }
 
     /// Each duration is its own market, and each is created once.
@@ -410,16 +413,16 @@ contract PoolMarketFactoryTest is Test {
         MockUniswapV3Pool pool = _goodPool();
         vm.prank(anyone);
         address before = factory.createMarket(address(pool), 60);
-        assertEq(PoolOrderbookMarket(before).feeBps(), 0);
+        assertEq(PoolOrderbookMarket(before).feeBps(), 100);
 
-        factory.proposeNewFee(100);
+        factory.proposeNewFee(50);
         vm.warp(block.timestamp + factory.FEE_TIMELOCK());
         factory.applyNewFee();
 
         vm.prank(anyone);
         address afterFee = factory.createMarket(address(pool), 300);
-        assertEq(PoolOrderbookMarket(afterFee).feeBps(), 100, "new market takes the new fee");
-        assertEq(PoolOrderbookMarket(before).feeBps(), 0, "existing market keeps the old one");
+        assertEq(PoolOrderbookMarket(afterFee).feeBps(), 50, "new market takes the new fee");
+        assertEq(PoolOrderbookMarket(before).feeBps(), 100, "existing market keeps the old one");
     }
 
     // ── IMPLEMENTATION ───────────────────────────────────────

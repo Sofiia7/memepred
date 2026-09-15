@@ -105,7 +105,7 @@ contract FeeDistributor is Ownable, ReentrancyGuard {
      * @param totalFee  fee already transferred to this contract.
      * @param referrer  referrer of the winning bet (zero if none).
      */
-    function distributeFee(uint256 totalFee, address referrer) external nonReentrant {
+    function distributeFee(uint256 totalFee, address referrer) public virtual nonReentrant {
         require(isAuthorizedMarket[msg.sender], "not authorized market");
         require(totalFee > 0, "zero fee");
 

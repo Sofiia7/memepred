@@ -85,6 +85,9 @@ contract PoolMarketFactory is Ownable {
      * see canServeWindow.
      */
     uint16 public constant MIN_CARDINALITY = 300;
+    /// @dev Mirrors PoolOracleResolver.ENTRY_TWAP_WINDOW. A market must be
+    /// able to price its first entry as well as its eventual exit.
+    uint256 public constant ENTRY_TWAP_WINDOW = 60 seconds;
 
     /// Fee tiers a market may be created on. The 24h scan found 202 pools at
     /// 10000, 18 at 3000 and 7 at 500 - and 65 at the 100 tier, none of which
@@ -161,7 +164,10 @@ contract PoolMarketFactory is Ownable {
         referralRegistry = _referralRegistry;
         multisig = _multisig;
         liquidityPool = _liquidityPool;
-        feeBps = 0;
+        // Permanent markets snapshot their creation fee. A non-zero launch
+        // value prevents a third party from permanently occupying a slot at
+        // zero before governance can complete its first timelocked change.
+        feeBps = FEE_MAX;
 
         marketImplementation = _deployMarketImplementation(
             _weth, _resolver, _liquidityPool, _feeDistributor, _referralRegistry, _multisig
@@ -200,7 +206,9 @@ contract PoolMarketFactory is Ownable {
         activeMarkets[feedId].push(market);
         isMarket[market] = true;
 
-        LiquidityPool(liquidityPool).authorizeMarket(market);
+        // Markets are permissionless PvP venues. LP capital is separate: its
+        // owner must explicitly authorize selected factory-created markets
+        // after reviewing the pool and aggregate risk.
         FeeDistributor(feeDistributor).authorizeMarket(market);
         ReferralRegistry(referralRegistry).authorizeMarket(market);
 
@@ -241,11 +249,13 @@ contract PoolMarketFactory is Ownable {
         //    write after somebody pays, so a pool can report 300 slots while
         //    holding two seconds of prices. Asking the pool to serve the window
         //    is the only check that distinguishes capacity from history, and
-        //    the window is this market's own - a 60-second market needs 30
-        //    seconds of past and should not be held to a 15-minute market's
-        //    180.
+        //    the window is this market's own. It must serve both the entry
+        //    strike's 60 seconds and the duration-derived exit window.
         uint256 window = twapWindowFor(duration);
         if (!canServeWindow(pool, window)) revert PoolCannotServeWindow(window);
+        if (window < ENTRY_TWAP_WINDOW && !canServeWindow(pool, ENTRY_TWAP_WINDOW)) {
+            revert PoolCannotServeWindow(ENTRY_TWAP_WINDOW);
+        }
     }
 
     // ── VIEWS THE KEEPER AND THE UI USE ────────────────────

@@ -10,6 +10,7 @@ import "../src/PoolOracleResolver.sol";
 import "../src/PoolLiquidityPool.sol";
 import "../src/GenesisNFT.sol";
 import "../src/FeeDistributor.sol";
+import "../src/RhcFeeDistributor.sol";
 import "../src/ReferralRegistry.sol";
 import "../src/BadgeNFT.sol";
 
@@ -102,7 +103,7 @@ contract DeployRhc is Script {
 
     function _deploy(Env memory e) internal {
         // ── 1. Deploy ────────────────────────────────────────
-        FeeDistributor feeDistrib = new FeeDistributor(e.weth, e.treasury, e.lpFeeSink, e.nftRewards);
+        RhcFeeDistributor feeDistrib = new RhcFeeDistributor(e.weth, e.treasury, e.lpFeeSink, e.nftRewards);
         ReferralRegistry referralReg = new ReferralRegistry();
         PoolOracleResolver resolver = new PoolOracleResolver(e.weth);
         GenesisNFT genesisNFT = new GenesisNFT("ipfs://bafybeiez6a6hshxe22lkwhvbpjuiiw5ml4gup3sb2spc6nufiflrxbmcjm/");
