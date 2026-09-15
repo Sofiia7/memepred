@@ -7,6 +7,7 @@ import { usePythPrice } from '../../hooks/usePythPrice'
 import { useConnectWallet } from '../../hooks/useConnectWallet'
 import { useEnsureChain } from '../../hooks/useEnsureChain'
 import { formatDuration } from '../../lib/symbols'
+import { friendlyRevertReason } from '../../lib/revertReasons'
 import { CONTRACTS, MIN_BET, MAX_BET, CURRENCY_SYMBOL, CURRENCY_DECIMALS, LP_TAKER_FEE_BPS, ORDERBOOK_MARKET_ABI, WETH_ABI } from '../../lib/contracts'
 import { IS_POOL_BACKED } from '../../lib/chain'
 import { Chev } from './icons'
@@ -147,7 +148,11 @@ export function Composer({ picked, onClear }: { picked: PickedBet | null; onClea
     : bet.step === 'approving' ? `APPROVING ${CURRENCY_SYMBOL}…`
     : bet.step === 'betting' ? 'PLACING BET…'
     : bet.step === 'confirmed' ? 'PLACED ✓'
-    : bet.step === 'error' ? 'RETRY · ' + (bet.error?.slice(0, 30) ?? '')
+    // Full message, never truncated: a ~30-char slice used to render
+    // "price slippage exceeded", "expectedPrice zero" and an ERC20 balance
+    // error as the same unhelpful prefix. Known contract revert reasons are
+    // mapped to short plain English first; anything else is shown in full.
+    : bet.step === 'error' ? 'RETRY · ' + friendlyRevertReason(bet.error)
     : `BUY ${picked.side.toUpperCase()} · ${stake} ${CURRENCY_SYMBOL}`
 
   return (
