@@ -308,21 +308,34 @@ export const ORDERBOOK_MARKET_ABI = [
     ]
   },
   {
+    // Was missing `amount` entirely, which shifted every field after it:
+    // decodeEventLog read entryPrice's slot as if it were amount and had
+    // nothing left for the real entryPrice, so watchers for this event
+    // either decoded garbage or (with fewer named args than the log actually
+    // carries) failed to decode at all. Matches
+    // OrderbookMarket.sol's `event OrderMatched(uint256 indexed matchId,
+    // uint256 upId, uint256 downId, uint256 amount, uint256 entryPrice)`
+    // exactly now - field names, types and order.
     name: 'OrderMatched',
     type: 'event',
     inputs: [
       { name: 'matchId',    type: 'uint256', indexed: true  },
       { name: 'upId',       type: 'uint256', indexed: false },
       { name: 'downId',     type: 'uint256', indexed: false },
+      { name: 'amount',     type: 'uint256', indexed: false },
       { name: 'entryPrice', type: 'uint256', indexed: false }
     ]
   },
   {
+    // Same `amount`-missing bug as OrderMatched above. Matches
+    // `event LPMatched(uint256 indexed matchId, uint256 orderId, uint256
+    // amount, uint256 entryPrice)`.
     name: 'LPMatched',
     type: 'event',
     inputs: [
       { name: 'matchId',    type: 'uint256', indexed: true  },
       { name: 'orderId',    type: 'uint256', indexed: false },
+      { name: 'amount',     type: 'uint256', indexed: false },
       { name: 'entryPrice', type: 'uint256', indexed: false }
     ]
   },
@@ -334,6 +347,17 @@ export const ORDERBOOK_MARKET_ABI = [
       { name: 'upWon',   type: 'bool',    indexed: false },
       { name: 'entry',   type: 'uint256', indexed: false },
       { name: 'exit',    type: 'uint256', indexed: false }
+    ]
+  },
+  {
+    // New this session: a match settling exactly at its entry price now
+    // refunds both sides (OrderbookMarket._refundTiedMatch) instead of always
+    // going to DOWN, and emits this instead of MatchSettled.
+    name: 'MatchTied',
+    type: 'event',
+    inputs: [
+      { name: 'matchId', type: 'uint256', indexed: true  },
+      { name: 'price',   type: 'uint256', indexed: false }
     ]
   },
   {

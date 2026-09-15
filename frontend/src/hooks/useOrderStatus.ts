@@ -15,7 +15,7 @@ export function useOrderStatus(marketAddress: Address, orderId: bigint) {
   const [isLpMatch, setIsLpMatch] = useState(false)
 
   // Read order from contract
-  const { data: order, refetch } = useReadContract({
+  const { data: order, refetch: refetchOrder } = useReadContract({
     address:      marketAddress,
     abi:          ORDERBOOK_MARKET_ABI,
     functionName: 'getOrder',
@@ -28,7 +28,7 @@ export function useOrderStatus(marketAddress: Address, orderId: bigint) {
   // forever and the 24h "recover my stake" button could never appear. Derived
   // values have no setter to forget.
   const matchId = order?.matchId ?? 0n
-  const { data: match } = useReadContract({
+  const { data: match, refetch: refetchMatch } = useReadContract({
     address:      marketAddress,
     abi:          ORDERBOOK_MARKET_ABI,
     functionName: 'getMatch',
@@ -36,7 +36,34 @@ export function useOrderStatus(marketAddress: Address, orderId: bigint) {
     query:        { enabled: matchId > 0n }
   })
 
+  // Neither read polls or watches blocks on its own - every event handler
+  // below has always had to call refetch() itself to see the new state. The
+  // settlement watchers only ever refetched `order`, never `match`, which
+  // left `match` (entryPrice/exitPrice, settled, the tie check below) stuck
+  // at its pre-settlement snapshot until something else remounted the
+  // component. Harmless while nothing read match.settled for anything but the
+  // receipt link; load-bearing now that a tie is detected from it live.
+  function refetchAll() {
+    refetchOrder()
+    refetchMatch()
+  }
+
   const settleAt = match ? Number(match.settleAt) : undefined
+
+  // A match settling exactly at its entry price refunds both sides
+  // (OrderbookMarket._refundTiedMatch) rather than ever going to DOWN. It
+  // never touches Order.payout - the refund happens inline in the settle
+  // transaction, not staged for claim() - so `won = payout > 0n` alone reads
+  // a tie as a loss. `settled` guards the zero/zero coincidence before a
+  // price ever lands: entryPrice is always > 0 (placeBet requires it) but
+  // exitPrice starts at 0 until settleMatch sets it.
+  //
+  // Scoped to this order's FIRST match only (order.matchId / `match` above),
+  // matching how the rest of this hook and OrderStatusCard already treat
+  // multi-fill orders - see the struct comment on OrderbookMarket.Order.
+  // A later match on the same order tying while an earlier one won or lost
+  // would not be reflected here.
+  const isTied = !!match && match.settled && match.exitPrice === match.entryPrice
 
   // Sync status from order data
   useEffect(() => {
@@ -63,7 +90,7 @@ export function useOrderStatus(marketAddress: Address, orderId: bigint) {
         if (upId === orderId || downId === orderId) {
           setStatus('matched')
           setIsLpMatch(false)
-          refetch()
+          refetchAll()
         }
       }
     }
@@ -79,7 +106,7 @@ export function useOrderStatus(marketAddress: Address, orderId: bigint) {
         if ((log.args as any).orderId === orderId) {
           setStatus('matched')
           setIsLpMatch(true)
-          refetch()
+          refetchAll()
         }
       }
     }
@@ -95,7 +122,27 @@ export function useOrderStatus(marketAddress: Address, orderId: bigint) {
         for (const log of logs) {
           if ((log.args as any).matchId === order.matchId) {
             setStatus('settled')
-            refetch()
+            refetchAll()
+          }
+        }
+      }
+    }
+  })
+
+  // Listen for a tie. Also lands as 'settled' on the order's own status (see
+  // isTied's comment above for why payout alone can't tell the two apart);
+  // this only exists to refetch promptly while the page is open, the same
+  // reason the MatchSettled watcher above does.
+  useWatchContractEvent({
+    address:   marketAddress,
+    abi:       ORDERBOOK_MARKET_ABI,
+    eventName: 'MatchTied',
+    onLogs: (logs) => {
+      if (order?.matchId) {
+        for (const log of logs) {
+          if ((log.args as any).matchId === order.matchId) {
+            setStatus('settled')
+            refetchAll()
           }
         }
       }
@@ -108,9 +155,11 @@ export function useOrderStatus(marketAddress: Address, orderId: bigint) {
     settleAt,
     payout,
     isLpMatch,
+    isTied,
     // Needed to offer emergencyRefundMatch when settlement never happens -
     // that call takes a matchId, not an orderId.
     matchId: order?.matchId,
-    refetch
+    match,
+    refetch: refetchAll
   }
 }

@@ -17,7 +17,8 @@ import { useReadContract } from 'wagmi'
 import { useEffect, useState } from 'react'
 import type { Address } from 'viem'
 import { formatUnits } from 'viem'
-import { CURRENCY_DECIMALS } from '../lib/contracts'
+import { CURRENCY_DECIMALS, CURRENCY_SYMBOL } from '../lib/contracts'
+import { IS_POOL_BACKED, TARGET_CHAIN } from '../lib/chain'
 import { ORDERBOOK_MARKET_ABI, SETTLE_GRACE_SEC } from '../lib/contracts'
 import { useOrderStatus } from '../hooks/useOrderStatus'
 import { ShareCard } from './ShareCard'
@@ -47,7 +48,7 @@ export function OrderStatusCard({
   onEmergencyRefund,
   txPending,
 }: Props) {
-  const { status, isLpMatch, settleAt, matchId } =
+  const { status, isLpMatch, isTied, settleAt, matchId, match, payout: capturedPayout } =
     useOrderStatus(marketAddress, orderId)
 
   // Re-read order details (full struct, including filled & unmatchedRefunded).
@@ -78,15 +79,30 @@ export function OrderStatusCard({
 
   const amount       = order.amount
   const filled       = order.filledAmount
-  const payout       = order.payout
   const placedAt     = Number(order.placedAt)
   const unmatchedRef = order.unmatchedRefunded
   const dir          = order.direction === 0 ? 'UP' : 'DOWN'
 
+  // claim() zeroes order.payout on-chain BEFORE transferring (see
+  // OrderbookMarket.sol's claim: `o.payout = 0` runs before
+  // usdc.safeTransfer), so re-reading order.payout after a claim always shows
+  // 0 - "received 0 WETH", "Just won 0 WETH" on ShareCard, which reads this
+  // same value. useOrderStatus's own payout state only ever updates on a
+  // NONZERO read (see its useEffect), so it holds the last real payout this
+  // order had rather than the now-zeroed current one; prefer the live value
+  // only while it is actually still there (pre-claim).
+  const payout    = order.payout > 0n ? order.payout : (capturedPayout ?? 0n)
   const amountUsd = formatUnits(amount, CURRENCY_DECIMALS)
   const filledUsd = formatUnits(filled, CURRENCY_DECIMALS)
   const payoutUsd = formatUnits(payout, CURRENCY_DECIMALS)
   const won       = payout > 0n
+  const explorerUrl = TARGET_CHAIN.blockExplorers?.default.url
+  const receipt = match && match.settled ? (
+    <div className="osc-sub">
+      {IS_POOL_BACKED && <>Entry {formatUnits(match.entryPrice, 18)} WETH/token · Exit {formatUnits(match.exitPrice, 18)} WETH/token · </>}
+      {explorerUrl && <a href={`${explorerUrl}/address/${marketAddress}`} target="_blank" rel="noreferrer">View market receipt ↗</a>}
+    </div>
+  ) : null
 
   // ── PENDING ────────────────────────────────────────────────
   if (status === 'pending') {
@@ -97,8 +113,8 @@ export function OrderStatusCard({
       <div className="osc osc-pending">
         <div className="osc-head">🔍 Searching for a match…</div>
         <div className="osc-meta">
-          {dir} · ${amountUsd}
-          {filled > 0n && ` (filled $${filledUsd} so far)`}
+          {dir} · {amountUsd} {CURRENCY_SYMBOL}
+          {filled > 0n && ` (filled ${filledUsd} ${CURRENCY_SYMBOL} so far)`}
         </div>
         <div className="osc-timer">
           {expired ? 'Match window expired' : `${fmt(left)} until refund window opens`}
@@ -118,8 +134,8 @@ export function OrderStatusCard({
       <div className="osc osc-matched">
         <div className="osc-head">{isLpMatch ? '🏦 Matched with LP pool' : '⚡ Matched'}</div>
         <div className="osc-meta">
-          {dir} · ${filledUsd} at risk
-          {filled < amount && ` (partial fill - $${amountUsd} deposit)`}
+          {dir} · {filledUsd} {CURRENCY_SYMBOL} at risk
+          {filled < amount && ` (partial fill - ${amountUsd} ${CURRENCY_SYMBOL} deposit)`}
         </div>
         <div className="osc-sub">
           {graceLapsed
@@ -147,18 +163,35 @@ export function OrderStatusCard({
 
   // ── SETTLED ────────────────────────────────────────────────
   if (status === 'settled') {
+    // A match settling exactly at its entry price refunds both stakes
+    // instead of paying either side (OrderbookMarket._refundTiedMatch) - it
+    // never touches order.payout, so `won` alone reads this as a loss.
+    // Refunded inline in the settle tx, not staged for claim(): no Claim
+    // button, nothing more for the user to do here.
+    if (isTied) {
+      return (
+        <div className="osc osc-tied">
+          <div className="osc-head">🤝 Tie - stake returned</div>
+          <div className="osc-meta">
+            {dir} · {filledUsd} {CURRENCY_SYMBOL} refunded, no fee taken
+          </div>
+          {receipt}
+        </div>
+      )
+    }
     return (
       <div className={`osc ${won ? 'osc-won' : 'osc-lost'}`}>
         <div className="osc-head">{won ? '🎉 You won' : 'Loss - better luck next time'}</div>
         <div className="osc-meta">
-          {dir} · ${filledUsd} at risk · payout ${payoutUsd}
+          {dir} · {filledUsd} {CURRENCY_SYMBOL} at risk · payout {payoutUsd} {CURRENCY_SYMBOL}
         </div>
         {won && (
           <button className="osc-btn osc-claim" disabled={txPending} onClick={onClaim}>
-            {txPending ? 'Processing…' : `Claim $${payoutUsd}`}
+            {txPending ? 'Processing…' : `Claim ${payoutUsd} ${CURRENCY_SYMBOL}`}
           </button>
         )}
-        {won && <ShareCard direction={dir} amountUsd={filledUsd} payoutUsd={payoutUsd} />}
+        {receipt}
+        {won && <ShareCard direction={dir} amount={filledUsd} payout={payoutUsd} marketAddress={marketAddress} orderId={orderId} />}
       </div>
     )
   }
@@ -168,8 +201,9 @@ export function OrderStatusCard({
     return (
       <div className="osc osc-claimed">
         <div className="osc-head">✓ Claimed</div>
-        <div className="osc-meta">{dir} · received ${payoutUsd}</div>
-        <ShareCard direction={dir} amountUsd={filledUsd} payoutUsd={payoutUsd} />
+        <div className="osc-meta">{dir} · received {payoutUsd} {CURRENCY_SYMBOL}</div>
+        {receipt}
+        <ShareCard direction={dir} amount={filledUsd} payout={payoutUsd} marketAddress={marketAddress} orderId={orderId} />
       </div>
     )
   }
@@ -178,7 +212,8 @@ export function OrderStatusCard({
   return (
     <div className="osc osc-refunded">
       <div className="osc-head">↩ Refunded</div>
-      <div className="osc-meta">{dir} · ${amountUsd} returned</div>
+      <div className="osc-meta">{dir} · {amountUsd} {CURRENCY_SYMBOL} returned</div>
+      {receipt}
     </div>
   )
 }
