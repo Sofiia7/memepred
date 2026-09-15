@@ -87,13 +87,17 @@ If empty after 10 min: check keeper logs for `marketCreator` errors.
 ```bash
 cd workers
 npx wrangler secret put WORKER_SECRET   # paste shared secret
-npx wrangler secret put ORIGIN_URL      # https://api-origin.flipthememe.com
 npx wrangler deploy
 ```
 
 Verify:
-- [ ] `curl -H "CF-IPCountry: US" https://api.flipthememe.com/api/geo` → 451
 - [ ] `curl https://api.flipthememe.com/api/geo/config` → `{"blocked":["US",...]}`
+- [ ] Geo-block itself cannot be verified with curl: `workers/geo-block.ts`
+      reads `request.cf.country`, which Cloudflare resolves at the edge from
+      the actual connection - a client-supplied `CF-IPCountry` header does
+      not set it and is ignored. Verifying the 451 requires a real client
+      connecting from a blocked region (or one of Cloudflare's own edge
+      testing tools), not a curl header.
 
 ## 8. Tenderly alerts
 
