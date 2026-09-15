@@ -120,6 +120,41 @@ contract PoolOracleResolverTest is Test {
         resolver.spotPriceWad(_feedId(address(pool)));
     }
 
+    /**
+     * The strike is always the 60-second entry TWAP, never live spot - that
+     * is unchanged. What is new: entry is REFUSED, not merely priced
+     * honestly, when the current spot has already diverged from that TWAP by
+     * more than MAX_SPREAD_BPS (2%, the same threshold the settlement spread
+     * guards use).
+     *
+     * This is what R-4 (docs/rhc/review-2026-09-11.md §4.7 / the 2026-09-15
+     * audit) is actually about: anyone can read live spot for free, and
+     * betting in its direction against the lagging TWAP wins more than half
+     * the time even in a pure random walk (measured: 69.6% at 60s, 58.6% at
+     * 300s, in a companion Monte-Carlo check outside this repo). A full fix
+     * needs storing a resting order's own price bound and checking it again
+     * at fill time - a struct/ABI change deferred for a separate pass (see
+     * LAUNCH-GATES.md) - but refusing the worst of the edge at entry, using
+     * the same anomaly threshold already trusted for settlement, needs no
+     * such change and closes the sharpest, most exploitable version of it
+     * today: a large, sudden move just before someone bets into it.
+     */
+    function test_SpotPrice_RefusesEntry_WhenSpotHasAlreadyDivergedFromTwap() public {
+        pool.pushTick(T0 - 3600, 0); // flat for the whole TWAP window
+        pool.pushTick(uint32(block.timestamp), 500); // spot just moved hard, this second
+        vm.expectRevert("entry price too volatile right now");
+        resolver.spotPriceWad(_feedId(address(pool)));
+    }
+
+    /// The mirror case: an ordinary move well inside the threshold must not
+    /// block entry - this is not a "the pool moved at all" tripwire.
+    function test_SpotPrice_AllowsEntry_WhenSpotIsCloseToTwap() public {
+        pool.pushTick(T0 - 3600, 0);
+        pool.pushTick(uint32(block.timestamp), 50); // ~0.5%, well under 2%
+        uint256 price = resolver.spotPriceWad(_feedId(address(pool)));
+        assertGt(price, 0);
+    }
+
     // ── SETTLEMENT IS ANCHORED AT settleAt ───────────────────
     /**
      * The property this whole file exists for.

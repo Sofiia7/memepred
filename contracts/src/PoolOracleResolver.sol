@@ -160,7 +160,21 @@ contract PoolOracleResolver is AccessControl {
         (bool ok, int24 tick) = _meanTick(pool, ENTRY_TWAP_WINDOW, 0);
         require(ok, "pool cannot price entry");
         require(pool.liquidity() > 0, "pool has no liquidity");
-        return _quoteWad(pool.token0(), tick);
+        uint256 twap = _quoteWad(pool.token0(), tick);
+
+        // The strike stays the TWAP - averaging is still what makes it
+        // expensive to move. What this refuses is entering AT ALL while spot
+        // has already run away from it: anyone can read live spot for free,
+        // and betting in its direction against a lagging average wins more
+        // than half the time even with no manipulation at all, purely from
+        // the average not having caught up yet. Reusing MAX_SPREAD_BPS - the
+        // same anomaly threshold settlement already trusts - rather than a
+        // second, separately-tuned number.
+        (, int24 liveTick,,,,,) = pool.slot0();
+        uint256 spot = _quoteWad(pool.token0(), liveTick);
+        require(_spread(twap, spot) <= MAX_SPREAD_BPS, "entry price too volatile right now");
+
+        return twap;
     }
 
     // ── RESOLVE ORDERBOOK MATCH ────────────────────────────
