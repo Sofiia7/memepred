@@ -386,7 +386,7 @@ async function pingOracle(feedId: string): Promise<FeedPing> {
 async function pingPool(feedId: string): Promise<FeedPing> {
   const pool = `0x${feedId.slice(-40)}` as Address
   const longest = Math.max(
-    ...(process.env.RHC_DURATIONS_SEC || '60,300,900').split(',').map(Number).filter((n) => n > 0),
+    ...(process.env.RHC_DURATIONS_SEC || '300').split(',').map(Number).filter((n) => n > 0),
   )
   try {
     const window = await publicClient.readContract({
