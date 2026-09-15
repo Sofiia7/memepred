@@ -1,0 +1,25 @@
+# The edge router for the Robinhood Chain deployment - same geo-block.ts
+# code as the Base worker (wrangler.toml), pointed at a different route and
+# given its own WORKER_SECRET, because the RHC backend is a separate origin
+# with its own secret, not a second copy of Base's.
+#
+#   wrangler deploy -c wrangler.geo-block.rhc.toml
+#
+# Needs, in order:
+#   1. DNS record for api-rhc.flipthememe.com in the flipthememe.com zone
+#      (Proxied/orange-cloud), same as api.flipthememe.com already has -
+#      the route below cannot attach until this exists.
+#   2. Caddy on the VPS reverse-proxying that hostname to rhc-backend:3002
+#      (see deploy/docker-compose.rhc.yml and deploy/Caddyfile).
+#   3. wrangler secret put WORKER_SECRET -c wrangler.geo-block.rhc.toml
+#      This value must equal the RHC backend's own WORKER_SECRET env var
+#      (deploy/docker-compose.rhc.yml's rhc-backend service / its env_file) -
+#      not currently set for RHC at all (.env.rhc has no WORKER_SECRET line),
+#      so this is a new secret to generate, not one to reuse from Base.
+name = "flipthememe-edge-rhc"
+main = "geo-block.ts"
+compatibility_date = "2024-09-01"
+
+routes = [
+  { pattern = "api-rhc.flipthememe.com/*", zone_name = "flipthememe.com" }
+]

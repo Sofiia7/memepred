@@ -1,0 +1,67 @@
+# Robinhood Chain backend, added to the SAME compose project as Base
+# (docker-compose.yml) rather than a project of its own, specifically so it
+# joins the existing `deploy_default` network and can reach `postgres` and
+# `redis` by those service names without a second database or a network
+# bridge hack. Base's postgres/redis are untouched by this file - it only
+# adds two new services.
+#
+# Deploy (from this same deploy/ directory, alongside docker-compose.yml):
+#   docker compose -f docker-compose.yml -f docker-compose.rhc.yml \
+#     up -d --build rhc-backend rhc-keeper
+#
+# Naming only `rhc-backend`/`rhc-keeper` in that command matters: it means
+# compose only creates/starts these two services and leaves postgres, redis,
+# backend, keeper, caddy and db-backup exactly as they were.
+#
+# Build context is a separate, minimal source tree (not this repo checkout) -
+# see deploy/README.md for how it gets there. `${POSTGRES_PASSWORD}` and
+# `${REDIS_PASSWORD}` below resolve from this project's own .env file
+# (Compose auto-loads it from the directory you run `docker compose` in),
+# the same file Base's own services already read those two keys from - they
+# are the same shared Postgres/Redis, not a second copy of the secret.
+# Everything RHC-specific (contract addresses, chain id, keeper policy) comes
+# from its own env_file instead, so it can never collide with or override a
+# Base variable of the same name (MARKET_FACTORY, CHAIN_ID, etc. mean
+# different things on each chain).
+#
+# Compose merges the *data* from multiple -f files, but each file is parsed
+# as YAML on its own first - an anchor defined in docker-compose.yml is not
+# visible here, so this file defines its own instead of aliasing that one.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
+
+services:
+  rhc-backend:
+    mem_limit: 768m
+    logging: *default-logging
+    build:
+      context:    /home/openclaw/memepred-rhc
+      dockerfile: deploy/backend.Dockerfile
+    restart: unless-stopped
+    env_file:
+      - /home/openclaw/memepred-rhc/.env.rhc
+    environment:
+      CHAIN_PROFILE: rhc
+      DATABASE_URL: postgres://${POSTGRES_USER:-memepred}:${POSTGRES_PASSWORD}@postgres:5432/memepred_rhc
+      REDIS_URL:    redis://default:${REDIS_PASSWORD}@redis:6379/1
+      PORT:         "3002"
+    ports:
+      - "127.0.0.1:3002:3002"
+
+  rhc-keeper:
+    mem_limit: 768m
+    logging: *default-logging
+    build:
+      context:    /home/openclaw/memepred-rhc
+      dockerfile: deploy/backend.Dockerfile
+    command: ["node", "dist/keeper/index.js"]
+    restart: unless-stopped
+    env_file:
+      - /home/openclaw/memepred-rhc/.env.rhc
+    environment:
+      CHAIN_PROFILE: rhc
+      DATABASE_URL: postgres://${POSTGRES_USER:-memepred}:${POSTGRES_PASSWORD}@postgres:5432/memepred_rhc
+      REDIS_URL:    redis://default:${REDIS_PASSWORD}@redis:6379/1
