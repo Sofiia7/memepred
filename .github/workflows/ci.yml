@@ -144,6 +144,7 @@ jobs:
         run: pnpm exec vitest run
 
       - name: db migration smoke
+        working-directory: backend
         run: node scripts/ci-db-smoke.mjs
 
   # ─────────────────────────────────────────────────────────────

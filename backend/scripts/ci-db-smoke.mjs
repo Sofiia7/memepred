@@ -8,7 +8,9 @@
  * Fails the CI job if any migration has a syntax error (e.g. the regression we
  * just fixed: `CREATE TABLE IF NOT EXISTSprice_history`).
  *
- * Usage (CI):
+ * Usage (CI, from backend/ - it needs backend's own `pg` dependency, which is
+ * why this lives in backend/scripts rather than the repo-root scripts/ next
+ * to check-migrations.mjs, whose only dependency is a root-level one):
  *   DATABASE_URL=postgres://... node scripts/ci-db-smoke.mjs
  */
 import { readdirSync, readFileSync } from 'node:fs'
@@ -17,8 +19,8 @@ import { fileURLToPath } from 'node:url'
 import pg from 'pg'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
-const REPO_ROOT = resolve(__dirname, '..')
-const MIGRATIONS_DIR = join(REPO_ROOT, 'backend', 'src', 'db', 'migrations')
+const BACKEND_ROOT = resolve(__dirname, '..')
+const MIGRATIONS_DIR = join(BACKEND_ROOT, 'src', 'db', 'migrations')
 
 const EXPECTED_TABLES = [
   'price_history',

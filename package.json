@@ -17,7 +17,7 @@
     "contracts:build": "forge build --root contracts",
     "contracts:test":  "forge test --root contracts -vv",
     "contracts:fmt":   "forge fmt --check --root contracts",
-    "db:migrate:smoke": "node ./scripts/ci-db-smoke.mjs",
+    "db:migrate:smoke": "node ./backend/scripts/ci-db-smoke.mjs",
     "db:check":        "node ./scripts/check-migrations.mjs"
   },
   "devDependencies": {

@@ -2,7 +2,7 @@
 /**
  * Applies every migration to a real Postgres and checks what came out.
  *
- * Complements scripts/ci-db-smoke.mjs rather than replacing it: that one only
+ * Complements backend/scripts/ci-db-smoke.mjs rather than replacing it: that one only
  * asserts the expected tables exist. This checks what 005 actually did, and it
  * runs with or without a database - Postgres compiled to WASM needs no daemon,
  * no container and no service, so a migration can be checked on a laptop with
