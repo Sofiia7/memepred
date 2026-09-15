@@ -154,6 +154,51 @@ contract IntegrationTest is RedstoneTest {
         assertEq(total + feeDist.referralBalance(bob), expectedFee, "fee fully accounted");
     }
 
+    /**
+     * A trader with an ALREADY-registered referrer could redirect any single
+     * bet's referral share by passing a different address as `referrer` on
+     * that one placeBet call. The registry correctly refuses to overwrite the
+     * sticky referrer, but settlement used to pay THIS ORDER'S OWN referrer
+     * field, not the registry's - so the registry's protection never reached
+     * the money. Fixed by reading referrerOf(trader) at settlement time.
+     */
+    function test_Settle_PaysTheRegisteredReferrer_NotThisOrdersOwnReferrerArg() public {
+        address lp = makeAddr("lp");
+        usdc.mint(lp, 1000e6);
+        vm.prank(lp);
+        usdc.approve(address(pool), type(uint256).max);
+        vm.prank(lp);
+        pool.deposit(1000e6, lp);
+
+        address alice = makeAddr("alice");
+        address bob = makeAddr("bob"); // alice's real, registry-recorded referrer
+        address eve = makeAddr("eve"); // an address alice also controls
+        usdc.mint(alice, 200e6);
+        vm.prank(alice);
+        usdc.approve(address(market), type(uint256).max);
+
+        // First bet establishes bob as alice's referrer - sticky from here on.
+        _bet(market, alice, OrderbookMarket.Direction.UP, 25e6, bob, 1000 * 1e18, 100);
+        assertEq(refReg.referrerOf(alice), bob);
+
+        // A later bet passes a DIFFERENT referrer on the call itself. The
+        // registry ignores it correctly (still bob) - the attempted
+        // self-rebate is in whether settlement also ignores it.
+        _bet(market, alice, OrderbookMarket.Direction.UP, 25e6, eve, 1000 * 1e18, 100);
+        assertEq(refReg.referrerOf(alice), bob, "registry still says bob");
+
+        // Settle the SECOND match - the one whose order carried referrer=eve.
+        vm.warp(block.timestamp + 15 minutes + 1);
+        vm.prank(resolver);
+        market.settleMatch(2, 1000 * 1e18 + 100);
+
+        uint256 expectedFee = (50e6 * 100) / 10_000;
+        uint256 expectedRef = (expectedFee * 4000) / 10_000;
+
+        assertEq(feeDist.referralBalance(bob), expectedRef, "the REGISTERED referrer is paid");
+        assertEq(feeDist.referralBalance(eve), 0, "not whatever this specific order happened to pass");
+    }
+
     function test_Settle_NoReferrer_FullSplitToSinks() public {
         address alice = makeAddr("alice");
         address charlie = makeAddr("charlie");

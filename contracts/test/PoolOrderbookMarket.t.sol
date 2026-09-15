@@ -271,6 +271,95 @@ contract PoolOrderbookMarketTest is Test {
         assertTrue(market.getMatch(2).settled, "the fresh match is not held hostage by the overdue one");
     }
 
+    /**
+     * MAX_TRADER_LP_EXPOSURE's own comment says markets being recreated every
+     * few minutes naturally resets it - but on this chain a market has no
+     * close time and lives forever, so a cap that only ever grows becomes a
+     * LIFETIME ban from the LP the moment a trader's closed positions add up
+     * to it, even though the capital those positions used is long back in the
+     * vault and free to be matched against again. Releasing it on settle (or
+     * tie, or refund) keeps the cap doing its real job - bounding concurrent
+     * exposure to one address - without also permanently blacklisting anyone
+     * who simply keeps using the product.
+     */
+    function test_TraderLpExposure_ReleasesOnSettle_NotLifetimeLocked() public {
+        weth.mint(address(this), 10 ether);
+        weth.approve(address(lp), 10 ether);
+        lp.deposit(10 ether, address(this));
+
+        // Three max-size bets exactly exhaust alice's 0.12 ether LP cap.
+        _bet(alice, OrderbookMarket.Direction.UP, 0.04 ether);
+        _bet(alice, OrderbookMarket.Direction.UP, 0.04 ether);
+        _bet(alice, OrderbookMarket.Direction.UP, 0.04 ether);
+        assertEq(market.traderLpExposure(alice), 0.12 ether, "cap exactly exhausted");
+
+        // A fourth bet has no LP room left and simply rests, unmatched.
+        uint256 fourthId = _bet(alice, OrderbookMarket.Direction.UP, 0.04 ether);
+        assertEq(market.getOrder(fourthId).filledAmount, 0, "no LP room left");
+
+        // Settle ONLY the FIRST match - resolveOrderbookMatch, not the batch,
+        // so matches 2 and 3 (formed in the same block, same settleAt) stay
+        // open and this isolates what releasing exactly ONE match's share
+        // actually does.
+        OrderbookMarket.Match memory m1 = market.getMatch(1);
+        pool.pushTick(uint32(m1.settleAt - 600), 6932); // decisive move, not a tie
+        vm.warp(m1.settleAt + 1);
+        resolver.resolveOrderbookMatch(address(market), 1);
+        assertTrue(market.getMatch(1).settled);
+        assertFalse(market.getMatch(2).settled, "2 and 3 deliberately left open");
+
+        assertEq(
+            market.traderLpExposure(alice),
+            0.08 ether,
+            "settling one 0.04 LP match releases exactly its own 0.04, not locked forever"
+        );
+
+        // With room freed, a fifth bet can now reach the LP again. Wide
+        // slippage: the earlier price push is still live and this test does
+        // not care what the exact strike is, only that the bet is not
+        // rejected for lack of LP room.
+        vm.prank(alice);
+        uint256 fifthId = market.placeBet(OrderbookMarket.Direction.UP, 0.04 ether, address(0), 2e18, 5000);
+        assertEq(market.getOrder(fifthId).filledAmount, 0.04 ether, "freed cap lets a new bet reach the LP");
+    }
+
+    /// The same release must happen on a TIE - it goes through a different
+    /// code path (_refundTiedMatch) than a normal win/loss settlement.
+    function test_TraderLpExposure_ReleasesOnTie() public {
+        weth.mint(address(this), 10 ether);
+        weth.approve(address(lp), 10 ether);
+        lp.deposit(10 ether, address(this));
+
+        _bet(alice, OrderbookMarket.Direction.UP, 0.04 ether);
+        assertEq(market.traderLpExposure(alice), 0.04 ether);
+
+        OrderbookMarket.Match memory m1 = market.getMatch(1);
+        vm.warp(m1.settleAt + 1); // pool never moves: exact tie
+        vm.prank(keeper);
+        resolver.resolveOrderbookMarketBatch(address(market), 10);
+        assertEq(market.getMatch(1).exitPrice, market.getMatch(1).entryPrice, "tied");
+
+        assertEq(market.traderLpExposure(alice), 0, "a tied LP match releases its exposure too");
+    }
+
+    /// And on an emergency refund - the third and last terminal path for an
+    /// LP-matched match.
+    function test_TraderLpExposure_ReleasesOnEmergencyRefund() public {
+        weth.mint(address(this), 10 ether);
+        weth.approve(address(lp), 10 ether);
+        lp.deposit(10 ether, address(this));
+
+        _bet(alice, OrderbookMarket.Direction.UP, 0.04 ether);
+        assertEq(market.traderLpExposure(alice), 0.04 ether);
+
+        OrderbookMarket.Match memory m1 = market.getMatch(1);
+        pool.setLiquidity(0); // unpriceable
+        vm.warp(m1.settleAt + market.SETTLE_GRACE() + 1);
+        market.emergencyRefundMatch(1);
+
+        assertEq(market.traderLpExposure(alice), 0, "an emergency-refunded LP match releases its exposure too");
+    }
+
     /// An entry cannot be struck against a pool that cannot price itself.
     function test_EntryRevertsWhenThePoolCannotPrice() public {
         pool.setForceOld(true);

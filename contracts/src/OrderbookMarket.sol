@@ -23,6 +23,7 @@ interface IFeeDistributor {
 
 interface IReferralRegistry {
     function register(address referee, address referrer) external;
+    function referrerOf(address referee) external view returns (address);
 }
 
 /**
@@ -106,6 +107,13 @@ contract OrderbookMarket is ReentrancyGuard, Pausable, PrimaryProdDataServiceCon
      */
     function MIN_BET() public view virtual returns (uint256) {
         return 1e6; // 1 USDC
+    }
+
+    /// @notice Smallest amount that may create a separately settled match.
+    /// @dev A bet floor alone is insufficient when partial fills leave a
+    ///      sub-floor remainder. The default preserves Base behaviour.
+    function MIN_MATCH_AMOUNT() public view virtual returns (uint256) {
+        return MIN_BET();
     }
 
     function MAX_BET() public view virtual returns (uint256) {
@@ -261,6 +269,7 @@ contract OrderbookMarket is ReentrancyGuard, Pausable, PrimaryProdDataServiceCon
     event LPMatched(uint256 indexed matchId, uint256 orderId, uint256 amount, uint256 entryPrice);
     event OrderFilled(uint256 indexed orderId, uint256 totalFilled); // emitted once filledAmount == amount
     event MatchSettled(uint256 indexed matchId, bool upWon, uint256 entry, uint256 exit);
+    event MatchTied(uint256 indexed matchId, uint256 price);
     event OrderRefunded(uint256 indexed orderId, address trader, uint256 amount); // partial when amount < order.amount
     event Claimed(uint256 indexed orderId, address trader, uint256 payout);
 
@@ -442,6 +451,11 @@ contract OrderbookMarket is ReentrancyGuard, Pausable, PrimaryProdDataServiceCon
                 _removeAt(oppositeQueue, i);
                 continue;
             }
+            if (candidateRemaining < MIN_MATCH_AMOUNT()) {
+                _refundUnmatchedTail(candidateId, candidate);
+                continue;
+            }
+            if (myRemaining < MIN_MATCH_AMOUNT()) break;
 
             uint256 matchAmount = myRemaining < candidateRemaining ? myRemaining : candidateRemaining;
 
@@ -501,13 +515,20 @@ contract OrderbookMarket is ReentrancyGuard, Pausable, PrimaryProdDataServiceCon
         uint256 cap = MAX_TRADER_LP_EXPOSURE();
         uint256 traderRoom = cap > traderUsed ? cap - traderUsed : 0;
         uint256 lpRequest = remaining < traderRoom ? remaining : traderRoom;
-        if (lpRequest == 0) return;
+        if (lpRequest < MIN_MATCH_AMOUNT()) return;
 
         uint256 reservedId = nextMatchId; // hint for LP bookkeeping; final id chosen in _createMatch
         uint256 lpMatched = ILiquidityPool(liquidityPool).tryMatch(orderId, lpRequest, dir == Direction.UP, reservedId);
         require(lpMatched <= lpRequest, "lp overmatched");
 
         if (lpMatched > 0) {
+            // A vault exposure cap can return a small partial amount. Returning
+            // it immediately is cheaper and safer than creating a dust match.
+            if (lpMatched < MIN_MATCH_AMOUNT()) {
+                usdc.safeTransfer(liquidityPool, lpMatched);
+                ILiquidityPool(liquidityPool).onMatchRefunded(reservedId);
+                return;
+            }
             traderLpExposure[o.trader] = traderUsed + lpMatched;
             _createMatch(orderId, 0, dir, lpMatched, currentPrice, true);
             _registerFill(o, lpMatched);
@@ -573,8 +594,16 @@ contract OrderbookMarket is ReentrancyGuard, Pausable, PrimaryProdDataServiceCon
 
         m.settled = true;
         m.exitPrice = exitPrice;
-        m.upWon = exitPrice > m.entryPrice;
         _advancePendingSettlementsHead();
+
+        // Flat is neither UP nor DOWN. A tie refunds both stakes and charges
+        // no fee, avoiding a permanent DOWN edge on inactive pools.
+        if (exitPrice == m.entryPrice) {
+            _refundTiedMatch(matchId, m);
+            emit MatchTied(matchId, exitPrice);
+            return;
+        }
+        m.upWon = exitPrice > m.entryPrice;
 
         if (!m.lpMatch) {
             _settleOrder(m.upOrderId, m.upWon, m);
@@ -583,6 +612,15 @@ contract OrderbookMarket is ReentrancyGuard, Pausable, PrimaryProdDataServiceCon
             bool userIsUp = m.upOrderId != 0;
             uint256 userOrderId = userIsUp ? m.upOrderId : m.downOrderId;
             bool userWon = userIsUp ? m.upWon : !m.upWon;
+
+            // Release this match's own share of the trader's LP exposure cap.
+            // Markets on this chain have no close time and live forever, so a
+            // cap that only ever grows (its own doc comment assumes markets
+            // are recreated every few minutes, resetting it) would otherwise
+            // become a lifetime ban from the LP the moment a trader's closed
+            // positions add up to it - long after the capital those
+            // positions used is back in the vault and free again.
+            traderLpExposure[orders[userOrderId].trader] -= m.amount;
 
             _settleOrder(userOrderId, userWon, m);
 
@@ -594,6 +632,28 @@ contract OrderbookMarket is ReentrancyGuard, Pausable, PrimaryProdDataServiceCon
         }
 
         emit MatchSettled(matchId, m.upWon, m.entryPrice, exitPrice);
+    }
+
+    function _refundTiedMatch(uint256 matchId, Match storage m) internal {
+        if (!m.lpMatch) {
+            Order storage up = orders[m.upOrderId];
+            Order storage dn = orders[m.downOrderId];
+            _decrementSettlement(up);
+            _decrementSettlement(dn);
+            usdc.safeTransfer(up.trader, m.amount);
+            usdc.safeTransfer(dn.trader, m.amount);
+            emit OrderRefunded(m.upOrderId, up.trader, m.amount);
+            emit OrderRefunded(m.downOrderId, dn.trader, m.amount);
+        } else {
+            uint256 userOrderId = m.upOrderId != 0 ? m.upOrderId : m.downOrderId;
+            Order storage o = orders[userOrderId];
+            traderLpExposure[o.trader] -= m.amount; // see settleMatch's LP branch
+            _decrementSettlement(o);
+            usdc.safeTransfer(o.trader, m.amount);
+            usdc.safeTransfer(liquidityPool, m.amount);
+            emit OrderRefunded(userOrderId, o.trader, m.amount);
+            ILiquidityPool(liquidityPool).onMatchRefunded(matchId);
+        }
     }
 
     /// @dev Accumulate per-match payout into the order. Only flip status to
@@ -619,7 +679,19 @@ contract OrderbookMarket is ReentrancyGuard, Pausable, PrimaryProdDataServiceCon
 
             if (fee > 0 && feeDistributor != address(0)) {
                 usdc.safeTransfer(feeDistributor, fee);
-                IFeeDistributor(feeDistributor).distributeFee(fee, o.referrer);
+                // The REGISTRY'S referrer, not this order's own `referrer`
+                // field. The registry is sticky (first referrer wins,
+                // forever) precisely so a trader cannot redirect it later -
+                // but paying o.referrer here meant that protection never
+                // reached the money: a trader with an already-registered
+                // referrer could still pass a different address on any one
+                // placeBet call and redirect THAT bet's referral share to it,
+                // including to themselves. o.referrer is kept on the struct
+                // for the register() call at placement time (harmless there,
+                // since register() itself already ignores a second address);
+                // it is simply no longer what payout reads.
+                address ref = referralRegistry != address(0) ? IReferralRegistry(referralRegistry).referrerOf(o.trader) : address(0);
+                IFeeDistributor(feeDistributor).distributeFee(fee, ref);
             }
         }
 
@@ -675,6 +747,7 @@ contract OrderbookMarket is ReentrancyGuard, Pausable, PrimaryProdDataServiceCon
         } else {
             uint256 userOrderId = m.upOrderId != 0 ? m.upOrderId : m.downOrderId;
             Order storage o = orders[userOrderId];
+            traderLpExposure[o.trader] -= m.amount; // see settleMatch's LP branch
             _forceRefundOrder(o);
             usdc.safeTransfer(o.trader, m.amount);
             usdc.safeTransfer(liquidityPool, m.amount);
