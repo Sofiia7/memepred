@@ -5,7 +5,10 @@ import { pg }    from '../db/pg.js'
 import { parse } from '../lib/validate.js'
 
 const LbQuery = z.object({
-  period: z.enum(['weekly', 'monthly', 'alltime']).default('weekly'),
+  // 'daily' added: the frontend's 24H tab (Leaderboard.tsx) has always sent
+  // period=daily, which this enum rejected with a 400 - the tab could never
+  // show anything but "NO DATA YET" regardless of how much volume there was.
+  period: z.enum(['daily', 'weekly', 'monthly', 'alltime']).default('weekly'),
   limit:  z.coerce.number().int().min(1).max(200).default(100),
 })
 
@@ -34,6 +37,7 @@ const MIN_DISTINCT_OPPONENTS = Number(process.env.LEADERBOARD_MIN_OPPONENTS ?? '
 // of THREE fixed strings, safe to interpolate even though SQL doesn't allow
 // parameterizing INTERVAL.
 const INTERVALS: Record<string, string> = {
+  daily:   '1 day',
   weekly:  '7 days',
   monthly: '30 days',
   alltime: '100 years',
