@@ -15,8 +15,8 @@ import {
   useAccount,
   usePublicClient,
 } from 'wagmi'
-import { parseUnits, maxUint256, decodeEventLog, type Address, type Hash, encodeFunctionData } from 'viem'
-import { CONTRACTS, ORDERBOOK_MARKET_ABI, ERC20_ABI, CURRENCY_DECIMALS } from '../lib/contracts'
+import { parseUnits, decodeEventLog, type Address, type Hash, encodeFunctionData } from 'viem'
+import { CONTRACTS, ORDERBOOK_MARKET_ABI, ERC20_ABI, CURRENCY_DECIMALS, CURRENCY_SYMBOL, IS_POOL_BACKED } from '../lib/contracts'
 import { getPendingReferrer } from '../lib/referral'
 import { fetchBetPayload, withPayload } from '../lib/oracle'
 import { useEnsureChain } from './useEnsureChain'
@@ -65,6 +65,7 @@ export function usePlaceBet({
   const [step, setStep] = useState<BetStep>('idle')
   const [error, setError] = useState<string>()
   const [orderId, setOrderId] = useState<bigint>()
+  const [submittedHash, setSubmittedHash] = useState<Hash>()
 
   const amountWei = parseUnits(amountUsd || '0', CURRENCY_DECIMALS)
 
@@ -88,11 +89,13 @@ export function usePlaceBet({
   // watched the same hash and blocked nothing, which is how the bet came to be
   // sent against an allowance that had not landed.
   const { writeContractAsync: approve } = useWriteContract()
+  const { writeContractAsync: placeBet } = useWriteContract()
 
   const { sendTransactionAsync: sendBet, data: betTxHash } = useSendTransaction()
+  const finalBetHash = betTxHash ?? submittedHash
   const { data: betReceipt, isSuccess: betReceiptOk } = useWaitForTransactionReceipt({
-    hash: betTxHash,
-    query: { enabled: !!betTxHash },
+    hash: finalBetHash,
+    query: { enabled: !!finalBetHash },
   })
 
   // ── 4.1: decode OrderPlaced log → orderId state ───────────
@@ -121,6 +124,7 @@ export function usePlaceBet({
     if (!address || amountWei === 0n) return
     setError(undefined)
     setOrderId(undefined)
+    setSubmittedHash(undefined)
 
     try {
       const chainCheck = await ensureChain()
@@ -132,11 +136,19 @@ export function usePlaceBet({
 
       if (!allowance || allowance < amountWei) {
         setStep('approving')
+        // Bounded to this bet's own stake, not maxUint256. marketAddress comes
+        // from a URL param one hop up the call chain (Market.tsx reads
+        // /market/:address) - Market.tsx now refuses to render the Composer
+        // for an address that fails PoolMarketFactory.isMarket, but this hook
+        // is the last line of defence and must never ask for more allowance
+        // than it is about to spend. The cost is re-approving on every bet
+        // whose stake exceeds the existing allowance, which is the correct
+        // trade against a wallet-draining approval to an unverified contract.
         const approveHash = await approve({
           address: CONTRACTS.USDC,
           abi: ERC20_ABI,
           functionName: 'approve',
-          args: [marketAddress, maxUint256],
+          args: [marketAddress, amountWei],
         })
         // Wait for it to land, not merely to be submitted.
         //
@@ -149,7 +161,7 @@ export function usePlaceBet({
         if (publicClient) {
           const receipt = await publicClient.waitForTransactionReceipt({ hash: approveHash })
           if (receipt.status !== 'success') {
-            throw new Error('USDC approval failed on-chain - nothing was bet.')
+            throw new Error(`${CURRENCY_SYMBOL} approval failed on-chain - nothing was bet.`)
           }
         }
         await refetchAllowance()
@@ -171,47 +183,50 @@ export function usePlaceBet({
         throw new Error('Market price feed unavailable - cannot price this bet.')
       }
 
-      let payload: `0x${string}`
-      try {
-        payload = await fetchBetPayload(marketFeedId)
-      } catch (e: any) {
-        throw new Error(
-          `Couldn't fetch a live price (${e?.message ?? 'network error'}). ` +
-          `Bets are priced from a fresh oracle update, so please try again in a moment.`,
-        )
-      }
-
-      // sendTransaction with hand-built calldata, not writeContract: RedStone
-      // reads the price from the tail of the calldata, and writeContract
-      // encodes the call itself with nowhere to append. There is also no fee
-      // to attach any more - RedStone verifies signatures inside our own
-      // contract and charges nothing, so placeBet is not even payable.
-      await sendBet({
-        to: marketAddress,
-        data: withPayload(
-          encodeFunctionData({
+      if (IS_POOL_BACKED) {
+        // PoolOrderbookMarket obtains its 60s TWAP on-chain. It is an ordinary
+        // contract call: no RedStone payload and no hand-built calldata.
+        const hash = await placeBet({
+          address: marketAddress,
+          abi: ORDERBOOK_MARKET_ABI,
+          functionName: 'placeBet',
+          args: [direction, amountWei, effectiveReferrer, expectedPrice, BigInt(slippageBps)],
+        })
+        setSubmittedHash(hash)
+      } else {
+        let payload: `0x${string}`
+        try {
+          payload = await fetchBetPayload(marketFeedId)
+        } catch (e: any) {
+          throw new Error(`Couldn't fetch a live price (${e?.message ?? 'network error'}). Please try again.`)
+        }
+        const hash = await sendBet({
+          to: marketAddress,
+          data: withPayload(encodeFunctionData({
             abi: ORDERBOOK_MARKET_ABI,
             functionName: 'placeBet',
             args: [direction, amountWei, effectiveReferrer, expectedPrice, BigInt(slippageBps)],
-          }),
-          payload,
-        ),
-      })
+          }), payload),
+        })
+        setSubmittedHash(hash)
+      }
 
-      setStep('confirmed')
+      // Confirmation is derived from the receipt below. Wallet acceptance only
+      // means the transaction was submitted; redirecting before inclusion can
+      // hide a reverted RHC bet.
     } catch (err: any) {
       setStep('error')
       setError(err?.shortMessage || err?.message || 'Transaction failed')
     }
-  }, [address, amountWei, allowance, direction, marketAddress, effectiveReferrer, expectedPrice, slippageBps, marketFeedId, approve, refetchAllowance, sendBet, ensureChain, publicClient])
+  }, [address, amountWei, allowance, direction, marketAddress, effectiveReferrer, expectedPrice, slippageBps, marketFeedId, approve, placeBet, refetchAllowance, sendBet, ensureChain, publicClient])
 
   return {
     execute,
     step,
     error,
-    betTxHash,
+    betTxHash: finalBetHash,
     orderId, // Sprint 4.1: now populated after confirmation
     isLoading: step === 'approving' || step === 'betting',
-    isConfirmed: step === 'confirmed',
+    isConfirmed: betReceiptOk,
   }
 }

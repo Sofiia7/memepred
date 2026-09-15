@@ -40,6 +40,33 @@ export const SETTLE_GRACE_SEC = 24 * 60 * 60
 // the payout preview shows both ends rather than the flattering one.
 export const LP_TAKER_FEE_BPS = 100
 
+/** PoolOracleResolver's read-only RHC price surface. */
+export const POOL_ORACLE_RESOLVER_ABI = [
+  {
+    name: 'spotPriceWad', type: 'function', stateMutability: 'view',
+    inputs: [{ name: 'feedId', type: 'bytes32' }],
+    outputs: [{ type: 'uint256' }],
+  },
+] as const
+
+// MarketFactory / PoolMarketFactory: the one read the frontend needs before it
+// ever trusts a market address that came straight from the URL
+// (`/market/:address`). Both factories declare `mapping(address => bool)
+// public isMarket`, so the generated getter is identical on Base and RHC.
+//
+// Without this check, a link to /market/0xAttacker gets a connected wallet to
+// approve its whole balance to an arbitrary contract before the app has ever
+// asked whether that address is a market this protocol created.
+export const MARKET_FACTORY_ABI = [
+  {
+    name: 'isMarket',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [{ name: 'market', type: 'address' }],
+    outputs: [{ type: 'bool' }],
+  },
+] as const
+
 // ── ABIs ───────────────────────────────────────────────────
 
 // Legacy PvPMarket ABI (kept for backward compatibility)
@@ -232,6 +259,13 @@ export const ORDERBOOK_MARKET_ABI = [
   },
   {
     name: 'duration',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ type: 'uint256' }]
+  },
+  {
+    name: 'feeBps',
     type: 'function',
     stateMutability: 'view',
     inputs: [],
