@@ -95,6 +95,19 @@ const DEFAULT_API_HOST = 'api.flipthememe.com'
 const DEFAULT_SITE_HOST = 'flipthememe.com'
 
 /**
+ * " (robinhood-chain)" when DEPLOYMENT is set, else "" - every alert subject
+ * runs through this so two watchdogs never read as one in an inbox.
+ */
+function deployTag(env: Env): string {
+  return env.DEPLOYMENT ? ` (${env.DEPLOYMENT})` : ''
+}
+
+/** The human-facing health page, on whichever host this worker is actually watching. */
+function keeperHealthUrl(env: Env): string {
+  return `https://${env.API_HOST ?? DEFAULT_API_HOST}/api/keeper/health`
+}
+
+/**
  * What this worker watches, built from its own configuration.
  *
  * These were four hardcoded URLs, which was right while there was one
@@ -102,8 +115,23 @@ const DEFAULT_SITE_HOST = 'flipthememe.com'
  * backend would have had no monitor at all, and the worker watching the first
  * would have gone on reporting green for it. One worker per deployment, each
  * with its own API_HOST, is the shape that scales without duplicating this file.
+ *
+ * DEPLOYMENT set without API_HOST/SITE_HOST is refused rather than defaulted:
+ * a KV namespace id filled in on its own - the only other thing standing
+ * between wrangler.watchdog.rhc.toml and a real deploy - would otherwise
+ * start this worker watching Base under the "robinhood-chain" label and
+ * reporting it all green: the exact failure mode this file exists to catch,
+ * just aimed at itself.
  */
 function checksFor(env: Env): Check[] {
+  if (env.DEPLOYMENT && (!env.API_HOST || !env.SITE_HOST)) {
+    throw new Error(
+      `[watchdog] DEPLOYMENT="${env.DEPLOYMENT}" is set but API_HOST/SITE_HOST ` +
+      `are not - refusing to fall back to the Base defaults (${DEFAULT_API_HOST} / ` +
+      `${DEFAULT_SITE_HOST}) under a different deployment's label. Set both ` +
+      `API_HOST and SITE_HOST in this deployment's wrangler .toml [vars] before deploying.`
+    )
+  }
   const api = env.API_HOST ?? DEFAULT_API_HOST
   const site = env.SITE_HOST ?? DEFAULT_SITE_HOST
   return [
@@ -344,7 +372,7 @@ async function tick(env: Env, now: number): Promise<State> {
       const minutes = Math.round((now - (next.since || now)) / 60_000)
       await notify(
         env,
-        `FlipTheMeme is DOWN - ${detail}`,
+        `FlipTheMeme is DOWN${deployTag(env)} - ${detail}`,
         [
           detail,
           '',
@@ -352,7 +380,7 @@ async function tick(env: Env, now: number): Promise<State> {
           '',
           ...results.map(r => `  ${r.ok ? 'ok  ' : 'FAIL'} ${r.name.padEnd(9)} ${r.detail}`),
           '',
-          'https://api.flipthememe.com/api/keeper/health',
+          keeperHealthUrl(env),
         ].join('\n'),
       )
       next.status      = 'down'
@@ -363,7 +391,7 @@ async function tick(env: Env, now: number): Promise<State> {
   // ── recovery ────────────────────────────────────────────────────────
   if (!down && prev.status === 'down') {
     const minutes = Math.round((now - prev.since) / 60_000)
-    await notify(env, 'FlipTheMeme recovered', `Back up after ~${minutes} min down.\n\nWas: ${prev.detail}`)
+    await notify(env, `FlipTheMeme recovered${deployTag(env)}`, `Back up after ~${minutes} min down.\n\nWas: ${prev.detail}`)
     next.status = 'ok'
     next.since  = now
   }
@@ -374,13 +402,13 @@ async function tick(env: Env, now: number): Promise<State> {
   if (!down && warns.length && utcDay(now) !== prev.lastWarnDay) {
     await notify(
       env,
-      `FlipTheMeme degraded - ${warns.join(', ')}`,
+      `FlipTheMeme degraded${deployTag(env)} - ${warns.join(', ')}`,
       `Up and serving, but: ${warns.join(', ')}.\n\n` +
       'keeper-eth-low   -> top up the keeper wallet\n' +
       'resolver-eth-low -> send ETH to OracleResolver\n' +
       'feed-degraded    -> an oracle feed is failing to publish\n' +
       'invariant-unmeasured -> the money monitor cannot read every balance; red after 15 min\n\n' +
-      'https://api.flipthememe.com/api/keeper/health',
+      keeperHealthUrl(env),
     )
     next.lastWarnDay = utcDay(now)
   }
@@ -394,7 +422,7 @@ async function tick(env: Env, now: number): Promise<State> {
     if (prev.lastHeartbeatDay !== '') {
       await notify(
         env,
-        `FlipTheMeme daily check${env.DEPLOYMENT ? ` (${env.DEPLOYMENT})` : ''} - all green`,
+        `FlipTheMeme daily check${deployTag(env)} - all green`,
         `${checks.length} checks passing against ${env.API_HOST ?? DEFAULT_API_HOST}.\n\n` +
           'If this stops arriving, the watchdog is dead - not the silence.',
       )
@@ -454,7 +482,7 @@ export default {
       }
       const sent = await notify(
         env,
-        'FlipTheMeme watchdog - test alert',
+        `FlipTheMeme watchdog${deployTag(env)} - test alert`,
         'This is a test, production is not down.\n\n' +
         'It was sent to prove the alert path works end to end. A real alert ' +
         'looks like this one and names which check failed.',
