@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
+import { usePublicClient } from 'wagmi'
 
 import { fetchDisplayPrice } from '../lib/oracle.js'
+import { CONTRACTS, IS_POOL_BACKED, POOL_ORACLE_RESOLVER_ABI } from '../lib/contracts.js'
 
 /**
  * How long a price may go unrefreshed before the UI stops calling it live.
@@ -22,6 +24,7 @@ export interface PythPrice {
 }
 
 export function usePythPrice(feedId?: string | null): PythPrice {
+  const publicClient = usePublicClient()
   const [raw, setRaw] = useState<bigint>(0n)
   const [display, setDisplay] = useState<number>(0)
   const [loading, setLoading] = useState<boolean>(!!feedId)
@@ -35,12 +38,21 @@ export function usePythPrice(feedId?: string | null): PythPrice {
 
     async function tick() {
       try {
-        // RedStone hands back a plain number, so there is no exponent to
-        // apply - only the scaling to the 1e18 the contracts work in.
-        const usd = await fetchDisplayPrice(feedId!)
+        // Robinhood markets price directly from their Uniswap v3 pool. The
+        // same resolver call supplies the displayed strike and the contract's
+        // entry check, so the UI never asks the legacy RedStone API to decode
+        // a pool address as a symbol.
+        const rawPrice = IS_POOL_BACKED
+          ? await publicClient!.readContract({
+              address: CONTRACTS.ORACLE_RESOLVER,
+              abi: POOL_ORACLE_RESOLVER_ABI,
+              functionName: 'spotPriceWad',
+              args: [feedId as `0x${string}`],
+            })
+          : BigInt(Math.round((await fetchDisplayPrice(feedId!)) * 1e18))
         if (cancel) return
-        setRaw(BigInt(Math.round(usd * 1e18)))
-        setDisplay(usd)
+        setRaw(rawPrice)
+        setDisplay(Number(rawPrice) / 1e18)
         setLastOkAt(Date.now())
       } catch {
         /* network blip - keep the last price, but stop calling it live */
@@ -52,7 +64,7 @@ export function usePythPrice(feedId?: string | null): PythPrice {
     tick()
     timer = setInterval(tick, 10_000)
     return () => { cancel = true; clearInterval(timer) }
-  }, [feedId])
+  }, [feedId, publicClient])
 
   // Ticks the clock so staleness appears on its own, without waiting for a
   // successful fetch to re-render the component that is displaying nothing new.

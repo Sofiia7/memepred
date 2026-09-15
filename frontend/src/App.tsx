@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { BrowserRouter, Navigate, Routes, Route } from 'react-router-dom'
 import { checkGeo } from './lib/geocheck'
 import { signalAppReady } from './lib/miniapp'
 import { captureReferralCode } from './lib/referral'
@@ -16,6 +16,7 @@ import { TermsPage } from './pages/Terms'
 import { GeoBlock } from './components/GeoBlock'
 import { RiskGate } from './components/RiskDisclosure'
 import { AppShell } from './components/ui/AppShell'
+import { IS_POOL_BACKED } from './lib/contracts'
 
 export function App() {
   const [blocked, setBlocked] = useState(false)
@@ -47,7 +48,7 @@ export function App() {
           <Route path="/order/:address/:orderId" element={<OrderPage />} />
           <Route path="/leaderboard" element={<Leaderboard />} />
           <Route path="/portfolio" element={<Portfolio />} />
-          <Route path="/genesis" element={<GenesisPage />} />
+          <Route path="/genesis" element={IS_POOL_BACKED ? <Navigate to="/pools" replace /> : <GenesisPage />} />
           <Route path="/refer" element={<ReferPage />} />
           <Route path="/how-it-works" element={<HowItWorksPage />} />
           <Route path="/terms" element={<TermsPage />} />

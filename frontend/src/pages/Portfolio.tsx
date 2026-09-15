@@ -1,8 +1,9 @@
 import { useAccount } from 'wagmi'
-import { CURRENCY_SYMBOL } from '../lib/contracts'
+import { CURRENCY_DECIMALS, CURRENCY_SYMBOL, IS_POOL_BACKED } from '../lib/contracts'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { type Address } from 'viem'
+import { formatUnits } from 'viem'
 import { useClaim } from '../hooks/useClaim'
 import { useReferral } from '../hooks/useReferral'
 import { useConnectWallet } from '../hooks/useConnectWallet'
@@ -12,6 +13,12 @@ import { WalletIcon, Chev } from '../components/ui/icons'
 import { symbolMeta, shortAddr } from '../lib/symbols'
 
 const API = import.meta.env.VITE_API_URL
+
+function money(value: number, decimals = 2): string {
+  return IS_POOL_BACKED
+    ? `${value.toFixed(decimals)} ${CURRENCY_SYMBOL}`
+    : `$${value.toFixed(decimals)}`
+}
 
 interface Bet {
   market_address: Address
@@ -88,9 +95,9 @@ function BetRow({ bet }: { bet: Bet }) {
           <span className={'pick-pill ' + (isUp ? 'up' : 'dn')} style={{ marginRight: 6, padding: '2px 6px', fontSize: 9 }}>
             <Chev dir={isUp ? 'up' : 'down'} /> {bet.direction}
           </span>
-          {bet.feed_symbol} · ${amount.toFixed(2)}
+          {bet.feed_symbol} · {money(amount, IS_POOL_BACKED ? 4 : 2)}
         </div>
-        <div className="lb-sub">{status}{payout !== null ? ` · payout $${payout.toFixed(2)}` : ''}</div>
+        <div className="lb-sub">{status}{payout !== null ? ` · payout ${money(payout, IS_POOL_BACKED ? 4 : 2)}` : ''}</div>
       </div>
       {canClaim ? (
         <ClaimButton marketAddress={bet.market_address} orderId={BigInt(bet.order_id!)} />
@@ -98,7 +105,7 @@ function BetRow({ bet }: { bet: Bet }) {
         <span />
       )}
       <div className={'lb-pnl ' + (bet.won === false ? 'dn' : '')}>
-        {payout !== null ? `$${payout.toFixed(2)}` : '-'}
+        {payout !== null ? money(payout, IS_POOL_BACKED ? 4 : 2) : '-'}
       </div>
     </>
   )
@@ -129,7 +136,8 @@ function ReferralPanel() {
   const refLink = r.myCode && r.myCode !== '0x000000000000'
     ? `${window.location.origin}/?ref=${r.myCode}`
     : null
-  const claimable = Number(r.claimableRewards ?? 0n) / 1e6
+  const claimable = Number(formatUnits(r.claimableRewards ?? 0n, CURRENCY_DECIMALS))
+  const displayAmount = money(claimable, IS_POOL_BACKED ? 4 : 2)
 
   return (
     <>
@@ -142,7 +150,7 @@ function ReferralPanel() {
       <StatStrip
         items={[
           { k: 'Friends Referred', v: String(Number(r.myReferralCount ?? 0n)) },
-          { k: 'Claimable', v: `$${claimable.toFixed(2)}`, tone: claimable > 0 ? 'up' : undefined },
+          { k: 'Claimable', v: displayAmount, tone: claimable > 0 ? 'up' : undefined },
         ]}
       />
       {refLink ? (
@@ -159,7 +167,7 @@ function ReferralPanel() {
       {claimable > 0 && (
         <button className="cta" style={{ marginBottom: 14 }} onClick={r.claimRewards} disabled={r.busy}>
           {r.busy ? <span className="spinner" /> : <span className="basesq" />}
-          CLAIM ${claimable.toFixed(2)}
+          CLAIM {displayAmount}
         </button>
       )}
     </>
@@ -231,13 +239,13 @@ export function Portfolio() {
 
       <StatStrip
         items={[
-          { k: 'Profit', v: `${profile.profit >= 0 ? '+' : '−'}$${Math.abs(profile.profit).toFixed(2)}`, tone: profile.profit >= 0 ? 'up' : 'dn' },
+          { k: 'Profit', v: `${profile.profit >= 0 ? '+' : '−'}${money(Math.abs(profile.profit), IS_POOL_BACKED ? 4 : 2)}`, tone: profile.profit >= 0 ? 'up' : 'dn' },
           { k: 'Accuracy', v: `${profile.accuracy}%`, u: `${profile.wonBets}/${profile.totalBets}` },
         ]}
       />
       <StatStrip
         items={[
-          { k: 'Volume', v: `$${profile.totalVolume.toFixed(0)}`, u: CURRENCY_SYMBOL },
+          { k: 'Volume', v: money(profile.totalVolume, IS_POOL_BACKED ? 4 : 0) },
           { k: 'Streak', v: `🔥 ${profile.currentStreak}`, u: `max ${profile.maxStreak}` },
         ]}
       />

@@ -11,18 +11,24 @@
  * separate infra project, not a client-only fix.
  */
 import { useState } from 'react'
+import type { Address } from 'viem'
+import { CURRENCY_SYMBOL } from '../lib/contracts'
+import { IS_POOL_BACKED } from '../lib/chain'
 
 interface Props {
   direction:  'UP' | 'DOWN'
-  amountUsd:  string
-  payoutUsd:  string
+  amount:     string
+  payout:     string
+  marketAddress: Address
+  orderId: bigint
 }
 
-export function ShareCard({ direction, amountUsd, payoutUsd }: Props) {
+export function ShareCard({ direction, amount, payout, marketAddress, orderId }: Props) {
   const [copied, setCopied] = useState(false)
 
-  const text = `🎯 Just won $${payoutUsd} predicting ${direction} on FlipTheMeme (staked $${amountUsd}). Predict meme coin prices on Base 👇`
-  const url = window.location.origin
+  const network = IS_POOL_BACKED ? 'Robinhood Chain' : 'Base'
+  const text = `🎯 Just won ${payout} ${CURRENCY_SYMBOL} predicting ${direction} on FlipTheMeme (staked ${amount} ${CURRENCY_SYMBOL}) on ${network}.`
+  const url = `${window.location.origin}/order/${marketAddress}/${orderId.toString()}`
 
   async function handleShare() {
     if (navigator.share) {

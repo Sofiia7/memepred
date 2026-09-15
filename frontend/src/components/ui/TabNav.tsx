@@ -8,11 +8,11 @@ export function TabNav() {
   const tabs: { to: string; label: string; ico: JSX.Element; end?: boolean }[] = [
     { to: '/', label: 'MARKETS', ico: <MarketsIcon />, end: true },
     { to: '/leaderboard', label: 'LEADERS', ico: <TrophyIcon /> },
-    { to: '/genesis', label: 'GENESIS', ico: <StarIcon /> },
   ]
   // Only where a market is backed by a pool. On a feed-priced deployment the
   // list is three whitelisted symbols and there is nothing to browse.
   if (IS_POOL_BACKED) tabs.splice(1, 0, { to: '/pools', label: 'POOLS', ico: <PoolsIcon /> })
+  else tabs.push({ to: '/genesis', label: 'GENESIS', ico: <StarIcon /> })
   if (isConnected) tabs.push({ to: '/portfolio', label: 'PORTFOLIO', ico: <WalletIcon /> })
 
   return (

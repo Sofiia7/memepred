@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { ScreenTitle } from '../components/ui/AppShell'
 import { MAX_BET, MIN_BET, CURRENCY_SYMBOL } from '../lib/contracts'
+import { IS_POOL_BACKED } from '../lib/chain'
 
 function Step({ n, title, children }: { n: number; title: string; children: ReactNode }) {
   return (
@@ -22,32 +23,30 @@ export function HowItWorksPage() {
 
       <div className="how-steps">
         <Step n={1} title="Pick a coin, a direction, and a timeframe">
-          Choose UP or DOWN for a meme coin's USD price over a fixed window (5 min to 24h),
+          Choose UP or DOWN for a meme coin's {IS_POOL_BACKED ? 'price in WETH' : 'USD price'} over a fixed window,
           then stake between {MIN_BET} and {MAX_BET} {CURRENCY_SYMBOL}.
         </Step>
         <Step n={2} title="You get matched">
-          Your stake is matched against a trader who picked the opposite side (peer match,
-          no fee), or - if no one's on the other side yet - against the Genesis LP vault
-          (a 1% fee applies only if you beat the pool). If neither is available within
-          5 minutes, your stake is refunded automatically.
+          Your stake is matched against a trader who picked the opposite side, or on selected
+          markets against the LP vault. If no match is available, the unmatched part can be
+          refunded after 5 minutes.
         </Step>
         <Step n={3} title="The market settles">
-          When the timeframe ends, the RedStone oracle price decides the winner - nobody at
-          FlipTheMeme picks or influences the outcome.
+          When the timeframe ends, {IS_POOL_BACKED ? 'the pool’s on-chain TWAP' : 'the RedStone oracle'} decides the
+          winner. An exact tie returns both stakes.
         </Step>
         <Step n={4} title="Winner takes the pot">
-          The winning side gets 2× its matched stake (minus the LP fee if you were matched
-          against the pool). You claim it yourself from the order page - funds aren't sent
-          automatically.
+          The winning side gets its matched pot less the displayed fees. You claim a winning
+          payout yourself from the order page; tie refunds are returned automatically.
         </Step>
       </div>
 
       <div className="b-title">Good to know</div>
       <ul className="how-facts">
-        <li>Non-custodial: USDC sits in the smart contract the whole time, not with us.</li>
+        <li>Non-custodial: {CURRENCY_SYMBOL} sits in the smart contract the whole time, not with us.</li>
         <li>Settlement is automatic and on-chain - there's no house to argue an outcome with.</li>
-        <li>The "% queue" shown on UP/DOWN buttons is how many other bets are waiting on
-          each side right now, not a price - the payout is always 2× your stake if you win.</li>
+        <li>Queue information shows waiting orders, not the probability that UP or DOWN wins.
+          The exact payout and fee are shown before you place a bet.</li>
         <li>This is a real-money product with real-money risk. You can lose your entire
           stake. Nothing here is investment advice, and past outcomes don't predict future
           ones.</li>
