@@ -24,10 +24,10 @@
 
 **Тексты для формы регистрации** (длина проверена, лимит поля 300 знаков):
 
-- *Do you already have an idea…* (296 знаков):
-  `Yes. FlipTheMeme on Robinhood Chain: short up/down bets (1, 5, 15 min) on graduated memecoins, staked in ETH and settled from each token's own Uniswap v3 TWAP. Contracts are deployed and soak-tested on RHC testnet; the buildathon is for the web betting flow, fee and tie rules, and a public demo.`
+- *Do you already have an idea…* (274 знака):
+  `Yes. FlipTheMeme on Robinhood Chain: short up/down bets on graduated memecoins, staked in ETH and settled from each token's own Uniswap v3 TWAP. Contracts are deployed and soak-tested on RHC testnet; the buildathon is for a fixed redeploy, the public web flow, and the demo.`
 - *Do you already have a project…* (234 знака):
-  `Yes, FlipTheMeme. The Robinhood Chain prototype is deployed on RHC testnet (46630); one of its markets, with the soak test's settled bets: https://explorer.testnet.chain.robinhood.com/address/0x7Af80bEE3aeF1f879051E4057B9280A2121606c2`
+  `Yes, FlipTheMeme. The Robinhood Chain prototype is deployed on RHC testnet (46630); one of its markets, with the soak test's settled bets: https://explorer.testnet.chain.robinhood.com/address/0x9afAFFAFC3c01BAEF489E9bFE8BB09C455f21BB8`
 
 **Что нужно от тебя:**
 
@@ -99,16 +99,21 @@ capacity, not history. What keeps a thin pool out is the depth gates, not the or
 **No rounds and no schedule.** Our market contract has no close time: a match's clock starts when
 it is matched. One market per pool and duration is created once and lives indefinitely, so a
 trader never waits for the next round, and nothing has to be rolled over or pushed on a timer.
+Markets remain permissionless for PvP; the vault owner separately enables the few reviewed
+markets allowed to draw on shared LP capital.
 What remains is settlement gas per match, a one-off onboarding cost per pool, RPC and hosting.
 Over a 24-hour sample of 1,900 points, gas sat at a median of 0.398 gwei and a 90th percentile of
 0.453, with rare four-minute spikes to 3.06 and no daily cycle.
 
-**Fees you can verify.** The protocol fee is capped at 1% of the pot by a contract constant, can
-only change through a 48-hour timelock that emits a public event, and is snapshotted into each
-market at creation, so an open position settles on the terms it opened under. We ran that
-timelock end to end on testnet: proposed on 5 September, applied on 11 September. To be complete
-about what a user pays: a trader who wins against the LP vault pays a further 1%, and every
-transaction pays gas.
+**Fees you can verify.** The protocol fee is capped at 1% of the pot by a contract constant that
+cannot be raised, and any change for future markets goes through a 48-hour timelock; each market
+keeps the fee it was created with. We ran that timelock end to end on the deployed testnet
+factory: proposed on 5 September, applied on 11 September, `feeBps` moved 0 to 100. To be
+complete about what a user pays: a trader who wins against the LP vault pays a further 1%, and
+every transaction pays gas. One gap the timelock run exposed and we have since closed in code,
+not yet redeployed: new markets started at 0% until governance completed its first change, so a
+permissionless caller could occupy a slot at zero fee before that ever happened - fixed by
+snapshotting the fee cap itself at creation instead.
 
 ## Why Robinhood Chain
 
@@ -152,9 +157,9 @@ use fork tests.
 - **Backend and keeper:** event indexer, a pool watcher that onboards new pools unaided, a
   settlement keeper with nonce escalation and a gas budget, a watchdog. **272 unit tests.**
 
-What is not there yet, plainly: the web betting flow for Robinhood Chain. The contracts, keeper
-and bots have run the full cycle on testnet; the site still speaks the older single-chain price
-path, and wiring it to the pool oracle is the first thing we ship.
+The web betting flow now reads the same PoolOracleResolver TWAP as the contract, submits an
+ordinary RHC call without a RedStone payload, uses WETH bounds, shows market-specific fees and
+states that queue counts are not odds. It still needs an end-to-end wallet test on RHC testnet.
 
 ## What testing found
 
@@ -169,19 +174,20 @@ both versions of the vault.
 
 ## What we will ship during the buildathon (13 September - 4 October)
 
-**Week 1 - the Robinhood Chain web flow.** Price bets from the pool oracle instead of the old
-signed-price path, amounts in WETH within the contract's 0.005-0.04 range, a payout preview that
-includes every fee, and a result receipt that links the pool, the entry and exit prices and the
-transaction. Done when a fresh wallet can bet and claim through the site on Robinhood Chain
+**Week 1 - the Robinhood Chain web flow.** Done in code: price bets come from the pool oracle,
+calls use the RHC path, amounts use the 0.005-0.04 WETH range, and the preview includes the
+market fee plus the LP fee. The acceptance check remains a fresh-wallet bet and claim on RHC
 testnet.
 
-**Week 2 - settlement rules and economics.** A tie refunds both sides; today a tie goes to DOWN,
-which on a pool that has not traded for hours hands DOWN an edge against the LP vault. A minimum
-size per match, not only per order, so partial fills cannot create settlements that no fee pays
-for. A fee split that makes every settled match pay its own settlement gas: today 40% goes to the
-referrer and 20% each to treasury, LP and NFT holders, and at the minimum bet the treasury share
-is below the gas. And a separation between the right to create a market and the right to draw on
-the shared LP vault, which today comes with every permissionless market.
+**Week 2 - settlement rules and economics.** Done in code, pending a testnet redeploy: a tie
+refunds both sides, every settled match has a minimum lot, and PvP creation no longer
+authorizes LP capital by default - the vault owner opts each reviewed market in separately. The
+same pass fixed two ways the settlement queue could jam behind one unpriceable match (a batch's
+gas limit now scales with its size instead of a fixed ceiling too small for a busy tick; an
+overdue match is now swept into the permissionless emergency refund automatically) and closed a
+window where a resting order could be filled at a stale one-second price. Remaining economics
+work is to monitor the RHC gas reserve at low volume. The RHC-specific distributor sends 90% of
+protocol fee to treasury reserve and 10% to a referrer; Base keeps its original split.
 
 **Week 3 - public demo and submission.** A public testnet deployment with external monitoring,
 three to five selected active v3 tokens, a demo video, the submission. A capped mainnet pilot
@@ -201,9 +207,9 @@ contracts, tests and operations above are the output of that setup since March 2
 
 ## Links
 
-- A market with the soak's settled bets, on the Robinhood Chain testnet explorer (an EIP-1167
-  clone of the source-verified `PoolOrderbookMarket`):
-  https://explorer.testnet.chain.robinhood.com/address/0x7Af80bEE3aeF1f879051E4057B9280A2121606c2
+- A five-minute market with the soak's settled bets, on the Robinhood Chain testnet explorer (an
+  EIP-1167 clone of the source-verified `PoolOrderbookMarket`):
+  https://explorer.testnet.chain.robinhood.com/address/0x9afAFFAFC3c01BAEF489E9bFE8BB09C455f21BB8
 - The market factory (source verified):
   https://explorer.testnet.chain.robinhood.com/address/0xE5802e3e9aB5dEFE7F133543Bc90b5893aD75a42
 - Repository: private today, access on request.
