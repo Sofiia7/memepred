@@ -233,15 +233,18 @@ contract PoolOracleResolverTest is Test {
     }
 
     // ── SPREAD GUARDS ────────────────────────────────────────
-    /// (a) Internal consistency: the window average against the tick at the
-    ///     anchor. A pool shoved hard inside its own exit window trips this.
-    function test_SpreadGuard_WindowAgainstAnchor() public {
+    /// (a) Internal consistency: the window average against the average over
+    ///     its own last ANCHOR_FRACTION share. A pool shoved hard for that
+    ///     whole sub-window still trips this.
+    function test_SpreadGuard_WindowAgainstSustainedAnchorPush() public {
         uint256 settleAt = block.timestamp + DURATION;
+        uint256 anchorWindow = WINDOW / resolver.ANCHOR_FRACTION(); // 180/3 = 60s
 
         pool.pushTick(T0 - 3600, 0);
-        // Flat at 0 for most of the window, then a jump right at the end: the
-        // anchor tick is far from the window mean.
-        pool.pushTick(uint32(settleAt - 2), 5000);
+        // Flat at 0 for most of the window, then shoved for the WHOLE anchor
+        // sub-window: the anchor average is far from the window mean even
+        // after averaging, because the push was sustained, not a blip.
+        pool.pushTick(uint32(settleAt - anchorWindow), 5000);
         market.addMatch(1, 1e18, settleAt);
 
         vm.warp(settleAt + 1);
@@ -251,49 +254,97 @@ contract PoolOracleResolverTest is Test {
         assertEq(resolver.resolveOrderbookMarketBatch(address(market), 10), 0);
     }
 
-    /// (b) Anchored price against live reality, but only while the settlement
-    ///     is prompt. Here it is prompt and the pool has been shoved since, so
-    ///     the match is refunded rather than settled.
-    function test_SpreadGuard_AnchoredAgainstLive_WhenPrompt() public {
+    /**
+     * The fix for the exploit this guard used to enable: a 1-2 second spot
+     * push right at settleAt no longer permanently blocks the match.
+     *
+     * Before this fix, the anchor was the single tick AT settleAt - fixed
+     * history the instant time passes it, so a brief push there blocked
+     * settlement FOREVER (the only recovery being a 24h wait for
+     * emergencyRefundMatch, which pays the winner only their own stake back).
+     * A losing side could exploit this for a fraction of a percent of MAX_BET.
+     * Averaging the anchor over a wider tail dilutes a spike this short well
+     * under MAX_SPREAD_BPS, so the honest window average is used instead.
+     */
+    function test_SpreadGuard_BriefSpikeNoLongerBlocksSettlementForever() public {
         uint256 settleAt = block.timestamp + DURATION;
+
         pool.pushTick(T0 - 3600, 0);
+        // The old exploit: flat the whole window, then a hard shove for just
+        // the last 2 seconds before settleAt.
+        pool.pushTick(uint32(settleAt - 2), 5000);
         market.addMatch(1, 1e18, settleAt);
 
         vm.warp(settleAt + 1);
-        pool.pushTick(uint32(block.timestamp), 5000); // live price now far away
-
         vm.prank(keeper);
-        assertEq(resolver.resolveOrderbookMarketBatch(address(market), 10), 0, "prompt settlement is guarded");
+        assertEq(resolver.resolveOrderbookMarketBatch(address(market), 10), 1, "a 2-second spike must not block settlement");
+        (, uint256 exitPrice) = market.settlements(0);
+        // Close to the honest window average, not the manipulated spot.
+        assertLt(exitPrice, 1050000000000000000, "exit priced off the diluted window, not the spike");
     }
 
-    /// The same divergence must NOT block an overdue settlement: past
-    /// MAX_PRICE_AGE the anchored price and the live one legitimately differ,
-    /// and comparing them would freeze every match after an outage.
-    function test_SpreadGuard_AnchoredAgainstLive_SkippedWhenOverdue() public {
+    /**
+     * Guard (b) - anchored price against live spot - is gone. It only ever
+     * applied within MAX_PRICE_AGE of settleAt, so a patient manipulator
+     * could always just wait it out; what it actually did was block PROMPT
+     * settlement on any pool that had simply kept trading normally since -
+     * the common case on an active pool, not a rare one. Prompt settlement
+     * must now succeed even though the live price has moved on since.
+     */
+    function test_LiveSpotDivergenceSincePassing_NoLongerBlocksPromptSettlement() public {
         uint256 settleAt = block.timestamp + DURATION;
         pool.pushTick(T0 - 3600, 0);
         market.addMatch(1, 1e18, settleAt);
 
-        vm.warp(settleAt + 1);
-        pool.pushTick(uint32(block.timestamp), 5000);
-        vm.warp(block.timestamp + resolver.MAX_PRICE_AGE() + 1);
+        vm.warp(settleAt + 1); // settling promptly
+        pool.pushTick(uint32(block.timestamp), 5000); // live price has since moved far away
 
         vm.prank(keeper);
-        assertEq(resolver.resolveOrderbookMarketBatch(address(market), 10), 1, "overdue settlement proceeds");
+        assertEq(
+            resolver.resolveOrderbookMarketBatch(address(market), 10), 1, "prompt settlement is no longer guarded"
+        );
         (, uint256 exitPrice) = market.settlements(0);
-        assertEq(exitPrice, 1e18, "and still uses the anchored price");
+        assertEq(exitPrice, 1e18, "still the anchored window price, not the live one");
+    }
+
+    // ── SETTLEMENT PAST GRACE ─────────────────────────────────
+    /**
+     * OrderbookMarket.settleMatch reverts "settlement window expired" once
+     * SETTLE_GRACE has passed - calling it anyway would take the whole batch
+     * down with it. The resolver must recognise this itself and skip, the
+     * same way it already skips a match the pool cannot price.
+     */
+    function test_PastGrace_IsSkippedNotSettled() public {
+        uint256 settleAt = block.timestamp + DURATION;
+        pool.pushTick(T0 - 3600, 0);
+        market.addMatch(1, 1e18, settleAt);
+
+        vm.warp(settleAt + resolver.SETTLE_GRACE() + 1);
+        vm.expectEmit(true, true, false, true);
+        emit PoolOracleResolver.MatchUnpriceable(address(market), 1, settleAt);
+        vm.prank(keeper);
+        uint256 settled = resolver.resolveOrderbookMarketBatch(address(market), 10);
+
+        assertEq(settled, 0, "a match past grace must not count as settled");
+        assertEq(market.settlementCount(), 0, "settleMatch must never even be attempted past grace");
     }
 
     // ── ROLES AND BATCHING ───────────────────────────────────
-    function test_OnlyKeeperMaySettle() public {
+    /**
+     * Deliberately open, unlike OracleResolver's KEEPER_ROLE gate: the price
+     * comes straight from the pool on every call, the same public data
+     * spotPriceWad already exposes, so restricting who may trigger settlement
+     * on it only adds a single point of failure (a down keeper wallet leaves
+     * a settleable winner unable to collect).
+     */
+    function test_AnyoneMaySettle() public {
         uint256 settleAt = block.timestamp + DURATION;
         pool.pushTick(T0 - 3600, 0);
         market.addMatch(1, 1e18, settleAt);
         vm.warp(settleAt + 1);
 
         vm.prank(other);
-        vm.expectRevert();
-        resolver.resolveOrderbookMarketBatch(address(market), 10);
+        assertEq(resolver.resolveOrderbookMarketBatch(address(market), 10), 1, "any address may settle");
     }
 
     /// The offset entrypoint exists so a stuck match at the head cannot hide

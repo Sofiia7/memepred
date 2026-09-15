@@ -197,6 +197,24 @@ contract PoolOrderbookMarketTest is Test {
         assertEq(weth.balanceOf(bob) - before, 0.04 ether);
     }
 
+    function test_RoundTrip_TieRefundsBothSides() public {
+        _bet(alice, OrderbookMarket.Direction.UP, 0.02 ether);
+        _bet(bob, OrderbookMarket.Direction.DOWN, 0.02 ether);
+        OrderbookMarket.Match memory m = market.getMatch(1);
+
+        vm.warp(m.settleAt + 1);
+        uint256 aliceBefore = weth.balanceOf(alice);
+        uint256 bobBefore = weth.balanceOf(bob);
+        vm.prank(keeper);
+        assertEq(resolver.resolveOrderbookMarketBatch(address(market), 10), 1);
+
+        m = market.getMatch(1);
+        assertTrue(m.settled);
+        assertEq(m.exitPrice, m.entryPrice);
+        assertEq(weth.balanceOf(alice) - aliceBefore, 0.02 ether, "UP refunded");
+        assertEq(weth.balanceOf(bob) - bobBefore, 0.02 ether, "DOWN refunded");
+    }
+
     /// A pool that dies under an open position leaves the match unsettleable,
     /// which is what emergencyRefundMatch exists for. The stake is not lost.
     function test_DeadPoolLeavesTheMatchRefundable() public {
@@ -217,6 +235,40 @@ contract PoolOrderbookMarketTest is Test {
 
         assertEq(weth.balanceOf(alice) - aliceBefore, 0.02 ether, "alice refunded");
         assertEq(weth.balanceOf(bob) - bobBefore, 0.02 ether, "bob refunded");
+    }
+
+    /**
+     * A match more than SETTLE_GRACE overdue must not hide a fresh, perfectly
+     * settleable match on the SAME market behind it in the same batch call.
+     *
+     * Before the resolver skipped past-grace matches itself,
+     * OrderbookMarket.settleMatch would revert "settlement window expired"
+     * for the old one, and that revert took the whole
+     * resolveOrderbookMarketBatch transaction down with it - including
+     * whatever it would otherwise have settled.
+     */
+    function test_PastGraceMatch_DoesNotBlockAFreshMatchInTheSameBatch() public {
+        _bet(alice, OrderbookMarket.Direction.UP, 0.02 ether);
+        _bet(bob, OrderbookMarket.Direction.DOWN, 0.02 ether);
+        OrderbookMarket.Match memory old = market.getMatch(1);
+
+        // Let match 1 age well past SETTLE_GRACE, with nobody ever settling
+        // or emergency-refunding it.
+        vm.warp(old.settleAt + market.SETTLE_GRACE() + 1);
+
+        // A fresh pair matches now, due well within grace.
+        _bet(alice, OrderbookMarket.Direction.UP, 0.02 ether);
+        _bet(bob, OrderbookMarket.Direction.DOWN, 0.02 ether);
+        OrderbookMarket.Match memory fresh = market.getMatch(2);
+        assertEq(fresh.amount, 0.02 ether, "second match formed");
+
+        vm.warp(fresh.settleAt + 1);
+        vm.prank(keeper);
+        uint256 settled = resolver.resolveOrderbookMarketBatch(address(market), 10);
+
+        assertEq(settled, 1, "only the fresh match settles");
+        assertFalse(market.getMatch(1).settled, "the overdue match is left for emergencyRefundMatch");
+        assertTrue(market.getMatch(2).settled, "the fresh match is not held hostage by the overdue one");
     }
 
     /// An entry cannot be struck against a pool that cannot price itself.

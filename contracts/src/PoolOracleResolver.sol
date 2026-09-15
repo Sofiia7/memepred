@@ -50,10 +50,15 @@ contract PoolOracleResolver is AccessControl {
     /// WETH on this chain: every market prices its token against it.
     address public immutable weth;
 
-    // ── Windows and guards, copied from OracleResolver ─────
-    // Deliberately identical values with identical meanings. A market on this
-    // chain should behave the way a market on Base behaves; the oracle changed,
-    // the product did not.
+    // ── Windows and guards ──────────────────────────────────
+    // The TWAP window itself is copied from OracleResolver with identical
+    // values and meaning - a market on this chain should be exposed to
+    // roughly the same window a market on Base is. The anomaly guards are
+    // NOT identical: OracleResolver's live-price check and 1-second anchor
+    // both assume a keeper-pushed price with no public read of "the current
+    // spot" cheaper than pushing one, which is not true of a pool anyone can
+    // read for free. See SETTLE_GRACE and ANCHOR_FRACTION below for what
+    // changed and why.
 
     /// @dev Scales the exit TWAP window to a market's own duration so short
     ///      markets don't average over their entire lifetime. Floored at
@@ -72,12 +77,40 @@ contract PoolOracleResolver is AccessControl {
     uint32 public constant ENTRY_TWAP_WINDOW = 60 seconds;
 
     /**
-     * How promptly a settlement has to happen for the live-price check to run.
-     * Same reasoning as OracleResolver: for a match that came due hours ago the
-     * anchored price and the current spot legitimately differ, and comparing
-     * them would block every overdue settlement.
+     * Mirrors OrderbookMarket.SETTLE_GRACE, deliberately copied rather than
+     * read with an external call: MockSettleableMarket-style test doubles and
+     * any future market implementation need not implement a getter just for
+     * this, and the two are free to diverge without one chain's tuning
+     * silently moving the other's - same reasoning as _twapWindowFor below.
+     *
+     * Past this age, OrderbookMarket.settleMatch itself reverts "settlement
+     * window expired" - the only valid path left is the permissionless
+     * emergencyRefundMatch on the market. Calling settleMatch anyway would
+     * revert and take the whole batch down with it, hiding every OTHER ready
+     * match behind this one. So _settleOne skips it here instead, the same
+     * way it already skips a match the pool cannot price.
      */
-    uint256 public constant MAX_PRICE_AGE = 3 minutes;
+    uint256 public constant SETTLE_GRACE = 24 hours;
+
+    /**
+     * The internal-consistency guard's anchor is an average over the LAST
+     * `window / ANCHOR_FRACTION` seconds of the window, not the single tick at
+     * settleAt.
+     *
+     * A one-second anchor is fixed history the instant it passes: once a
+     * match's exit window has closed, that one second's tick can never
+     * change, so if a single cheap swap ever pushes it past MAX_SPREAD_BPS
+     * from the window average, the match is unsettleable FOREVER through this
+     * function - the only recovery is a 24-hour wait for
+     * emergencyRefundMatch, which pays the winner nothing but their own stake
+     * back. Averaging over a longer tail does not remove the guard, it raises
+     * the cost of tripping it: moving a 20-second average as far as a
+     * 1-second spot costs roughly 20x the swap volume, and leaves roughly
+     * 20 seconds - hundreds of blocks at this chain's ~82ms block time - for
+     * anyone watching the pool to arbitrage the push back before it can be
+     * used against a settlement.
+     */
+    uint256 public constant ANCHOR_FRACTION = 3;
 
     uint256 public constant MAX_SPREAD_BPS = 200; // 2%, past that the match is refunded
 
@@ -131,33 +164,44 @@ contract PoolOracleResolver is AccessControl {
     }
 
     // ── RESOLVE ORDERBOOK MATCH ────────────────────────────
-    /// @notice Settle a single match on an OrderbookMarket.
-    function resolveOrderbookMatch(address market, uint256 matchId) external onlyRole(KEEPER_ROLE) {
+    /**
+     * @dev Deliberately permissionless, unlike OracleResolver's KEEPER_ROLE
+     *      gate. That gate is load-bearing on Base, where settlement reads a
+     *      price the keeper itself pushed on-chain - restricting who may
+     *      *use* that stored price is a separate question from who supplied
+     *      it. Here the price comes straight from the pool's own public
+     *      observation ring on every call, the same data anyone can already
+     *      read with spotPriceWad or a block explorer, and the settlement
+     *      rules (window, anchor, spread guards, SETTLE_GRACE) are identical
+     *      no matter who calls. Restricting the call to one keeper wallet
+     *      would only add a single point of failure: if that wallet is down,
+     *      a winner with a settleable match has no way to collect until it
+     *      comes back. KEEPER_ROLE still exists for addKeeper/withdrawETH.
+     */
+    /// @notice Settle a single match on an OrderbookMarket. Callable by anyone.
+    function resolveOrderbookMatch(address market, uint256 matchId) external {
         OrderbookMarket m = OrderbookMarket(market);
         PoolView memory pv = _poolView(m.feedId());
         _settleOne(m, pv, _twapWindowFor(m.duration()), matchId);
     }
 
     /// @notice Batch-settle all pending matches. Thin wrapper on the bounded
-    ///         batch, kept for parity with OracleResolver.
-    function resolveOrderbookMarket(address market) external onlyRole(KEEPER_ROLE) {
+    ///         batch, kept for parity with OracleResolver. Callable by anyone.
+    function resolveOrderbookMarket(address market) external {
         _resolveBatch(market, 0, 0);
     }
 
-    /// @notice Bounded batch-settle; returns how many matches actually settled.
-    function resolveOrderbookMarketBatch(address market, uint256 maxCount)
-        external
-        onlyRole(KEEPER_ROLE)
-        returns (uint256 settled)
-    {
+    /// @notice Bounded batch-settle; returns how many matches actually
+    ///         settled. Callable by anyone.
+    function resolveOrderbookMarketBatch(address market, uint256 maxCount) external returns (uint256 settled) {
         return _resolveBatch(market, 0, maxCount);
     }
 
     /// @notice Settle a window starting `offset` past the queue head, so one
     ///         stuck match at the head cannot hide everything behind it.
+    ///         Callable by anyone.
     function resolveOrderbookMarketBatchFrom(address market, uint256 offset, uint256 maxCount)
         external
-        onlyRole(KEEPER_ROLE)
         returns (uint256 settled)
     {
         return _resolveBatch(market, offset, maxCount);
@@ -209,6 +253,16 @@ contract PoolOracleResolver is AccessControl {
         address market = address(m);
         uint256 settleAt = m.getMatch(matchId).settleAt;
 
+        if (block.timestamp >= settleAt + SETTLE_GRACE) {
+            // OrderbookMarket.settleMatch itself would revert "settlement
+            // window expired" past this point, taking the whole batch down
+            // with it - see SETTLE_GRACE's doc comment. Skip cleanly instead;
+            // emergencyRefundMatch is the only settlement left available, and
+            // it needs no help from this contract.
+            emit MatchUnpriceable(market, matchId, settleAt);
+            return false;
+        }
+
         if (!pv.hasLiquidity) {
             // The pool died under the position. Nothing here can be priced
             // honestly, and a drained pool quotes whatever the last swap left
@@ -226,24 +280,18 @@ contract PoolOracleResolver is AccessControl {
             return false;
         }
 
-        // Two anomaly checks, because they catch different things.
-        //
-        // (a) Internal consistency: the average over the window versus the last
-        //     tick at or before settleAt. Meaningful at any age.
+        // Internal consistency: the window average versus the average over
+        // its own last ANCHOR_FRACTION share, both fixed the instant
+        // block.timestamp passes settleAt + window - see ANCHOR_FRACTION's
+        // doc comment for why the anchor is no longer a single tick. There is
+        // deliberately no second guard comparing this to LIVE spot any more:
+        // it only ever applied within MAX_PRICE_AGE of settleAt, so it never
+        // stopped a patient manipulator, only every prompt settlement on a
+        // pool that had simply kept trading normally since - which on an
+        // active pool is the common case, not the exception.
         if (_spread(exitTwap, spotAtAnchor) > MAX_SPREAD_BPS) {
             emit MarketRefunded(market, "oracle spread too high");
             return false;
-        }
-        // (b) Anchored price versus live reality, which catches a pool that has
-        //     been shoved since. Only when we are settling promptly - past
-        //     MAX_PRICE_AGE the two legitimately differ and comparing them
-        //     would block every overdue settlement.
-        if (block.timestamp <= settleAt + MAX_PRICE_AGE) {
-            (, int24 liveTick,,,,,) = pv.pool.slot0();
-            if (_spread(exitTwap, _quoteWad(pv.token0, liveTick)) > MAX_SPREAD_BPS) {
-                emit MarketRefunded(market, "oracle spread too high");
-                return false;
-            }
         }
 
         m.settleMatch(matchId, exitTwap);
@@ -263,8 +311,9 @@ contract PoolOracleResolver is AccessControl {
     }
 
     /**
-     * @dev TWAP over the window ENDING AT `anchor`, plus the price at `anchor`,
-     *      both as WAD quotes of the token in WETH.
+     * @dev TWAP over the window ENDING AT `anchor`, plus the TWAP over just its
+     *      last `window / ANCHOR_FRACTION` seconds, both as WAD quotes of the
+     *      token in WETH.
      *
      *      Returns ok=false rather than reverting when the pool cannot reach
      *      back that far, so one unpriceable match cannot block a whole batch -
@@ -281,16 +330,19 @@ contract PoolOracleResolver is AccessControl {
         // than 136 years, which is not a case worth encoding for.
         if (age + window > type(uint32).max) return (0, 0, false);
 
-        // Three points, one call: the start of the window, one second before
-        // the anchor, and the anchor itself. That yields the window average and
-        // the anchor's own one-second tick without a second observe().
+        uint256 anchorWindow = window / ANCHOR_FRACTION;
+        if (anchorWindow == 0) anchorWindow = 1; // window itself is tiny; degrade to a spot read
+
+        // Three points, one call: the start of the window, the start of the
+        // anchor sub-window, and the anchor itself. That yields both averages
+        // without a second observe().
         uint32[] memory secondsAgos = new uint32[](3);
         // safe: `age + window` is bounds-checked against uint32 above, and the
-        // other two are strictly smaller.
+        // other two are strictly smaller (anchorWindow <= window).
         // forge-lint: disable-next-line(unsafe-typecast)
         secondsAgos[0] = uint32(age + window);
         // forge-lint: disable-next-line(unsafe-typecast)
-        secondsAgos[1] = uint32(age + 1);
+        secondsAgos[1] = uint32(age + anchorWindow);
         // forge-lint: disable-next-line(unsafe-typecast)
         secondsAgos[2] = uint32(age);
 
@@ -303,7 +355,7 @@ contract PoolOracleResolver is AccessControl {
         }
 
         int24 meanTick = _meanFrom(cumulatives[2] - cumulatives[0], window);
-        int24 anchorTick = _meanFrom(cumulatives[2] - cumulatives[1], 1);
+        int24 anchorTick = _meanFrom(cumulatives[2] - cumulatives[1], anchorWindow);
 
         return (_quoteWad(pv.token0, meanTick), _quoteWad(pv.token0, anchorTick), true);
     }
