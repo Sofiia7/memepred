@@ -4,6 +4,7 @@ import { useReadContract } from 'wagmi'
 import type { Address } from 'viem'
 import { ScreenTitle, StatStrip } from '../components/ui/AppShell'
 import { Composer } from '../components/ui/Composer'
+import { ApiError } from '../components/ui/ApiError'
 import type { PickedBet } from '../components/ui/MarketCard'
 import { MarketChart, type Timeframe } from '../components/MarketChart'
 import { useCandles, useProbHistory } from '../hooks/useCandles'
@@ -23,7 +24,7 @@ export function Market() {
   const [tf, setTf] = useState<Timeframe>('5m')
   const [picked, setPicked] = useState<PickedBet | null>(null)
 
-  const { data: allMarkets } = useMarkets()
+  const { data: allMarkets, isError: marketsError, refetch: refetchMarkets } = useMarkets()
   const market = allMarkets?.find((m) => m.address.toLowerCase() === marketAddress?.toLowerCase())
 
   const feedId = market?.feedId
@@ -67,6 +68,14 @@ export function Market() {
       >
         ← BACK
       </button>
+
+      {/* Non-blocking: other reads on this page (chart, odds, price) have
+          their own resilience, so a failed markets-list fetch shouldn't hide
+          the rest of the screen - only shown when there's nothing to fall
+          back on for this market's own basic facts (symbol, duration). */}
+      {marketsError && !market && (
+        <ApiError message="Couldn't load market data" onRetry={refetchMarkets} />
+      )}
 
       <ScreenTitle title={`${symbol} / ${IS_POOL_BACKED ? 'WETH' : 'USD'}`} live liveLabel={IS_POOL_BACKED ? 'continuous market' : countdownFrom(closeTime, nowSec)} liveColor="var(--up)" />
 

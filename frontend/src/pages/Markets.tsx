@@ -5,6 +5,7 @@ import { useMarketStats, symbolFromStats } from '../hooks/useMarketStats'
 import { ScreenTitle, StatStrip } from '../components/ui/AppShell'
 import { MarketCardUI, type PickedBet } from '../components/ui/MarketCard'
 import { Composer } from '../components/ui/Composer'
+import { ApiError } from '../components/ui/ApiError'
 import { shortMarketHint } from '../lib/marketHint'
 
 /**
@@ -32,7 +33,7 @@ function groupMarkets(markets: Market[]): Record<string, Market[]> {
 }
 
 export function Markets() {
-  const { data: markets, isLoading } = useMarkets('OPEN')
+  const { data: markets, isLoading, isError, refetch } = useMarkets('OPEN')
   const { data: stats } = useMarketStats()
   const [picked, setPicked] = useState<PickedBet | null>(null)
 
@@ -82,7 +83,8 @@ export function Markets() {
       />
 
       {isLoading && <div className="empty-state">Loading markets…</div>}
-      {!isLoading && groupKeys.length === 0 && <div className="empty-state">No open markets yet</div>}
+      {isError && <ApiError message="Couldn't load markets" onRetry={refetch} />}
+      {!isLoading && !isError && groupKeys.length === 0 && <div className="empty-state">No open markets yet</div>}
 
       {hint && (
         <div className={'mkt-hint' + (hint.slow ? ' mkt-hint-slow' : '')}>{hint.text}</div>

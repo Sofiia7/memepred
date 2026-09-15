@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { usePools, type Pool, type PoolStatus } from '../hooks/usePools'
 import { ScreenTitle, StatStrip } from '../components/ui/AppShell'
+import { ApiError } from '../components/ui/ApiError'
 import { CURRENCY_SYMBOL } from '../lib/contracts'
 
 /**
@@ -80,7 +81,7 @@ function PoolRow({ p }: { p: Pool }) {
 
 export function Pools() {
   const [filter, setFilter] = useState<PoolStatus | 'ALL'>('ALL')
-  const { data, isLoading } = usePools(filter === 'ALL' ? undefined : filter)
+  const { data, isLoading, isError, refetch } = usePools(filter === 'ALL' ? undefined : filter)
 
   const pools = data?.pools ?? []
   const summary = useMemo(() => {
@@ -138,7 +139,8 @@ export function Pools() {
       </div>
 
       {isLoading && <p className="empty-state">Reading the chain…</p>}
-      {!isLoading && pools.length === 0 && (
+      {isError && <ApiError message="Couldn't load pools" onRetry={refetch} />}
+      {!isLoading && !isError && pools.length === 0 && (
         <p className="empty-state">
           No pools here yet. The watcher scans the Uniswap factory every minute and lists what it
           finds, whether or not it can trade it.

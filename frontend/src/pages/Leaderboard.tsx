@@ -2,7 +2,9 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { ScreenTitle } from '../components/ui/AppShell'
 import { TrophyIcon } from '../components/ui/icons'
+import { ApiError } from '../components/ui/ApiError'
 import { shortAddr } from '../lib/symbols'
+import { CURRENCY_SYMBOL, IS_POOL_BACKED } from '../lib/contracts'
 
 const API = import.meta.env.VITE_API_URL
 
@@ -33,13 +35,14 @@ function avatarBg(profit: number): { bg: string; color: string } {
 
 function fmtMoney(n: number): string {
   const sign = n < 0 ? '−' : '+'
-  return `${sign}$${Math.abs(n).toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+  const amount = Math.abs(n).toLocaleString(undefined, { maximumFractionDigits: IS_POOL_BACKED ? 4 : 0 })
+  return IS_POOL_BACKED ? `${sign}${amount} ${CURRENCY_SYMBOL}` : `${sign}$${amount}`
 }
 
 export function Leaderboard() {
   const [period, setPeriod] = useState<Period>('24H')
 
-  const { data, isLoading } = useQuery<LeaderboardEntry[]>({
+  const { data, isLoading, isError, refetch } = useQuery<LeaderboardEntry[]>({
     queryKey: ['leaderboard', period],
     queryFn: async () => {
       const res = await fetch(`${API}/api/leaderboard?period=${PERIOD_TO_API[period]}&limit=100`)
@@ -65,7 +68,8 @@ export function Leaderboard() {
       </div>
 
       {isLoading && <div className="empty-state">Loading…</div>}
-      {!isLoading && !data?.length && <div className="empty-state">No data yet - be the first</div>}
+      {isError && <ApiError message="Couldn't load the leaderboard" onRetry={refetch} />}
+      {!isLoading && !isError && !data?.length && <div className="empty-state">No data yet - be the first</div>}
 
       {top3.length > 0 && (
         <div className="podium">
