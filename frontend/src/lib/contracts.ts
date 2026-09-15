@@ -40,6 +40,14 @@ export const SETTLE_GRACE_SEC = 24 * 60 * 60
 // the payout preview shows both ends rather than the flattering one.
 export const LP_TAKER_FEE_BPS = 100
 
+// Mirrors PoolMarketFactory's allowedDurations (60, 300, 900 - pushed in its
+// constructor). RHC only: unlike Base, where the keeper rolls markets over
+// on its own schedule, a Robinhood Chain market is created once, from this
+// fixed set, and lives forever - so there is no Base equivalent to mirror
+// here. Terms.tsx reads this rather than restating "1, 5, or 15 minutes" as
+// prose, for the same reason MIN_BET/MAX_BET are read rather than retyped.
+export const RHC_DURATIONS_SEC = [60, 300, 900] as const
+
 /** PoolOracleResolver's read-only RHC price surface. */
 export const POOL_ORACLE_RESOLVER_ABI = [
   {

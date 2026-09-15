@@ -1,6 +1,12 @@
 import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { ScreenTitle } from '../components/ui/AppShell'
+import { IS_POOL_BACKED } from '../lib/chain'
+import { MAX_BET, CURRENCY_SYMBOL, SETTLE_GRACE_SEC, RHC_DURATIONS_SEC } from '../lib/contracts'
+import { formatDuration } from '../lib/symbols'
+
+const RHC_DURATIONS_TEXT = RHC_DURATIONS_SEC.map(formatDuration).join(', ')
+const SETTLE_GRACE_HOURS = SETTLE_GRACE_SEC / 3600
 
 /**
  * ⚠️ ACTION REQUIRED BEFORE LAUNCH - set a real security contact.
@@ -50,14 +56,36 @@ export function TermsPage() {
       </Section>
 
       <Section n="2" title="What this is">
-        A non-custodial, peer-to-peer prediction market on Base. You deposit
-        USDC to bet on the short-term price direction (UP/DOWN) of a listed
-        meme coin over a fixed window (5 min to 24h). Winners split the
-        losing side's stake, minus whatever fee applies (see the live
-        contract - currently 0% for peer matches, 1% only when you beat the
-        LP pool). Settlement is automatic, driven by the RedStone oracle. Nobody
-        -including the operator- picks or can alter an outcome once it's
-        settled on-chain.
+        {IS_POOL_BACKED ? (
+          <>
+            A non-custodial, peer-to-peer prediction market on Robinhood
+            Chain. You stake {CURRENCY_SYMBOL} to bet on the short-term price
+            direction (UP/DOWN) of a listed meme coin over a fixed window
+            ({RHC_DURATIONS_TEXT}). Winners split the losing side's stake,
+            minus the protocol fee (see the live contract - a percentage
+            capped at 1%, applied to every winning bet whether it was matched
+            against another trader or against the LP pool; an LP-matched win
+            additionally pays a separate 1% LP taker fee on top of that,
+            peer-matched wins do not). An exact tie - the settlement price
+            equals the entry price - refunds both stakes in full, with no fee
+            taken from either side. Settlement is automatic, driven by the
+            token's own on-chain Uniswap v3 pool price (a time-weighted
+            average, not an off-chain oracle). Nobody -including the
+            operator- picks or can alter an outcome once it's settled
+            on-chain.
+          </>
+        ) : (
+          <>
+            A non-custodial, peer-to-peer prediction market on Base. You deposit
+            USDC to bet on the short-term price direction (UP/DOWN) of a listed
+            meme coin over a fixed window (5 min to 24h). Winners split the
+            losing side's stake, minus whatever fee applies (see the live
+            contract - currently 0% for peer matches, 1% only when you beat the
+            LP pool). Settlement is automatic, driven by the RedStone oracle. Nobody
+            -including the operator- picks or can alter an outcome once it's
+            settled on-chain.
+          </>
+        )}
       </Section>
 
       <Section n="3" title="Who can use this">
@@ -86,30 +114,81 @@ export function TermsPage() {
         so is a breach of these terms, and it puts the legal problem on you:
         you are solely responsible for determining whether using this is
         legal for you.
+        {IS_POOL_BACKED && (
+          <p style={{ marginTop: 10 }}>
+            <b>On Robinhood Chain specifically:</b> the policy above applies
+            regardless of network - this product does not knowingly serve
+            Restricted Territories on any chain it runs on. Whether the
+            automated edge-level enforcement described above is already
+            live for this network's traffic has not been independently
+            confirmed as of this writing, and eligibility/settlement
+            enforcement details for this network are still being finalized.
+            Do not treat the absence of an automatic block as permission -
+            the underlying restriction still applies, and you remain solely
+            responsible for determining whether using this is legal for you.
+          </p>
+        )}
       </Section>
 
       <Section n="4" title="Risks you're accepting">
         <ul className="terms-list">
           <li><b>You can lose everything you stake.</b> This is a zero-sum
             product for the losing side.</li>
-          <li><b>Smart contract risk - read this one twice.</b> The contracts
-            have <b>not</b> undergone an external security audit. Nobody
-            independent has checked them. Bugs are possible, and a bug in a
-            contract holding USDC can mean the funds are simply gone, with no
-            way to reverse it and no insurance behind them.{' '}
-            <b>The single mitigation is a hard cap: no bet can exceed 100
-            USDC</b> (<code>MAX_BET</code>, enforced in the contract, not the
-            interface - the UI can't raise it and neither can the operator
-            without deploying new contracts). That cap exists specifically so
-            that the most an unaudited system can cost any one bet is a size
-            you were willing to lose. It is a deliberate constraint on how
-            much you can risk here, not a temporary limit to be worked around
-            - and placing many bets to get around it re-exposes you to the
-            full risk. If and when an audit happens, this section will say so
-            and name the auditor.</li>
-          <li><b>Oracle risk.</b> Settlement depends on RedStone price feeds.
-            Staleness or unavailability can delay settlement or trigger a
-            refund instead of a payout.</li>
+          {IS_POOL_BACKED ? (
+            <li><b>Smart contract risk - read this one twice.</b> The contracts
+              have <b>not</b> undergone an external security audit. Nobody
+              independent has checked them. Bugs are possible, and a bug in a
+              contract holding {CURRENCY_SYMBOL} can mean the funds are simply
+              gone, with no way to reverse it and no insurance behind them.{' '}
+              <b>The single mitigation is a hard cap: no bet can exceed{' '}
+              {MAX_BET} {CURRENCY_SYMBOL}</b> (<code>MAX_BET</code>, enforced
+              in the contract, not the interface - the UI can't raise it and
+              neither can the operator without deploying new contracts). That
+              cap exists specifically so that the most an unaudited system can
+              cost any one bet is a size you were willing to lose. It is a
+              deliberate constraint on how much you can risk here, not a
+              temporary limit to be worked around - and placing many bets to
+              get around it re-exposes you to the full risk. If and when an
+              audit happens, this section will say so and name the
+              auditor.</li>
+          ) : (
+            <li><b>Smart contract risk - read this one twice.</b> The contracts
+              have <b>not</b> undergone an external security audit. Nobody
+              independent has checked them. Bugs are possible, and a bug in a
+              contract holding USDC can mean the funds are simply gone, with no
+              way to reverse it and no insurance behind them.{' '}
+              <b>The single mitigation is a hard cap: no bet can exceed 100
+              USDC</b> (<code>MAX_BET</code>, enforced in the contract, not the
+              interface - the UI can't raise it and neither can the operator
+              without deploying new contracts). That cap exists specifically so
+              that the most an unaudited system can cost any one bet is a size
+              you were willing to lose. It is a deliberate constraint on how
+              much you can risk here, not a temporary limit to be worked around
+              - and placing many bets to get around it re-exposes you to the
+              full risk. If and when an audit happens, this section will say so
+              and name the auditor.</li>
+          )}
+          {IS_POOL_BACKED ? (
+            <li><b>Oracle risk.</b> Settlement depends on reading the token's
+              own on-chain Uniswap v3 pool - a time-weighted average price, not
+              a single spot tick. A pool that's too thin, too new, or drained
+              out from under a position can't be read safely; when that
+              happens settlement is skipped and retried rather than forced
+              through on a bad price. Past a {SETTLE_GRACE_HOURS}-hour grace
+              period from when a match was due to settle, anyone can trigger a
+              refund of both stakes instead - no fee either way.</li>
+          ) : (
+            <li><b>Oracle risk.</b> Settlement depends on RedStone price feeds.
+              Staleness or unavailability can delay settlement or trigger a
+              refund instead of a payout.</li>
+          )}
+          {IS_POOL_BACKED && (
+            <li><b>Ties refund, they don't settle.</b> If the price at
+              settlement is exactly equal to the entry price, both sides get
+              their stake back in full and no fee is charged to either side -
+              this is not a loss for either trader, and it is not a payout
+              either.</li>
+          )}
           <li><b>No guaranteed counterparty.</b> If nobody's on the other
             side and the LP pool can't cover you, your bet is refunded - but
             it's locked for up to 5 minutes while that's decided.</li>
@@ -176,9 +255,9 @@ export function TermsPage() {
         <b>before</b> using it or telling anyone else.
         <ul className="terms-list">
           <li><b>Where:</b> {SECURITY_CONTACT}</li>
-          <li><b>Reward:</b> paid in USDC, scaled to what the bug could have
-            cost users, and paid whether or not the report ends up being the
-            first one received for that issue.</li>
+          <li><b>Reward:</b> paid in {CURRENCY_SYMBOL}, scaled to what the bug
+            could have cost users, and paid whether or not the report ends up
+            being the first one received for that issue.</li>
           <li><b>Safe harbour:</b> testing against the deployed contracts is
             explicitly permitted, and the operator will not pursue any claim
             against a reporter who acts in good faith - meaning: stays within
@@ -207,9 +286,21 @@ export function TermsPage() {
       </Section>
 
       <Section n="P3" title="Who else sees some of this">
-        Cloudflare (edge routing - sees your IP, like any reverse proxy
-        would), your own wallet/RPC provider, and RedStone (price data
-        only, no personal data from you).
+        {IS_POOL_BACKED ? (
+          <>
+            Cloudflare (edge routing - sees your IP, like any reverse proxy
+            would) and your own wallet/RPC provider. Settlement prices come
+            from the token's own on-chain Uniswap v3 pool, not a third-party
+            price vendor, so there is no oracle provider in this list on
+            Robinhood Chain the way there is on Base.
+          </>
+        ) : (
+          <>
+            Cloudflare (edge routing - sees your IP, like any reverse proxy
+            would), your own wallet/RPC provider, and RedStone (price data
+            only, no personal data from you).
+          </>
+        )}
       </Section>
 
       <Link to="/how-it-works" className="cta" style={{ marginTop: 16 }}>Back to how it works</Link>
