@@ -405,6 +405,25 @@ input[type=number]{-moz-appearance:textfield}
 .risk-accept{background:var(--warn);color:#1a1206}
 .risk-accept:hover{background:#ffc266}
 
+/* ── Wallet connector picker ──────────────────────────────
+   connectors[0] used to be connected to blindly - MetaMask's SDK connector
+   on RHC's short connector list, opening a QR flow for anyone not already in
+   MetaMask itself. This lets the user pick instead. */
+.wallet-picker{
+  position:fixed;inset:0;z-index:110;overflow-y:auto;
+  display:flex;align-items:center;justify-content:center;padding:24px 18px;
+  background:rgba(4,4,7,.72);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);
+}
+.wallet-picker-card{
+  width:100%;max-width:340px;background:var(--surface);border:1px solid var(--line);
+  border-radius:14px;padding:18px;animation:fadeIn .2s ease;
+}
+.wallet-picker-title{font-size:15px;font-weight:800;letter-spacing:-.01em;margin-bottom:14px}
+.wallet-picker-choices{display:flex;flex-direction:column;gap:8px;margin-bottom:12px}
+.wallet-picker-choices .cta{background:var(--surface-2);color:var(--text)}
+.wallet-picker-choices .cta:hover{background:var(--line)}
+.wallet-picker-cancel{display:block;width:100%;text-align:center}
+
 /* ── Pool feed ─────────────────────────────────────────────
    Only rendered where markets are backed by a pool. A row is deliberately
    quieter than a market card: this is a browse surface, and most of what it

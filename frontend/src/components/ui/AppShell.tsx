@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { AppHead } from './AppHead'
 import { TabNav } from './TabNav'
+import { WalletPicker } from './WalletPicker'
 import { RiskStrip } from '../RiskDisclosure'
 
 export function AppShell({ children }: { children: ReactNode }) {
@@ -18,6 +19,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
       </div>
       <TabNav />
+      <WalletPicker />
     </div>
   )
 }
