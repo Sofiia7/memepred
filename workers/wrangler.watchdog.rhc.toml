@@ -16,9 +16,20 @@ compatibility_date = "2024-09-01"
 workers_dev = true
 
 [vars]
-# Fill these in once the rhc backend has a public host.
-# API_HOST   = "api-rhc.flipthememe.com"
-# SITE_HOST  = "rhc.flipthememe.com"
+# API_HOST filled in 2026-09-28 (audit A06) - the rhc-backend container is up
+# and Caddy has a site block for it (deploy/Caddyfile on the VPS); it answers
+# once the api-rhc.flipthememe.com DNS record exists (not yet - needs
+# Cloudflare zone access this session's wrangler token does not have, see
+# docs/rhc/audit-2026-09-28.md's A06 section for what is still needed).
+# SITE_HOST set to the planned future host even though nothing is deployed
+# there yet: watchdog.ts's checksFor() deliberately REFUSES to run at all
+# when DEPLOYMENT is set without both API_HOST and SITE_HOST, specifically to
+# stop this exact file from silently watching Base's site under the
+# "robinhood-chain" label. Reporting the RHC site as down is honest right
+# now - it genuinely is not up yet - and unblocks the API-side monitoring
+# this session's A06 fix is actually about.
+API_HOST = "api-rhc.flipthememe.com"
+SITE_HOST = "rhc.flipthememe.com"
 DEPLOYMENT = "robinhood-chain"
 
 [triggers]
@@ -28,8 +39,8 @@ crons = ["*/2 * * * *"]
 [[kv_namespaces]]
 binding = "WATCHDOG"
 # Its own namespace: sharing one would let the two deployments overwrite each
-# other's failure streaks and daily heartbeat.
-id = "REPLACE_ME"
+# other's failure streaks and daily heartbeat. Created 2026-09-28.
+id = "6f87c054757242329bb52d1c76ede6f8"
 
 # Optional alert channels - set whichever you use, the Worker skips the rest:
 #   wrangler secret put TELEGRAM_BOT_TOKEN -c wrangler.watchdog.rhc.toml

@@ -203,6 +203,90 @@ offset 0 cannot settle yet - stepping past them`.
 
 Замеренный газ - в [`measurements/README.md`](measurements/README.md).
 
+## Robinhood Chain testnet, повторный деплой 2026-09-28 (аудит A06/L01/L04/L05)
+
+Старый деплой от 05.09 отставал от кода на три недели (A01-A08, L01, L04, L05
+из `docs/rhc/audit-2026-09-28.md` не входили в него). Редеплой стека
+(`contracts/script/DeployRhc.s.sol`, стенд-ины Uniswap/WETH переиспользованы
+без изменений - они не менялись). Деплоер тот же, права по-прежнему не
+переданы (`RHC_HANDOVER` не выставлен).
+
+| Контракт | Адрес |
+|---|---|
+| `PoolOracleResolver` | `0xd13d4B1ff37E08CD5D8c86F95b7130A599a40667` |
+| `PoolMarketFactory` | `0xC52b8b69d266F9656Be11511907192EaFD521BcB` |
+| `marketImplementation` | `0xB87e3E0DFeEc2f5acc822DE27d17eb212026364F` |
+| `RhcFeeDistributor` | `0x9Bc351EFe3Fce554F57E13F3574324f41aa0FFD6` |
+| `ReferralRegistry` | `0x481CFb2C224726c1D77B0f410F1089C9CFaf441b` |
+| `GenesisNFT` | `0x0EE22693A21f91fb260a1327c276D42DC3AeEafD` |
+| `LiquidityPool` | `0x06C567A901275A729BEe9B1cfd0A084aa9D078Cf` |
+| `BadgeNFT` | `0x842E01bEFbe679c84a8e5C32b383bE9C3d65f0DB` |
+
+Стенд-ины Uniswap (неизменны с 05.09): WETH `0xaF3aCfCE41417DE5C973cc214E170C73480b068a`,
+v3 Factory `0x59385Ca69a4CA9628A411a6A0655C3EaF7507316`, пул токен/WETH
+`0xC9168555E619e4E00743d5FB14CBeaA39753A450`.
+
+**Проверено на цепочке в тот же день:** `createMarket(fixturePool, 300)` с
+нового `PoolMarketFactory` прошёл (`0xe57dce3e...`); созданный рынок
+`0xDc4eB375Cc99E440A59fb932401c3Ed6EA26a48D` отвечает `isMarket()=true`,
+`feeBps()=100`, `resolver()` и `multisig()` указывают на новые контракты.
+Полный цикл ставка→матч→сеттл→клейм не прогонялся заново в этом заходе -
+механизм уже проверен 05-11.09 на предыдущем деплое, а логика изменений этой
+сессии покрыта 403 контрактными тестами (`forge test`, включая
+`contracts/test/AuditRegressions.t.sol` и `contracts/test/L04FeeEconomics.t.sol`).
+
+**Не верифицированы исходники** на обозревателе для этого деплоя - предыдущий
+процесс верификации (см. выше) применим, не повторяла в этом заходе.
+
+**Старые адреса (05.09) не отозваны и не мигрированы** - рынки, созданные
+старым `PoolMarketFactory`, продолжают существовать на цепочке со своим старым
+`resolver`; кипер, указывающий на новый резолвер, не может их досеттлить
+(`only resolver` при попытке `settleMatch`) и будет молча пропускать их
+матчи, пока `refundOverdueMatches`/`reconcileOverdueMatches` не подберут
+просроченные через `emergencyRefundMatch`. На тестнете это не проблема с
+деньгами пользователей - ставки там частью ботов из соука, не реальных
+трейдеров - но стоит знать перед тем как на это полагаться.
+
+### Backend/keeper: обновлено и перезапущено на VPS
+
+`/home/openclaw/memepred-rhc` (минимальное дерево исходников, из которого
+собираются `rhc-backend`/`rhc-keeper`) синхронизировано с этой сессией:
+`indexer.ts`, `resolveKeeper.ts`, `index.ts`, новый `rhcPriceRecorder.ts`,
+`markets.ts`, `profile.ts`, миграция `007_match_emergency_refunded.sql`.
+`.env.rhc` на VPS обновлён новыми адресами. Контейнеры пересобраны
+(`docker compose -f docker-compose.yml -f docker-compose.rhc.yml build/up`),
+здоровы, кипер стартовал со всеми циклами включая новый `rhcPriceRecorder`.
+База (`memepred_rhc`) не сбрасывалась - старые заказы/матчи старого деплоя
+остаются в ней (см. предупреждение выше).
+
+### A06: публичный DNS - сделано почти всё, кроме одной записи
+
+`api-rhc.flipthememe.com` теперь имеет: Caddy на VPS (блок добавлен в
+`deploy/Caddyfile`, провалидирован перед reload, `api.flipthememe.com` и
+`babushkin-automation.com` на том же Caddy подтверждены рабочими после);
+Cloudflare Worker `flipthememe-edge-rhc` с маршрутом `api-rhc.flipthememe.com/*`
+и своим `WORKER_SECRET` (тем же значением, что в `.env.rhc` на VPS); Worker
+`flipthememe-watchdog-rhc` с собственным KV-неймспейсом, живой
+(`https://flipthememe-watchdog-rhc.sofiaseremeteva.workers.dev`).
+
+**Недостающее звено:** DNS-запись `api-rhc.flipthememe.com` (проксированная,
+оранжевое облако) в зоне `flipthememe.com`. У токена `wrangler`, доступного в
+этой сессии, нет прав на зону/DNS (только `workers`/`workers_kv`/`workers_routes`
+write) - создать запись саму не смогла. Как только запись появится, Caddy
+сам получит сертификат Let's Encrypt (уже настроен и ждёт), а оба воркера
+начнут получать трафик без дополнительных действий - весь остальной путь уже
+готов и ждёт только этого.
+
+**Что нужно сделать (в Cloudflare dashboard, zone flipthememe.com):**
+добавить DNS-запись `api-rhc` (A или CNAME на тот же VPS/хост, что и
+`api.flipthememe.com`), proxy status = Proxied (оранжевое облако).
+
+Публичный RHC-фронтенд не разворачивался в этом заходе - `SITE_HOST` в
+watchdog указывает на `rhc.flipthememe.com` заранее (код воркера отказывается
+стартовать с `DEPLOYMENT` без обоих хостов), но там пока ничего нет; это
+отдельная задача, не часть A06 в узком смысле (аудит называл конкретно
+API-эндпоинт).
+
 ## Robinhood Chain mainnet, chainId 4663
 
 Не развёрнуто. Этап Э3.
