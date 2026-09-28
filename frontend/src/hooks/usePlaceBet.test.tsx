@@ -32,6 +32,17 @@ let approveCallArgs: any
  */
 let mockBetReceipt: 'pending' | 'success' | 'reverted' = 'pending'
 
+/**
+ * What PoolMarketFactory.isMarket reports for the probed address, and what a
+ * refetch of it resolves to. True by default: every test in this file except
+ * the "audit A05" block below is about something else entirely (approval
+ * ordering, receipt tracking, stale state) and assumes a legitimately
+ * verified market, matching what Market.tsx's own gate would have already
+ * confirmed before this hook's execute() ever runs on a real page.
+ */
+let mockIsMarket: boolean | undefined = true
+let mockIsMarketRefetchResult: boolean | undefined = true
+
 vi.mock('wagmi', () => ({
   useAccount: () => ({ address: '0x00000000000000000000000000000000000000bb' }),
   usePublicClient: () => ({
@@ -46,6 +57,7 @@ vi.mock('wagmi', () => ({
   useReadContract: ({ functionName }: any) => {
     if (functionName === 'feedId') return { data: '0x5045504500000000000000000000000000000000000000000000000000000000' }
     if (functionName === 'allowance') return { data: 0n, refetch: async () => {} } // forces an approve
+    if (functionName === 'isMarket') return { data: mockIsMarket, refetch: async () => ({ data: mockIsMarketRefetchResult }) }
     return { data: undefined, refetch: async () => {} }
   },
   useWriteContract: () => ({
@@ -102,7 +114,13 @@ function Probe({ amountUsd = '10' }: { amountUsd?: string } = {}) {
   )
 }
 
-beforeEach(() => { calls.length = 0; approveCallArgs = undefined; mockBetReceipt = 'pending' })
+beforeEach(() => {
+  calls.length = 0
+  approveCallArgs = undefined
+  mockBetReceipt = 'pending'
+  mockIsMarket = true
+  mockIsMarketRefetchResult = true
+})
 afterEach(cleanup)
 
 describe('usePlaceBet, approval ordering', () => {
@@ -140,6 +158,45 @@ describe('usePlaceBet, bounded approval', () => {
     // Probe bets amountUsd: '10' at the default (6-decimal) test currency.
     expect(approveCallArgs.args[1]).toBe(10_000_000n)
     expect(approveCallArgs.args[1]).not.toBe(2n ** 256n - 1n) // maxUint256
+  })
+})
+
+describe('usePlaceBet, audit A05 (2026-09-28): re-verifies isMarket before any approval or signature', () => {
+  /**
+   * Market.tsx's own gate has its own bug fixed separately (notAMarket =
+   * isRealMarket === false treated an RPC error identically to "confirmed
+   * fine"), but that only protects one page - Markets.tsx mounts this same
+   * hook with no isMarket check of its own at all. This is the one place
+   * every bet actually goes through, so it has to refuse on its own,
+   * regardless of what the calling page already checked or forgot to.
+   */
+  it('refuses when isMarket is confirmed false, without approving or betting', async () => {
+    mockIsMarket = false
+    render(<Probe />)
+    screen.getByRole('button', { name: 'go' }).click()
+
+    await waitFor(() => expect(screen.getByTestId('step').textContent).toBe('error'))
+    expect(screen.getByTestId('error').textContent).toContain('Could not verify')
+    expect(calls).toEqual([])
+  })
+
+  it('refuses when isMarket has not resolved and a fresh refetch also comes back empty', async () => {
+    mockIsMarket = undefined
+    mockIsMarketRefetchResult = undefined
+    render(<Probe />)
+    screen.getByRole('button', { name: 'go' }).click()
+
+    await waitFor(() => expect(screen.getByTestId('step').textContent).toBe('error'))
+    expect(calls).toEqual([])
+  })
+
+  it('proceeds once a refetch confirms isMarket true, even if the initial read had not resolved yet', async () => {
+    mockIsMarket = undefined
+    mockIsMarketRefetchResult = true
+    render(<Probe />)
+    screen.getByRole('button', { name: 'go' }).click()
+
+    await waitFor(() => expect(calls).toContain('approve'))
   })
 })
 

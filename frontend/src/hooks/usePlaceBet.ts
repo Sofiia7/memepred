@@ -16,7 +16,7 @@ import {
   usePublicClient,
 } from 'wagmi'
 import { parseUnits, decodeEventLog, type Address, type Hash, encodeFunctionData } from 'viem'
-import { CONTRACTS, ORDERBOOK_MARKET_ABI, ERC20_ABI, CURRENCY_DECIMALS, CURRENCY_SYMBOL, IS_POOL_BACKED } from '../lib/contracts'
+import { CONTRACTS, ORDERBOOK_MARKET_ABI, ERC20_ABI, MARKET_FACTORY_ABI, CURRENCY_DECIMALS, CURRENCY_SYMBOL, IS_POOL_BACKED } from '../lib/contracts'
 import { getPendingReferrer } from '../lib/referral'
 import { fetchBetPayload, withPayload } from '../lib/oracle'
 import { useEnsureChain } from './useEnsureChain'
@@ -86,6 +86,20 @@ export function usePlaceBet({
     address: marketAddress,
     abi: ORDERBOOK_MARKET_ABI,
     functionName: 'feedId',
+  })
+
+  // ── Audit A05 (2026-09-28): re-verify the address here too ───
+  // Market.tsx already gates its own UI on PoolMarketFactory.isMarket, but
+  // that protects only that one page - Markets.tsx mounts this same hook
+  // behind its own Composer with no such check, and any future caller would
+  // be equally unprotected. This is the one place every bet actually goes
+  // through, so it is the one place that can guarantee the check always runs
+  // before an approval or a signature, no matter which page got here wrong.
+  const { data: isRealMarket, refetch: refetchIsMarket } = useReadContract({
+    address: CONTRACTS.MARKET_FACTORY,
+    abi: MARKET_FACTORY_ABI,
+    functionName: 'isMarket',
+    args: [marketAddress],
   })
 
   const { data: allowance, refetch: refetchAllowance } = useReadContract({
@@ -191,6 +205,25 @@ export function usePlaceBet({
     setSubmittedHash(undefined)
 
     try {
+      // Only a confirmed `true` is trusted - `undefined` (still loading, or
+      // the read errored) and `false` both refuse. Treating "not yet
+      // confirmed" as "confirmed fine" is the exact bug this mirrors from
+      // Market.tsx's old `notAMarket = isRealMarket === false`: an RPC
+      // hiccup left isRealMarket undefined, which made that check false too,
+      // and opened the door to approving an unverified contract. Refetched
+      // rather than trusted stale if it has not resolved yet - wagmi's
+      // automatic refetch triggers (focus, reconnect) are not a guarantee
+      // this has run recently for a tab that has been open a while.
+      let marketConfirmed = isRealMarket
+      if (marketConfirmed === undefined) {
+        marketConfirmed = (await refetchIsMarket()).data
+      }
+      if (marketConfirmed !== true) {
+        setStep('error')
+        setError('Could not verify this is a real market. Please retry.')
+        return
+      }
+
       const chainCheck = await ensureChain()
       if (!chainCheck.ok) {
         setStep('error')
@@ -282,7 +315,7 @@ export function usePlaceBet({
       setStep('error')
       setError(err?.shortMessage || err?.message || 'Transaction failed')
     }
-  }, [address, amountWei, allowance, direction, marketAddress, effectiveReferrer, expectedPrice, slippageBps, marketFeedId, approve, placeBet, refetchAllowance, sendBet, ensureChain, publicClient])
+  }, [address, amountWei, allowance, direction, marketAddress, effectiveReferrer, expectedPrice, slippageBps, marketFeedId, isRealMarket, refetchIsMarket, approve, placeBet, refetchAllowance, sendBet, ensureChain, publicClient])
 
   return {
     execute,

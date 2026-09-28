@@ -47,7 +47,12 @@ export function Market() {
   // that. isMarket() is the on-chain source of truth: it is only ever true for
   // an address MarketFactory/PoolMarketFactory itself created. Also above the
   // early return, for the same Rules-of-Hooks reason as useNow above.
-  const { data: isRealMarket, isLoading: verifyingMarket } = useReadContract({
+  const {
+    data: isRealMarket,
+    isLoading: verifyingMarket,
+    isError: marketCheckErrored,
+    refetch: refetchIsMarket,
+  } = useReadContract({
     address: CONTRACTS.MARKET_FACTORY,
     abi: MARKET_FACTORY_ABI,
     functionName: 'isMarket',
@@ -58,6 +63,13 @@ export function Market() {
   if (!marketAddress) return <div className="empty-state">Invalid market</div>
   const meta = symbolMeta(symbol)
   const notAMarket = isRealMarket === false
+  // Audit A05 (2026-09-28): an RPC error leaves `data` undefined and
+  // `isLoading` false, which used to read identically to "confirmed not a
+  // market is false" and let the Composer through on a market that was never
+  // actually verified. This is its own state now, distinct from both
+  // "confirmed real" and "confirmed fake", with its own Retry rather than
+  // silently trusting the address.
+  const verifyFailed = marketCheckErrored && isRealMarket === undefined
 
   return (
     <>
@@ -124,6 +136,13 @@ export function Market() {
         <div className="empty-state" style={{ margin: '12px 0' }}>
           This address was not created by FlipTheMeme's market factory - it is
           not a real market. Do not approve any token spend on this page.
+        </div>
+      ) : verifyFailed ? (
+        <div className="empty-state" style={{ margin: '12px 0' }}>
+          Couldn't verify this is a real market.
+          <button className="cta" style={{ marginTop: 10 }} onClick={() => refetchIsMarket()}>
+            RETRY
+          </button>
         </div>
       ) : (
         <>

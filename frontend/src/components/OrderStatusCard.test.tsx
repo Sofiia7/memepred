@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, cleanup } from '@testing-library/react'
-import { OrderStatusCard } from './OrderStatusCard'
+import { OrderStatusCard, findStuckMatchId, MatchBreakdown } from './OrderStatusCard'
 import { SETTLE_GRACE_SEC } from '../lib/contracts'
 
 /**
@@ -171,5 +171,92 @@ describe('OrderStatusCard, a tied match', () => {
     expect(screen.getByText(/stake returned/i)).toBeDefined()
     expect(screen.queryByText(/loss/i)).toBeNull()
     expect(screen.queryByText(/you won/i)).toBeNull()
+  })
+})
+
+describe('OrderStatusCard, audit A04 (2026-09-28): claim survives a forced REFUNDED status', () => {
+  /**
+   * The exact scenario AuditCases.t.sol's
+   * test_Audit_RefundedOrderCanStillHaveClaimableWinnings proves on chain:
+   * one match won, a later one was emergency-refunded, and the contract
+   * forces order.status to REFUNDED regardless of the order's own fill
+   * state or its accumulated payout. The old REFUNDED branch never checked
+   * payout at all.
+   */
+  it('offers Claim on a REFUNDED order that still has a real payout', () => {
+    order = {
+      ...baseOrder, status: 4 /* REFUNDED */, pendingSettlements: 0n,
+      payout: 20_000_000n, filledAmount: 20_000_000n, amount: 20_000_000n,
+    }
+
+    render(<OrderStatusCard marketAddress={MARKET} orderId={1n} onClaim={vi.fn()} />)
+
+    expect(screen.getByText(/refunded/i)).toBeDefined()
+    expect(screen.getByRole('button', { name: /claim 20 USDC/i })).toBeDefined()
+  })
+
+  it('does not offer Claim on a REFUNDED order with nothing left to claim', () => {
+    order = { ...baseOrder, status: 4 /* REFUNDED */, pendingSettlements: 0n, payout: 0n }
+
+    render(<OrderStatusCard marketAddress={MARKET} orderId={1n} />)
+
+    expect(screen.queryByRole('button', { name: /claim/i })).toBeNull()
+  })
+
+  it('does not offer Claim while a different match on the order is still unsettled', () => {
+    // pendingSettlements > 0: claim() itself would revert "settlements
+    // pending" - this must never be offered regardless of payout.
+    order = { ...baseOrder, status: 4 /* REFUNDED */, pendingSettlements: 1n, payout: 20_000_000n }
+
+    render(<OrderStatusCard marketAddress={MARKET} orderId={1n} />)
+
+    expect(screen.queryByRole('button', { name: /claim/i })).toBeNull()
+  })
+})
+
+describe('findStuckMatchId (audit A04, 2026-09-28)', () => {
+  const NOW = 1_800_000_000
+
+  it('finds a later match that is actually stuck, not just the first one', () => {
+    const matches = [
+      { matchId: '7', settled: true, settleAt: NOW - 3600 },
+      { matchId: '9', settled: false, settleAt: NOW - SETTLE_GRACE_SEC - 3600 },
+    ]
+    expect(findStuckMatchId(matches, NOW)).toBe(9n)
+  })
+
+  it('returns undefined when nothing has actually passed grace yet', () => {
+    const matches = [{ matchId: '9', settled: false, settleAt: NOW - 3600 }]
+    expect(findStuckMatchId(matches, NOW)).toBeUndefined()
+  })
+
+  it('returns undefined once every match has settled', () => {
+    const matches = [
+      { matchId: '7', settled: true, settleAt: NOW - SETTLE_GRACE_SEC - 3600 },
+      { matchId: '9', settled: true, settleAt: NOW - SETTLE_GRACE_SEC - 3600 },
+    ]
+    expect(findStuckMatchId(matches, NOW)).toBeUndefined()
+  })
+})
+
+describe('MatchBreakdown (audit A04, 2026-09-28)', () => {
+  it('renders nothing for a single-match order - nothing to reconcile', () => {
+    const { container } = render(
+      <MatchBreakdown matches={[{ matchId: '1', amount: 0.01, outcome: 'won' }]} />,
+    )
+    expect(container.firstChild).toBeNull()
+  })
+
+  it('lists every match with its own outcome once there is more than one', () => {
+    render(
+      <MatchBreakdown
+        matches={[
+          { matchId: '1', amount: 0.01, outcome: 'tied' },
+          { matchId: '2', amount: 0.01, outcome: 'won' },
+        ]}
+      />,
+    )
+    expect(screen.getByText(/tied - refunded/i)).toBeDefined()
+    expect(screen.getByText(/won/i)).toBeDefined()
   })
 })
