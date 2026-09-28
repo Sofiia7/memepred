@@ -19,6 +19,15 @@ const Params = z.object({ address: zAddress })
  *
  * Expects the orders table to be aliased `o`.
  */
+/**
+ * NOT m.emergency_refunded matters as of audit A03/A04 (2026-09-28): before
+ * that fix, an emergency-refunded match's `settled` stayed FALSE in this
+ * table forever, so it could never satisfy this EXISTS at all. Now that it
+ * correctly reads TRUE, up_won - never set by emergencyRefundMatch, so it
+ * keeps its zero-initialized FALSE - would otherwise read as a real win for
+ * every DOWN order this happens to and a real loss for every UP one. A
+ * refund is neither.
+ */
 const WON_EXPR = `EXISTS (
   SELECT 1
   FROM order_matches om
@@ -28,6 +37,7 @@ const WON_EXPR = `EXISTS (
     AND om.order_id       = o.order_id
     AND m.settled
     AND NOT m.tied
+    AND NOT m.emergency_refunded
     AND ((o.direction = 'UP') = m.up_won)
 )`
 
@@ -52,13 +62,21 @@ const TIED_EXPR = `EXISTS (
  * matches rather than payout_usdc for the same reason as WON_EXPR.
  *
  * Approximation: ignores LP_TAKER_FEE_BPS (1%, charged only when the LP is the
- * counterparty and the user wins), so a win against the pool reads about 1%
- * high. Deliberate — the exact figure lives on-chain in Order.payout, and a
- * profile stat that is 1% optimistic beats one that reports every unclaimed
- * winner as a total loss.
+ * counterparty and the user wins) AND the market's own protocol feeBps, so a
+ * win reads higher than the actual on-chain payout by however much fee was
+ * taken from that match's pool. Deliberate — the exact figure lives on-chain
+ * in Order.payout, and a profile stat that is a bit optimistic beats one that
+ * reports every unclaimed winner as a total loss. See audit U07 for the fuller
+ * fix (a real ledger over stake/refunds/winnings/fees); this stays an
+ * approximation until then.
+ *
+ * emergency_refunded matches like tied: audit A03/A04 made `settled` finally
+ * read TRUE for them, and up_won's meaningless default (never set by
+ * emergencyRefundMatch) would otherwise misprice a refund as a real win or
+ * loss - see WON_EXPR's comment for the same reasoning.
  */
 const PNL_EXPR = `COALESCE((
-  SELECT SUM(CASE WHEN m.tied THEN 0
+  SELECT SUM(CASE WHEN m.tied OR m.emergency_refunded THEN 0
                   WHEN (o.direction = 'UP') = m.up_won
                   THEN m.amount_usdc ELSE -m.amount_usdc END)
   FROM order_matches om

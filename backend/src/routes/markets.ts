@@ -11,6 +11,11 @@ const ListQuery = z.object({
 
 const ByAddressParams = z.object({ address: zAddress })
 
+const OrderMatchesParams = z.object({
+  address: zAddress,
+  orderId: z.string().regex(/^\d+$/, 'invalid order id'),
+})
+
 export async function marketsRoutes(app: FastifyInstance) {
 
   app.get('/', async (req, reply) => {
@@ -135,6 +140,84 @@ export async function marketsRoutes(app: FastifyInstance) {
 
     const out = { volume24h, symbols }
     await redis.setEx(cacheKey, 30, JSON.stringify(out))
+    return out
+  })
+
+  /**
+   * Every match an order has ever been part of, with a per-match outcome.
+   *
+   * Audit A04 (2026-09-28): the UI reduced an order to its FIRST match only
+   * (Order.matchId, kept on-chain "for back-compat / view ease" - see
+   * OrderbookMarket.sol's own comment on it), so a multi-fill order's later
+   * matches were invisible: a tied first match hid a won second one, Recover
+   * targeted the wrong matchId once the first settled but a second stalled,
+   * and an order force-REFUNDED by one emergency refund still had a real
+   * claimable payout from a different, already-won match that no REFUNDED
+   * branch in the UI ever offered. This is what a frontend needs to render
+   * the honest aggregate instead of guessing from a single enum - claim
+   * eligibility itself is still read live from getOrder() (pendingSettlements
+   * / payout / status), which already aggregates correctly on-chain; this
+   * endpoint exists for display and for finding the RIGHT stuck match, not
+   * for re-deriving money math the contract already gets right.
+   */
+  app.get('/:address/orders/:orderId', async (req, reply) => {
+    const p = parse(OrderMatchesParams, req.params, reply); if (!p) return
+
+    const cacheKey = `order-matches:${p.address}:${p.orderId}`
+    const cached = await redis.get(cacheKey)
+    if (cached) return JSON.parse(cached)
+
+    const orderRes = await pg.query(
+      `SELECT order_id, trader_address, direction, amount_usdc, filled_amount,
+              status, payout_usdc, unmatched_refunded, placed_at
+         FROM orders WHERE market_address = $1 AND order_id = $2`,
+      [p.address, p.orderId],
+    )
+    if (!orderRes.rows[0]) return reply.code(404).send({ error: 'order not found' })
+    const o = orderRes.rows[0]
+    const isUp = o.direction === 'UP'
+
+    const matchRes = await pg.query(
+      `SELECT m.match_id, m.is_lp_match, om.matched_amount, m.entry_price, m.exit_price,
+              m.settled, m.tied, m.up_won, m.emergency_refunded, m.settle_at, m.settled_at
+         FROM order_matches om
+         JOIN matches m ON m.market_address = om.market_address AND m.match_id = om.match_id
+        WHERE om.market_address = $1 AND om.order_id = $2
+        ORDER BY m.settle_at ASC`,
+      [p.address, p.orderId],
+    )
+
+    const matches = matchRes.rows.map(m => ({
+      matchId:      m.match_id,
+      isLpMatch:    m.is_lp_match,
+      amount:       parseFloat(m.matched_amount),
+      entryPrice:   m.entry_price,
+      exitPrice:    m.exit_price,
+      settled:      m.settled,
+      settleAt:     Math.floor(new Date(m.settle_at).getTime() / 1000),
+      settledAt:    m.settled_at ? Math.floor(new Date(m.settled_at).getTime() / 1000) : null,
+      // Mirrors profile.ts's WON_EXPR/TIED_EXPR, plus the emergency-refund
+      // case those never had to consider.
+      outcome: !m.settled            ? 'pending'
+             : m.emergency_refunded  ? 'emergency_refunded'
+             : m.tied                ? 'tied'
+             : (isUp === m.up_won)   ? 'won'
+             :                         'lost',
+    }))
+
+    const out = {
+      orderId:           o.order_id,
+      trader:            o.trader_address,
+      direction:         o.direction,
+      amount:            parseFloat(o.amount_usdc),
+      filledAmount:      parseFloat(o.filled_amount),
+      status:            o.status,
+      payout:            o.payout_usdc !== null ? parseFloat(o.payout_usdc) : null,
+      unmatchedRefunded: o.unmatched_refunded,
+      matches,
+    }
+
+    await redis.setEx(cacheKey, 5, JSON.stringify(out))
     return out
   })
 }
