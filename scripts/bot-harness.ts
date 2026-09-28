@@ -103,6 +103,9 @@ const MARKET_ABI = [
         { name: 'pendingSettlements', type: 'uint256' },
         { name: 'payout',             type: 'uint256' },
         { name: 'unmatchedRefunded',  type: 'bool'    },
+        // Audit L01 (2026-09-28): trailing fields added to the Order struct.
+        { name: 'expectedPrice',      type: 'uint256' },
+        { name: 'slippageBps',        type: 'uint256' },
       ],
     }],
   },

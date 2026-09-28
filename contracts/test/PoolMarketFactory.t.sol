@@ -518,4 +518,75 @@ contract PoolMarketFactoryTest is Test {
         assertEq(factory.twapWindowFor(300), 60);
         assertEq(factory.twapWindowFor(60), 30);
     }
+
+    // ── L05: multisig rotation reaches existing markets ───────
+    /**
+     * Audit L05 (2026-09-28): setMultisig below only changes what a FUTURE
+     * createMarket call passes to initialize() - a market keeps whatever
+     * multisig it was given at creation, forever, since it never rolls over
+     * on this chain. syncMultisig()/syncMultisigForFeed() are the fix: pull,
+     * not push, so no market is left holding a stale value silently.
+     */
+    function test_SetMultisig_DoesNotByItselfChangeAnExistingMarket() public {
+        MockUniswapV3Pool pool = _goodPool();
+        vm.prank(anyone);
+        address market = factory.createMarket(address(pool), D15);
+        assertEq(OrderbookMarket(market).multisig(), multisig);
+
+        address newMultisig = makeAddr("newMultisig");
+        factory.setMultisig(newMultisig);
+
+        assertEq(factory.multisig(), newMultisig, "factory itself updated");
+        assertEq(OrderbookMarket(market).multisig(), multisig, "existing market did not - this is the gap L05 closes");
+    }
+
+    function test_SyncMultisig_PullsTheCurrentValue_CallableByAnyone() public {
+        MockUniswapV3Pool pool = _goodPool();
+        vm.prank(anyone);
+        address market = factory.createMarket(address(pool), D15);
+
+        address newMultisig = makeAddr("newMultisig");
+        factory.setMultisig(newMultisig);
+
+        vm.prank(anyone); // permissionless - no factory/owner/multisig role needed
+        OrderbookMarket(market).syncMultisig();
+
+        assertEq(OrderbookMarket(market).multisig(), newMultisig);
+        // And authority actually moved: the OLD multisig can no longer pause it.
+        vm.prank(multisig);
+        vm.expectRevert("only multisig");
+        OrderbookMarket(market).pause();
+        vm.prank(newMultisig);
+        OrderbookMarket(market).pause();
+        assertTrue(OrderbookMarket(market).paused());
+    }
+
+    function test_SyncMultisigForFeed_UpdatesEveryDurationForThatPool() public {
+        MockUniswapV3Pool pool = _goodPool();
+        vm.startPrank(anyone);
+        address m60 = factory.createMarket(address(pool), 60);
+        address m300 = factory.createMarket(address(pool), 300);
+        vm.stopPrank();
+
+        address newMultisig = makeAddr("newMultisig");
+        factory.setMultisig(newMultisig);
+        factory.syncMultisigForFeed(factory.feedIdFor(address(pool)));
+
+        assertEq(OrderbookMarket(m60).multisig(), newMultisig);
+        assertEq(OrderbookMarket(m300).multisig(), newMultisig);
+    }
+
+    function test_SyncMultisig_IsANoOpWhenAlreadyCurrent() public {
+        MockUniswapV3Pool pool = _goodPool();
+        vm.prank(anyone);
+        address market = factory.createMarket(address(pool), D15);
+
+        // No MultisigSynced event when nothing actually changes.
+        vm.recordLogs();
+        OrderbookMarket(market).syncMultisig();
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        for (uint256 i = 0; i < logs.length; i++) {
+            assertTrue(logs[i].topics[0] != OrderbookMarket.MultisigSynced.selector, "should not fire when unchanged");
+        }
+    }
 }

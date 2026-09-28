@@ -26,6 +26,13 @@ interface IReferralRegistry {
     function referrerOf(address referee) external view returns (address);
 }
 
+/// @dev Both MarketFactory and PoolMarketFactory expose this getter already -
+/// this is the minimal slice OrderbookMarket needs from whichever one
+/// deployed it, without importing either concrete factory (see L05 below).
+interface IMarketFactory {
+    function multisig() external view returns (address);
+}
+
 /**
  * @title OrderbookMarket
  * @notice Rolling market with async matching and multi-fill orders.
@@ -75,6 +82,11 @@ contract OrderbookMarket is ReentrancyGuard, Pausable, PrimaryProdDataServiceCon
         uint256 pendingSettlements; // matches yet to settle
         uint256 payout; // accumulated winnings (claimable when pendingSettlements == 0)
         bool unmatchedRefunded; // refundExpired already returned the unmatched portion
+        // Audit L01 (2026-09-28): the maker's own price guard, carried past
+        // placeBet's own check so a LATER taker matching this resting order
+        // is bound by it too - see _withinBand and its call site in _tryMatch.
+        uint256 expectedPrice;
+        uint256 slippageBps;
     }
 
     struct Match {
@@ -272,6 +284,17 @@ contract OrderbookMarket is ReentrancyGuard, Pausable, PrimaryProdDataServiceCon
     event MatchTied(uint256 indexed matchId, uint256 price);
     event OrderRefunded(uint256 indexed orderId, address trader, uint256 amount); // partial when amount < order.amount
     event Claimed(uint256 indexed orderId, address trader, uint256 payout);
+    /// @notice A match was closed out via emergencyRefundMatch rather than settleMatch.
+    /// @dev Audit A03 (2026-09-28): emergencyRefundMatch used to emit only
+    ///      OrderRefunded for each side, with nothing carrying the match ID
+    ///      itself - so an indexer had no event to key a match-level update
+    ///      off, and matches.settled could never be projected off-chain
+    ///      without re-deriving it from the order events. This mirrors
+    ///      MatchSettled/MatchTied so every terminal match state has its own
+    ///      event.
+    event MatchRefunded(uint256 indexed matchId);
+    /// @notice This market's authority was pulled up to date with the factory's current multisig.
+    event MultisigSynced(address indexed previous, address indexed current);
 
     // ── CONSTRUCTOR / INITIALIZER ──────────────────────────
     /**
@@ -388,10 +411,7 @@ contract OrderbookMarket is ReentrancyGuard, Pausable, PrimaryProdDataServiceCon
         require(expectedPrice > 0, "expectedPrice zero");
 
         uint256 actualPrice = _getCurrentPrice();
-
-        uint256 diff = actualPrice > expectedPrice ? actualPrice - expectedPrice : expectedPrice - actualPrice;
-        uint256 spread = (diff * 10_000) / expectedPrice;
-        require(spread <= slippageBps, "price slippage exceeded");
+        require(_spreadBps(actualPrice, expectedPrice) <= slippageBps, "price slippage exceeded");
 
         usdc.safeTransferFrom(msg.sender, address(this), amount);
 
@@ -411,7 +431,9 @@ contract OrderbookMarket is ReentrancyGuard, Pausable, PrimaryProdDataServiceCon
             matchId: 0,
             pendingSettlements: 0,
             payout: 0,
-            unmatchedRefunded: false
+            unmatchedRefunded: false,
+            expectedPrice: expectedPrice,
+            slippageBps: slippageBps
         });
         traderOrders[msg.sender].push(orderId);
 
@@ -436,10 +458,24 @@ contract OrderbookMarket is ReentrancyGuard, Pausable, PrimaryProdDataServiceCon
             Order storage candidate = orders[candidateId];
             scanned++;
 
-            // Lazy eviction of dead/expired orders.
+            // Lazy eviction of dead/expired/price-stale orders.
+            //
+            // Audit L01 (2026-09-28): a resting order used to carry no price
+            // protection of its own past placeBet's one-time check - a later
+            // taker matched it at whatever currentPrice happened to be, no
+            // matter how far that had drifted from what the maker agreed to
+            // (proven: a maker at price 1 ± 1% filled at ~2 two minutes
+            // later). Checking the CANDIDATE's own band against
+            // currentPrice, every time it is considered, closes that: an
+            // order that has drifted outside its own tolerance is evicted
+            // exactly like an expired one, never force-filled at a price it
+            // never agreed to. It still resolves normally afterwards -
+            // refundExpired needs no help from this loop, and does not care
+            // whether the order is still in the queue.
             if (
                 candidate.status != OrderStatus.PENDING || candidate.unmatchedRefunded
                     || block.timestamp > candidate.placedAt + MATCH_TIMEOUT
+                    || _spreadBps(currentPrice, candidate.expectedPrice) > candidate.slippageBps
             ) {
                 _removeAt(oppositeQueue, i);
                 continue;
@@ -625,8 +661,26 @@ contract OrderbookMarket is ReentrancyGuard, Pausable, PrimaryProdDataServiceCon
             _settleOrder(userOrderId, userWon, m);
 
             if (!userWon) {
-                // LP won: send both stakes back to the pool.
-                usdc.safeTransfer(liquidityPool, m.amount * 2);
+                // LP won: send the pot back to the pool, net of the SAME
+                // protocol fee a user win already pays inside _settleOrder.
+                //
+                // Audit L04 (2026-09-28): before this, a protocol fee was
+                // charged only on the user-win branch of _settleOrder, so an
+                // LP-matched loss returned feeBps entirely untaxed - LP-matched
+                // volume earned roughly half the protocol revenue of PvP for
+                // the same stake, and measured against actual settlement gas
+                // (contracts/test/L04FeeEconomics.t.sol), less than it cost the
+                // keeper to settle. No referrer credit here: the fee is drawn
+                // from the LP's win, not a user's, and nothing the user did
+                // produced it.
+                uint256 totalPool = m.amount * 2;
+                uint256 fee = (totalPool * feeBps) / 10_000;
+                uint256 netToLp = totalPool - fee;
+                usdc.safeTransfer(liquidityPool, netToLp);
+                if (fee > 0 && feeDistributor != address(0)) {
+                    usdc.safeTransfer(feeDistributor, fee);
+                    IFeeDistributor(feeDistributor).distributeFee(fee, address(0));
+                }
             }
             ILiquidityPool(liquidityPool).onMatchSettled(matchId, m.upWon);
         }
@@ -757,6 +811,8 @@ contract OrderbookMarket is ReentrancyGuard, Pausable, PrimaryProdDataServiceCon
             ILiquidityPool(liquidityPool).onMatchRefunded(matchId);
             _refundUnmatchedTail(userOrderId, o);
         }
+
+        emit MatchRefunded(matchId);
     }
 
     /// @dev When emergency-refunding a match, force the affected order into
@@ -837,6 +893,15 @@ contract OrderbookMarket is ReentrancyGuard, Pausable, PrimaryProdDataServiceCon
     }
 
     // ── HELPERS ────────────────────────────────────────────
+    /// @dev Deviation of `price` from `basePrice`, in bps of `basePrice`.
+    ///      Shared by placeBet's own slippage check and _tryMatch's
+    ///      per-candidate band check (audit L01) so the two apply the exact
+    ///      same rule to the exact same numbers.
+    function _spreadBps(uint256 price, uint256 basePrice) internal pure returns (uint256) {
+        uint256 diff = price > basePrice ? price - basePrice : basePrice - price;
+        return (diff * 10_000) / basePrice;
+    }
+
     function _removeAt(uint256[] storage queue, uint256 index) internal {
         uint256 lastIdx = queue.length - 1;
         uint256 removed = queue[index];
@@ -957,5 +1022,33 @@ contract OrderbookMarket is ReentrancyGuard, Pausable, PrimaryProdDataServiceCon
     function pauseByFactory() external {
         require(msg.sender == factory, "only factory");
         _pause();
+    }
+
+    /**
+     * @notice Pull this market's authority up to date with the factory's
+     *         current multisig. Callable by anyone.
+     * @dev Audit L05 (2026-09-28): a market's multisig is copied in at
+     *      initialize() and never updated after - MarketFactory/
+     *      PoolMarketFactory.setMultisig changes the factory's own storage
+     *      for FUTURE markets, but every already-created market kept pause()/
+     *      unpause() gated on whatever address it started with. On this
+     *      chain a market has no close time and never rolls over, so a
+     *      compromised or retired multisig on an existing market is not a
+     *      problem that ages out on its own the way it effectively did on
+     *      Base's few-minutes-lived markets.
+     *
+     *      Permissionless rather than factory-owner-gated: the value it pulls
+     *      is already owner-gated at the source (only the factory owner can
+     *      call setMultisig in the first place), so triggering the sync
+     *      sooner is strictly safer than gating who may trigger it - the old
+     *      multisig itself, a keeper, or anyone else can push the update the
+     *      moment it is needed instead of waiting on a second privileged call.
+     */
+    function syncMultisig() external {
+        address current = IMarketFactory(factory).multisig();
+        if (current == multisig) return;
+        address previous = multisig;
+        multisig = current;
+        emit MultisigSynced(previous, current);
     }
 }

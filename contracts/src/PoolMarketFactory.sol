@@ -366,6 +366,27 @@ contract PoolMarketFactory is Ownable {
         emit FeedUnpaused(feedId);
     }
 
+    /**
+     * @notice Push the current multisig to every market for one pool.
+     * @dev Audit L05 (2026-09-28): setMultisig below only changes what a
+     *      FUTURE createMarket call passes to initialize() - it does nothing
+     *      for markets that already exist, and a market here never rolls
+     *      over on its own to pick the new value up. Convenience bulk sweep
+     *      over OrderbookMarket.syncMultisig(), same bound and same
+     *      best-effort-per-market shape as pauseMarketsForFeed above.
+     *      Permissionless like syncMultisig() itself - see that function's
+     *      doc comment for why gating who may trigger it would only add
+     *      risk, not remove it.
+     */
+    function syncMultisigForFeed(bytes32 feedId) external {
+        address[] storage list = activeMarkets[feedId];
+        uint256 len = list.length;
+        uint256 stop = len > PAUSE_SWEEP_LIMIT ? len - PAUSE_SWEEP_LIMIT : 0;
+        for (uint256 i = len; i > stop; i--) {
+            try OrderbookMarket(list[i - 1]).syncMultisig() {} catch {}
+        }
+    }
+
     function setMultisig(address newMultisig) external onlyOwner {
         if (newMultisig == address(0)) revert ZeroAddress();
         emit MultisigChanged(multisig, newMultisig);

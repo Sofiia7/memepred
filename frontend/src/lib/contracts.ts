@@ -233,7 +233,11 @@ export const ORDERBOOK_MARKET_ABI = [
         { name: 'matchId',            type: 'uint256' },
         { name: 'pendingSettlements', type: 'uint256' },
         { name: 'payout',             type: 'uint256' },
-        { name: 'unmatchedRefunded',  type: 'bool'    }
+        { name: 'unmatchedRefunded',  type: 'bool'    },
+        // Audit L01 (2026-09-28): the maker's own price guard, carried on
+        // the order so a later taker matching it is bound by it too.
+        { name: 'expectedPrice',      type: 'uint256' },
+        { name: 'slippageBps',        type: 'uint256' }
       ]
     }]
   },

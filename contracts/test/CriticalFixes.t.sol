@@ -90,6 +90,11 @@ contract CriticalFixesTest is RedstoneTest {
         uint256 aliceBefore = usdc.balanceOf(alice);
         uint256 bobBefore = usdc.balanceOf(bob);
 
+        // Audit A03 (2026-09-28): an indexer needs a match-level event to key
+        // a `matches.settled` update off; before this, emergencyRefundMatch
+        // emitted only OrderRefunded, with no event naming the match at all.
+        vm.expectEmit(true, false, false, false);
+        emit OrderbookMarket.MatchRefunded(1);
         market.emergencyRefundMatch(1);
 
         assertEq(usdc.balanceOf(alice) - aliceBefore, 25e6, "alice refunded");

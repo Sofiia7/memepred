@@ -29,7 +29,13 @@ const ORDERBOOK_MARKET_ABI = [
         { name: 'matchId',            type: 'uint256' },
         { name: 'pendingSettlements', type: 'uint256' },
         { name: 'payout',             type: 'uint256' },
-        { name: 'unmatchedRefunded',  type: 'bool'    }
+        { name: 'unmatchedRefunded',  type: 'bool'    },
+        // Audit L01 (2026-09-28): trailing fields added to the Order struct.
+        // Named access below is unaffected either way, but see this file's
+        // own history above for why a stale copy of this shape is worth
+        // avoiding on principle, not just when something breaks from it.
+        { name: 'expectedPrice',      type: 'uint256' },
+        { name: 'slippageBps',        type: 'uint256' }
       ]
     }]
   },
