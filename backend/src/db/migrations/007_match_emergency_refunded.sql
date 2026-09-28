@@ -1,0 +1,14 @@
+-- 007: emergencyRefundMatch has no event handler in the indexer at all (audit
+-- A03, 2026-09-28) - the contract sets match.settled=true on chain but emits
+-- only OrderRefunded, so matches.settled stayed FALSE here forever for an
+-- emergency-refunded match. resolveKeeper.ts's refundOverdueMatches selects
+-- its oldest 20 candidates by `settled = FALSE`, so each such row occupied one
+-- of those 20 slots on every tick even though it could never be refunded
+-- again; once 20 accumulated, no newer overdue match was ever reached.
+--
+-- A separate boolean rather than overloading `tied` (which already means "a
+-- distinct outcome, not up_won") for the same reason 006 gave tied its own
+-- column instead of overloading up_won: giving an existing column a second
+-- meaning makes every existing reader ambiguous instead of adding one new,
+-- explicit case.
+ALTER TABLE matches ADD COLUMN IF NOT EXISTS emergency_refunded BOOLEAN NOT NULL DEFAULT FALSE;

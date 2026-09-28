@@ -97,6 +97,44 @@ const MAX_PER_TX  = Number(process.env.RESOLVE_MAX_PER_TX ?? '25')
 const MAX_LOOPS   = Number(process.env.RESOLVE_MAX_LOOPS  ?? '8')
 
 /**
+ * Where each market's settlement scan last confirmed a stuck window ended,
+ * carried across ticks.
+ *
+ * Audit A08 (2026-09-28): offset used to start at 0n on every call to
+ * settlePendingMarkets, bounding total progress past a stuck run to
+ * MAX_LOOPS*MAX_PER_TX positions PER TICK, forever - a run longer than that
+ * (an entire pool gone to zero liquidity produces many consecutive
+ * unpriceable matches, not just one) was never fully walked past: newer,
+ * perfectly settleable matches behind it sat until SETTLE_GRACE and a 24h
+ * emergency refund instead of a normal, priced settlement. Remembering how
+ * far the walk had already reached lets each new tick jump straight there
+ * instead of re-discovering the same prefix one window at a time.
+ *
+ * In-process only, not persisted to the DB: a keeper restart re-discovers the
+ * same stuck run at the same bounded per-tick cost this always had: it just
+ * no longer repeats that discovery on every single tick forever. Self-heals
+ * if the stuck window clears (a belated settle, or the emergency-refund sweep
+ * finally clearing the head) because iteration 0 of every tick still checks
+ * offset 0 first - see its use below - and any successful settle resets the
+ * saved value back to 0.
+ */
+const lastOffset = new Map<Address, bigint>()
+
+/**
+ * Where to resume scanning after finding the window at `current` still stuck
+ * this tick. Extracted for testing; see lastOffset's doc comment (audit A08).
+ *
+ * Only jumps on the tick's first check (offset started at 0n, so this is the
+ * fresh look that confirms the window has not healed since last tick) and
+ * only when doing so is actually forward progress - a resume point at or
+ * behind `current` (nothing persisted yet, or a market seen for the first
+ * time) falls back to the ordinary single-window step.
+ */
+export function nextStuckOffset(current: bigint, isFirstCheckThisTick: boolean, resumeFrom: bigint, step: bigint): bigint {
+  return isFirstCheckThisTick && resumeFrom > current ? resumeFrom : current + step
+}
+
+/**
  * Markets that have at least one match actually ready to settle.
  *
  * Sprint 5.6 - was `WHERE status = 'OPEN'`, which could never settle anything.
@@ -196,6 +234,11 @@ export async function settlePendingMarkets() {
       // and hides everything behind it. Re-reading offset 0 every loop is what
       // turned that into a standstill; stepping past a window that settles
       // nothing is what keeps the rest reachable.
+      //
+      // Always starts at 0n, not lastOffset.get(market): iteration 0 below
+      // needs its own first look at the true head every tick to notice a
+      // stuck window healing. See lastOffset's doc comment (audit A08) for
+      // how this tick's progress still reaches past a long-stuck run.
       let offset = 0n
 
       for (let i = 0; i < MAX_LOOPS; i++) {
@@ -299,11 +342,19 @@ export async function settlePendingMarkets() {
           // nothing; step past them instead so anything behind is reachable.
           // They stay in the queue, and become refundable by anyone once
           // SETTLE_GRACE lapses.
+          //
+          // This is iteration 0's first look at the window (offset started at
+          // 0n this tick), so confirming it is still stuck here also confirms
+          // it has not healed since last tick - safe to resume from wherever
+          // a previous tick's walk already reached, in one jump, rather than
+          // re-stepping past the same prefix one window at a time (audit A08).
+          const stuckAt = offset
+          const resume = lastOffset.get(market) ?? 0n
+          offset = nextStuckOffset(offset, i === 0, resume, BigInt(MAX_PER_TX))
           console.warn(
-            `[resolver] ${market}: ${ready.length} ready match(es) at offset ${offset} ` +
-            `cannot settle yet - stepping past them`,
+            `[resolver] ${market}: ${ready.length} ready match(es) at offset ${stuckAt} ` +
+            `cannot settle yet - stepping past them to offset ${offset}`,
           )
-          offset += BigInt(MAX_PER_TX)
           continue
         }
 
@@ -344,6 +395,13 @@ export async function settlePendingMarkets() {
         // The head has moved past what just settled, so read from it again.
         offset = 0n
       }
+
+      // Remember this tick's progress for the next one - see lastOffset's
+      // doc comment (audit A08). Zero is worth storing too: it means this
+      // tick either never hit a stuck window or watched one clear, and an
+      // absent entry would otherwise read as "no progress yet" instead of
+      // "confirmed healthy", the same distinction the loop above draws.
+      lastOffset.set(market, offset)
     } catch (err) {
       console.error(`[resolver] market ${market} failed:`, err)
     }

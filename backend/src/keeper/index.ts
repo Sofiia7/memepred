@@ -1,5 +1,6 @@
 import 'dotenv/config'
 import { recordAllPrices, snapshotProbabilities } from './priceRecorder.js'
+import { recordRhcPoolPrices }     from './rhcPriceRecorder.js'
 import { refundExpiredOrders }    from './refundExpired.js'
 import { indexerTick }            from './indexer.js'
 import { recordPricesOnChain }    from './onchainPriceRecorder.js'
@@ -107,6 +108,10 @@ async function start() {
   /** The rhc counterpart to a feed whitelist: onboard pools worth paying for. */
   if (CHAIN_PROFILE.watchesPools) {
     await start('poolWatcher', poolWatcherTick, positiveIntervalMs(process.env.POOL_WATCH_INTERVAL_MS, 60_000))
+    // rhc's counterpart to priceRecorder above: nothing else ever wrote to
+    // price_history here, so candles and 24h stats had no data to read at
+    // all (audit A07). Same cadence as priceRecorder for the same reason.
+    await start('rhcPriceRecorder', recordRhcPoolPrices, 30_000)
   }
   // Slow on purpose: nothing about a badge is time-critical, and it is the one
   // loop here that mints for cosmetic reasons.
