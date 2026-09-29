@@ -105,7 +105,10 @@ jobs:
 
     services:
       postgres:
-        image: timescale/timescaledb:latest-pg16
+        # Pinned: `latest-pg16` moves under the job, and a schema smoke test that
+        # silently changes database version is not a smoke test. 2.30.1 is what
+        # latest-pg16 pointed at on 2026-09-29.
+        image: timescale/timescaledb:2.30.1-pg16
         env:
           POSTGRES_USER: flipthememe
           POSTGRES_PASSWORD: flipthememe
@@ -195,6 +198,26 @@ jobs:
           VITE_GENESIS_NFT: '0x0000000000000000000000000000000000000008'
           VITE_API_URL: https://api.example.test
           VITE_PYTH_HERMES: https://hermes.pyth.network
+        run: pnpm exec vite build
+
+      # The Robinhood Chain build is a different configuration (its own RPC, a WETH
+      # stake, its own head tags and env validation) and nothing built it in CI
+      # before, so a change that only broke that build went green.
+      - name: vite build (Robinhood Chain testnet)
+        working-directory: frontend
+        env:
+          VITE_NETWORK: rhc-testnet
+          VITE_RHC_RPC_URL: https://rpc.testnet.chain.robinhood.com
+          VITE_USDC_ADDRESS: '0x0000000000000000000000000000000000000001'
+          VITE_MARKET_FACTORY: '0x0000000000000000000000000000000000000002'
+          VITE_ORACLE_RESOLVER: '0x0000000000000000000000000000000000000003'
+          VITE_FEE_DISTRIBUTOR: '0x0000000000000000000000000000000000000004'
+          VITE_REFERRAL_REGISTRY: '0x0000000000000000000000000000000000000005'
+          VITE_BADGE_NFT: '0x0000000000000000000000000000000000000006'
+          VITE_LIQUIDITY_POOL: '0x0000000000000000000000000000000000000007'
+          VITE_GENESIS_NFT: '0x0000000000000000000000000000000000000008'
+          VITE_API_URL: https://api-rhc.example.test
+          VITE_SITE_URL: https://rhc.example.test
         run: pnpm exec vite build
 
   # ─────────────────────────────────────────────────────────────

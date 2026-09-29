@@ -1,4 +1,4 @@
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, Link } from 'react-router-dom'
 import { useState } from 'react'
 import { useReadContract } from 'wagmi'
 import type { Address } from 'viem'
@@ -11,8 +11,12 @@ import { useCandles, useProbHistory } from '../hooks/useCandles'
 import { useMarkets } from '../hooks/useMarkets'
 import { useOdds } from '../hooks/useOdds'
 import { usePythPrice } from '../hooks/usePythPrice'
+import { useBetBusy } from '../hooks/useBetBusy'
 import { useNow, countdownFrom } from '../hooks/useNow'
-import { symbolMeta, formatPrice, formatDuration } from '../lib/symbols'
+import { makeFreshness, useFreshness, worstOf } from '../hooks/useFreshness'
+import { symbolMeta, formatPrice, formatDuration, isContinuousMarket } from '../lib/symbols'
+import { parseMarketParam } from '../lib/routeParams'
+import { ZERO_ADDRESS } from '../lib/orderModel'
 import { Chev } from '../components/ui/icons'
 import { IS_POOL_BACKED } from '../lib/chain'
 import { CONTRACTS, MARKET_FACTORY_ABI } from '../lib/contracts'
@@ -20,12 +24,19 @@ import { CONTRACTS, MARKET_FACTORY_ABI } from '../lib/contracts'
 export function Market() {
   const { address } = useParams<{ address: string }>()
   const navigate = useNavigate()
-  const marketAddress = address as Address
+  // The route parameter is untrusted text. Until it has passed isAddress it is
+  // never used as an address: hooks below still run (Rules of Hooks) but on the
+  // zero address, with their reads switched off, and the page shows "Invalid
+  // market link" instead of a verification error with a Retry that cannot work.
+  const validAddress = parseMarketParam(address)
+  const marketAddress = (validAddress ?? ZERO_ADDRESS) as Address
   const [tf, setTf] = useState<Timeframe>('5m')
   const [picked, setPicked] = useState<PickedBet | null>(null)
 
-  const { data: allMarkets, isError: marketsError, refetch: refetchMarkets } = useMarkets()
-  const market = allMarkets?.find((m) => m.address.toLowerCase() === marketAddress?.toLowerCase())
+  const { data: allMarkets, isError: marketsError, refetch: refetchMarkets, dataUpdatedAt: marketsUpdatedAt } = useMarkets()
+  const market = validAddress
+    ? allMarkets?.find((m) => m.address.toLowerCase() === marketAddress.toLowerCase())
+    : undefined
 
   const feedId = market?.feedId
   const symbol = market?.feedSymbol ?? 'UNKNOWN'
@@ -33,13 +44,41 @@ export function Market() {
   const closeTime = market?.closeTime ?? 0
 
   const { upDepth, downDepth } = useOdds(marketAddress)
-  const { display: livePrice, raw: pythRaw, stale: priceStale } = usePythPrice(feedId)
-  const { data: candles } = useCandles(feedId ?? '', tf)
-  const { data: probHistory } = useProbHistory(marketAddress)
+  const { display: livePrice, raw: pythRaw, status: priceStatus } = usePythPrice(feedId)
+  const {
+    data: candles,
+    isLoading: candlesLoading,
+    isError: candlesError,
+    refetch: refetchCandles,
+  } = useCandles(feedId ?? '', tf)
+  const {
+    data: probHistory,
+    isLoading: probLoading,
+    isError: probError,
+    refetch: refetchProb,
+  } = useProbHistory(validAddress ?? '')
+  // The dot next to the title is only as green as the data behind it: the
+  // markets list (refetched every 15s) and the price feed (its own stale flag).
+  const marketsFresh = useFreshness(
+    { dataUpdatedAt: marketsUpdatedAt, isError: marketsError, hasData: !!allMarkets },
+    45_000,
+  )
+  const freshness = worstOf(
+    marketsFresh,
+    priceStatus === 'live'
+      ? makeFreshness('live', 'live')
+      : priceStatus === 'unavailable'
+        ? makeFreshness('error', 'price unavailable')
+        : priceStatus === 'stale'
+          ? makeFreshness('stale', 'price stale')
+          : makeFreshness('loading', 'price loading'),
+  )
   // Above the early return, not inside the JSX below it. Called after the
   // return, this is a hook whose presence depends on a prop - the Rules-of-
   // Hooks violation that white-screened MarketCard and Order once each.
   const nowSec = useNow(1000)
+  // True while the Composer is placing a bet: a pick made then could not change it (audit U01).
+  const betBusy = useBetBusy()
 
   // The address in the URL is untrusted input - a link to /market/0xAttacker
   // on the real domain is otherwise indistinguishable from a real market, and
@@ -56,12 +95,24 @@ export function Market() {
     address: CONTRACTS.MARKET_FACTORY,
     abi: MARKET_FACTORY_ABI,
     functionName: 'isMarket',
-    args: [marketAddress ?? '0x0000000000000000000000000000000000000000'],
-    query: { enabled: !!marketAddress },
+    args: [marketAddress],
+    query: { enabled: !!validAddress },
   })
 
-  if (!marketAddress) return <div className="empty-state">Invalid market</div>
+  if (!validAddress) {
+    return (
+      <>
+        <ScreenTitle title="Invalid market link" />
+        <div className="empty-state">
+          This link does not contain a valid market address. Check it for typos, or pick a market from the list.
+        </div>
+        <Link to="/" className="cta">Back to markets</Link>
+      </>
+    )
+  }
   const meta = symbolMeta(symbol)
+  const continuous = IS_POOL_BACKED || (market !== undefined && isContinuousMarket(market.closeTime))
+  const headLabel = continuous ? 'continuous market' : countdownFrom(closeTime, nowSec)
   const notAMarket = isRealMarket === false
   // Audit A05 (2026-09-28): an RPC error leaves `data` undefined and
   // `isLoading` false, which used to read identically to "confirmed not a
@@ -89,7 +140,12 @@ export function Market() {
         <ApiError message="Couldn't load market data" onRetry={refetchMarkets} />
       )}
 
-      <ScreenTitle title={`${symbol} / ${IS_POOL_BACKED ? 'WETH' : 'USD'}`} live liveLabel={IS_POOL_BACKED ? 'continuous market' : countdownFrom(closeTime, nowSec)} liveColor="var(--up)" />
+      <ScreenTitle
+        title={`${symbol} / ${IS_POOL_BACKED ? 'WETH' : 'USD'}`}
+        live
+        liveLabel={freshness.level === 'live' ? headLabel : `${headLabel} · ${freshness.label}`}
+        liveColor={freshness.color}
+      />
 
       <div className="market" style={{ marginBottom: 12 }}>
         <div className="coin">
@@ -105,8 +161,14 @@ export function Market() {
             {/* A frozen price labelled "live" is a claim the app cannot
                 support: a failing fetch deliberately keeps the last value on
                 screen, which is right, but it has to say so. */}
-            <div className="coin-chg" style={priceStale ? { opacity: 0.6 } : undefined}>
-              {priceStale ? 'last known' : <><Chev dir="up" /> live</>}
+            <div className="coin-chg" style={priceStatus === 'live' ? undefined : { opacity: 0.6 }}>
+              {priceStatus === 'live'
+                ? <><Chev dir="up" /> live</>
+                : priceStatus === 'unavailable'
+                  ? 'unavailable'
+                  : priceStatus === 'stale'
+                    ? 'last known'
+                    : 'loading'}
             </div>
           </div>
         </div>
@@ -115,8 +177,15 @@ export function Market() {
       <MarketChart
         feedId={feedId ?? ''}
         marketAddress={marketAddress}
+        symbol={market?.feedSymbol}
         candles={candles}
         probHistory={probHistory}
+        candlesLoading={candlesLoading}
+        candlesError={candlesError}
+        onRetryCandles={() => refetchCandles()}
+        probLoading={probLoading}
+        probError={probError}
+        onRetryProb={() => refetchProb()}
         onTfChange={setTf}
       />
 
@@ -149,7 +218,7 @@ export function Market() {
           <div className="ud" style={{ padding: 0, marginBottom: 12 }}>
             <button
               className={'b b-up ' + (picked?.side === 'up' ? 'sel' : '')}
-              disabled={verifyingMarket}
+              disabled={verifyingMarket || betBusy}
               onClick={() => setPicked({
                 marketAddress, feedId: feedId ?? '', symbol, durationSec,
                 side: 'up', oddsPct: 0,
@@ -160,7 +229,7 @@ export function Market() {
             </button>
             <button
               className={'b b-dn ' + (picked?.side === 'down' ? 'sel' : '')}
-              disabled={verifyingMarket}
+              disabled={verifyingMarket || betBusy}
               onClick={() => setPicked({
                 marketAddress, feedId: feedId ?? '', symbol, durationSec,
                 side: 'down', oddsPct: 0,

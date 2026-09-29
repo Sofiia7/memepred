@@ -1,5 +1,6 @@
 import { type Address } from 'viem'
 import { CURRENCY, IS_POOL_BACKED } from './chain'
+import { MATCH_TIMEOUT_SEC, SETTLE_GRACE_SEC } from './orderTiming'
 
 // ── ADDRESSES ──────────────────────────────────────────────
 export const CONTRACTS = {
@@ -30,8 +31,14 @@ export { IS_POOL_BACKED }
 // Mirrors OrderbookMarket.SETTLE_GRACE (24 hours). Past settleAt + this, the
 // contract refuses to settle ("settlement window expired") and the only way to
 // get a stake back is the permissionless emergencyRefundMatch. The UI needs the
-// number to know when to offer that.
-export const SETTLE_GRACE_SEC = 24 * 60 * 60
+// number to know when to offer that. Since the resolver refunds matches it can
+// never price right after settleAt, this is the backstop for a dead keeper.
+//
+// Mirrors OrderbookMarket.MATCH_TIMEOUT (5 minutes) too: the age at which the
+// unmatched part of an order becomes refundable by anyone. cancelOrder needs no
+// wait at all. Both live in lib/orderTiming.ts so the pure order logic can use
+// them without loading this file's chain and ABI imports.
+export { MATCH_TIMEOUT_SEC, SETTLE_GRACE_SEC }
 
 // Mirrors OrderbookMarket.LP_TAKER_FEE_BPS (1%). Charged on the whole matched
 // pool when the LP pool took the other side and the user won - so a winning
@@ -212,6 +219,17 @@ export const ORDERBOOK_MARKET_ABI = [
     outputs: []
   },
   {
+    // Trader only, at any time: returns the unmatched part of a PENDING or
+    // MATCHED order and takes it out of the queue, without waiting for
+    // MATCH_TIMEOUT. The matched part keeps settling. Reverts with "not your
+    // order", "already refunded", "wrong status" or "nothing to refund".
+    name: 'cancelOrder',
+    type: 'function',
+    stateMutability: 'nonpayable',
+    inputs: [{ name: 'orderId', type: 'uint256' }],
+    outputs: []
+  },
+  {
     // Sprint 1.1: Order struct expanded for multi-fill (filledAmount,
     // pendingSettlements, unmatchedRefunded). Old 8-field shape decoded
     // garbage after the refactor.
@@ -372,6 +390,14 @@ export const ORDERBOOK_MARKET_ABI = [
       { name: 'trader',  type: 'address', indexed: false },
       { name: 'amount',  type: 'uint256', indexed: false }
     ]
+  },
+  {
+    // A match refunded in full instead of settled: the resolver could not
+    // price it (emitted right after settleAt), or the 24-hour backstop ran.
+    // Always follows one OrderRefunded per side.
+    name: 'MatchRefunded',
+    type: 'event',
+    inputs: [{ name: 'matchId', type: 'uint256', indexed: true }]
   },
   {
     name: 'Claimed',

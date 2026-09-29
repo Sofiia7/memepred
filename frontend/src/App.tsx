@@ -1,6 +1,5 @@
-import { useState, useEffect } from 'react'
+import { useEffect } from 'react'
 import { BrowserRouter, Navigate, Routes, Route } from 'react-router-dom'
-import { checkGeo } from './lib/geocheck'
 import { signalAppReady } from './lib/miniapp'
 import { captureReferralCode } from './lib/referral'
 import { Markets } from './pages/Markets'
@@ -13,32 +12,30 @@ import { GenesisPage } from './pages/Genesis'
 import { ReferPage } from './pages/Refer'
 import { HowItWorksPage } from './pages/HowItWorks'
 import { TermsPage } from './pages/Terms'
-import { GeoBlock } from './components/GeoBlock'
+import { GeoGate } from './components/GeoGate'
 import { RiskGate } from './components/RiskDisclosure'
 import { AppShell } from './components/ui/AppShell'
 import { IS_POOL_BACKED } from './lib/contracts'
 
 export function App() {
-  const [blocked, setBlocked] = useState(false)
-  const [geoChecked, setGeoChecked] = useState(false)
-
   useEffect(() => {
     captureReferralCode()
-    checkGeo().then(({ blocked }) => {
-      setBlocked(blocked)
-      setGeoChecked(true)
-      signalAppReady()
-    })
   }, [])
 
-  if (!geoChecked) return null
-  if (blocked) return <GeoBlock />
-
   return (
+    // GeoGate shows "Checking your region..." while the check is in flight,
+    // REGION BLOCKED for a country on the list, and "Could not verify your
+    // region" (with Retry) when the check itself failed. Only "allowed" mounts
+    // anything below it. The Mini App host is told we are ready as soon as the
+    // check has produced any screen, so its splash never outlives the 8 s
+    // deadline.
+    <GeoGate onSettled={() => void signalAppReady()}>
     <BrowserRouter>
-      {/* RiskGate sits inside the router (it links to /terms) but outside
-          AppShell, so the unaudited-contracts notice is the entire screen on
-          first visit rather than a banner competing with live markets. */}
+      {/* RiskGate sits inside the router (it links to /terms and reads the
+          path) but outside AppShell, so the unaudited-contracts notice is the
+          entire screen on first visit rather than a banner competing with live
+          markets. /terms and /how-it-works are the two routes it lets through
+          before acknowledgement, and there they render inside AppShell. */}
       <RiskGate>
       <AppShell>
         <Routes>
@@ -56,5 +53,6 @@ export function App() {
       </AppShell>
       </RiskGate>
     </BrowserRouter>
+    </GeoGate>
   )
 }

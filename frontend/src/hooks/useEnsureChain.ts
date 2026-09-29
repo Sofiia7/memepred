@@ -1,6 +1,8 @@
 import { useCallback } from 'react'
 import { useAccount, useSwitchChain } from 'wagmi'
-import { TARGET_CHAIN_ID } from '../wagmi.config'
+// From lib/chain rather than wagmi.config: the config is created as an import
+// side effect, which a hook (or a test of one) has no need to trigger.
+import { TARGET_CHAIN_ID } from '../lib/chain'
 
 /**
  * Wallets on the wrong network (e.g. Ethereum mainnet, or Base mainnet while

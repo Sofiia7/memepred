@@ -1,9 +1,20 @@
 // Farcaster Mini App SDK initialization.
 // Loaded lazily so the app still works when opened outside Farcaster.
+import { IS_POOL_BACKED } from './chain'
+
+/**
+ * Farcaster and Base App hosts exist for the Base build. The Robinhood Chain
+ * build is not a Mini App: its head carries no fc:miniapp tags and its
+ * connectors do not include the Farcaster one, so nothing there can be opened
+ * inside a host - and yet the SDK used to be dynamically imported on every
+ * page load, only to find out it was not in one. It is not fetched at all now.
+ */
+export const MINIAPP_ENABLED = !IS_POOL_BACKED
 
 let cached: any = null
 
 export async function getMiniAppSDK(): Promise<any | null> {
+  if (!MINIAPP_ENABLED) return null
   if (cached) return cached
   try {
     const mod = await import('@farcaster/miniapp-sdk')

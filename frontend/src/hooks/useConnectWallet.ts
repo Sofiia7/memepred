@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { useConnect } from 'wagmi'
-import { isInMiniApp } from '../lib/miniapp'
+import { MINIAPP_ENABLED, isInMiniApp } from '../lib/miniapp'
 
 /**
  * Whether the wallet-connector picker is open.
@@ -31,13 +31,16 @@ export const useWalletPickerStore = create<{ open: boolean; setOpen: (open: bool
  * host's own injected provider - and connecting immediately is still
  * correct, so that path is unchanged. Outside one, this now opens a picker
  * instead of guessing.
+ *
+ * On a Robinhood Chain build there is no Mini App host to ask: the check is
+ * skipped rather than loading the Farcaster SDK just to be told no.
  */
 export function useConnectWallet() {
   const { connect, connectors } = useConnect()
   const setOpen = useWalletPickerStore((s) => s.setOpen)
 
   async function connectWallet() {
-    const inMiniApp = await isInMiniApp()
+    const inMiniApp = MINIAPP_ENABLED ? await isInMiniApp() : false
     if (inMiniApp) {
       const target = connectors.find((c) => c.id === 'farcasterMiniApp')
       if (target) connect({ connector: target })

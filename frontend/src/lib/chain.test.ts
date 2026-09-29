@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest'
-import { resolveDeployment, robinhoodChain, robinhoodChainTestnet } from './chain'
+import {
+  resolveDeployment,
+  parseNetwork,
+  UnknownNetworkError,
+  NETWORK_NAMES,
+  robinhoodChain,
+  robinhoodChainTestnet,
+} from './chain'
 import { base, baseSepolia } from 'wagmi/chains'
 
 describe('resolveDeployment', () => {
@@ -11,14 +18,26 @@ describe('resolveDeployment', () => {
     expect(d.poolBacked).toBe(false)
   })
 
+  it('selects Base Sepolia only when asked for it by name', () => {
+    expect(resolveDeployment('sepolia').chain).toBe(baseSepolia)
+  })
+
   /**
-   * The pre-existing behaviour: anything that was not the string 'mainnet'
-   * selected Base Sepolia. Builds already in flight rely on it.
+   * Audit U11 (2026-09-28): anything that was not 'mainnet', 'rhc' or
+   * 'rhc-testnet' used to select Base Sepolia, so a typo in a Robinhood
+   * deployment's environment quietly put the site on the wrong chain with the
+   * wrong currency. The value is a strict enum now; assertEnv() turns the
+   * error into a fatal screen (see env.test.ts).
    */
-  it('falls back to Base Sepolia for anything unrecognised', () => {
-    for (const v of [undefined, '', 'staging', 'BASE', 'testnet']) {
-      expect(resolveDeployment(v).chain).toBe(baseSepolia)
+  it('refuses anything that is not a member of the enum', () => {
+    for (const v of [undefined, '', 'staging', 'BASE', 'testnet', 'rhc-mainnet', 'base sepolia']) {
+      expect(() => resolveDeployment(v)).toThrow(UnknownNetworkError)
     }
+  })
+
+  it('names the accepted values in the error', () => {
+    expect(() => resolveDeployment('staging')).toThrow(/mainnet, sepolia, rhc, rhc-testnet/)
+    expect(() => resolveDeployment('staging')).toThrow(/staging/)
   })
 
   it('selects Robinhood Chain and its currency', () => {
@@ -54,6 +73,24 @@ describe('resolveDeployment', () => {
   it('ignores casing and surrounding whitespace', () => {
     expect(resolveDeployment('  RHC  ').chain).toBe(robinhoodChain)
     expect(resolveDeployment('Mainnet').chain).toBe(base)
+  })
+
+  it('forgives a BOM or a trailing newline pasted into the value', () => {
+    expect(parseNetwork('\uFEFFrhc-testnet\n')).toBe('rhc-testnet')
+  })
+})
+
+describe('parseNetwork', () => {
+  it('returns the enum member, or undefined', () => {
+    for (const n of NETWORK_NAMES) expect(parseNetwork(n)).toBe(n)
+    expect(parseNetwork(undefined)).toBeUndefined()
+    expect(parseNetwork(null)).toBeUndefined()
+    expect(parseNetwork('')).toBeUndefined()
+    expect(parseNetwork('ethereum')).toBeUndefined()
+  })
+
+  it('has exactly the four networks the app can be built for', () => {
+    expect([...NETWORK_NAMES]).toEqual(['mainnet', 'sepolia', 'rhc', 'rhc-testnet'])
   })
 })
 

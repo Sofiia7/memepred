@@ -46,6 +46,27 @@ export function feedIdToAddress(feedId: string): string {
   return '0x' + feedId.slice(-40)
 }
 
+/**
+ * The inverse of feedIdToAddress: a pool address as the 32-byte, lowercase,
+ * left-padded feedId its markets are stored under. Mirrors the SQL in
+ * backend/src/routes/pools.ts (`'0x' || lpad(substr(pool_address, 3), 64, '0')`),
+ * which is how the pools API joins a pool to its markets - and why that API
+ * only returns durations, leaving the market address for the client to look up.
+ */
+export function addressToFeedId(address: string): string {
+  return '0x' + address.replace(/^0x/i, '').toLowerCase().padStart(64, '0')
+}
+
+/**
+ * A market with no close time. On Robinhood Chain a market is created once and
+ * lives forever: each match settles `duration` after it was made, and there is
+ * no round to count down to. The API serves that as null (and older builds as
+ * 0, the epoch), which a countdown renders as 00:00 on every card.
+ */
+export function isContinuousMarket(closeTime: number | null | undefined): boolean {
+  return !closeTime
+}
+
 export function countdown(closeTime: number): string {
   const secs = Math.max(0, closeTime - Math.floor(Date.now() / 1000))
   const m = Math.floor(secs / 60)

@@ -23,6 +23,7 @@
   --down-soft:rgba(255,61,110,.12);
   --down-strong:rgba(255,61,110,.22);
   --warn:#ffb547;
+  --testnet:#b48cff;
   --mono:"JetBrains Mono",ui-monospace,"SF Mono",Menlo,monospace;
   --sans:"DM Sans",-apple-system,BlinkMacSystemFont,system-ui,sans-serif;
   --app-w:420px;
@@ -93,13 +94,17 @@ input[type=number]{-moz-appearance:textfield}
 }
 .connect.ghost{background:var(--surface-2);color:var(--text)}
 .connect .basesq{width:11px;height:11px;background:#fff;border-radius:2px}
+/* Neutral mark for Robinhood Chain builds (see components/ui/ChainMark.tsx) */
+.chainmark{display:inline-block;background:#fff;border-radius:50%}
+.connect .chainmark{width:11px;height:11px}
 
 /* Scroll body */
 .app-body{flex:1;overflow-y:auto;padding:6px 18px 110px;position:relative;z-index:1;scrollbar-width:none}
 .app-body::-webkit-scrollbar{display:none}
 
 /* Legal/help links - always reachable from every screen, not just the header "?" */
-.app-foot{display:flex;justify-content:center;align-items:center;gap:8px;margin:28px 0 8px;font-family:var(--mono);font-size:10px;letter-spacing:.06em;color:var(--text-faint)}
+.app-foot{display:flex;justify-content:center;align-items:center;gap:8px;margin:28px 0 8px;font-family:var(--mono);font-size:12px;letter-spacing:.06em;color:var(--text-faint)}
+.app-foot a{display:inline-flex;align-items:center;min-height:40px}
 .app-foot a{color:var(--text-faint);text-decoration:none}
 .app-foot a:hover{color:var(--text-dim);text-decoration:underline}
 .app-foot span{opacity:.5}
@@ -171,21 +176,25 @@ input[type=number]{-moz-appearance:textfield}
   background:linear-gradient(to top,rgba(7,7,10,.85) 60%,rgba(7,7,10,0));
   backdrop-filter:saturate(140%) blur(18px);-webkit-backdrop-filter:saturate(140%) blur(18px);
   padding:12px 18px 14px;border-top:1px solid var(--line);z-index:3;
+  /* Taller now (balances, the pre-sign rules): scroll inside the sheet rather than run off a small screen */
+  max-height:calc(100vh - 240px);overflow-y:auto;overscroll-behavior:contain;
 }
 @media (min-width:640px){
-  .composer{position:absolute;bottom:84px;left:0;right:0;transform:none}
+  .composer{position:absolute;bottom:84px;left:0;right:0;transform:none;max-height:560px}
 }
 .composer.empty{padding:14px 18px}
-.composer-empty-txt{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--text-faint);text-align:center;padding:8px 0}
-.composer-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.composer-empty-txt{font-family:var(--mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--text-faint);text-align:center;padding:8px 0}
+.composer-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
 .composer-pick{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.pick-pill{font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.1em;padding:4px 8px;border-radius:5px}
+.pick-pill{font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.1em;padding:4px 8px;border-radius:5px}
 .pick-pill.up{background:var(--up-strong);color:var(--up)}
 .pick-pill.dn{background:var(--down-strong);color:var(--down)}
-.pick-coin{font-family:var(--mono);font-size:11px;font-weight:700;color:#fff;letter-spacing:.06em}
-.pick-tf{font-family:var(--mono);font-size:10px;color:var(--text-dim);letter-spacing:.1em}
-.clear{font-family:var(--mono);font-size:10px;color:var(--text-faint);letter-spacing:.1em}
+.pick-coin{font-family:var(--mono);font-size:12px;font-weight:700;color:#fff;letter-spacing:.06em}
+.pick-tf{font-family:var(--mono);font-size:12px;color:var(--text-dim);letter-spacing:.1em}
+/* A ~13px tall word was the whole tap target. min-height gives it 40px; the negative margin keeps the row from growing by as much. */
+.clear{font-family:var(--mono);font-size:12px;color:var(--text-faint);letter-spacing:.1em;min-height:40px;min-width:44px;margin:-6px 0;padding:0 4px}
 .clear:hover{color:var(--text)}
+.clear:disabled{opacity:.4;cursor:not-allowed}
 
 /* Buy/Sell seg */
 .seg{display:flex;background:var(--surface-2);border:1px solid var(--line);border-radius:7px;padding:3px;backdrop-filter:var(--glass-blur);-webkit-backdrop-filter:var(--glass-blur)}
@@ -195,12 +204,17 @@ input[type=number]{-moz-appearance:textfield}
 
 /* Stake */
 .stake-row{display:flex;align-items:center;gap:8px;margin-bottom:8px}
-.stake-input{flex:1;background:var(--surface-2);border:1px solid var(--line);border-radius:8px;display:flex;align-items:center;padding:0 12px;height:40px;backdrop-filter:var(--glass-blur);-webkit-backdrop-filter:var(--glass-blur)}
-.stake-input .ccy{color:var(--text-faint);font-family:var(--mono);font-size:12px;margin-right:8px}
-.stake-input input{flex:1;font-family:var(--mono);font-size:15px;font-weight:700;width:100%}
-.stake-hint{font-family:var(--mono);font-size:9px;color:var(--text-faint);letter-spacing:.08em;margin:-2px 0 8px 2px}
+.stake-input{flex:1;background:var(--surface-2);border:1px solid var(--line);border-radius:8px;display:flex;align-items:center;padding:0 0 0 12px;height:44px;backdrop-filter:var(--glass-blur);-webkit-backdrop-filter:var(--glass-blur)}
+.stake-input:focus-within{border-color:var(--base-blue-2)}
+.stake-input .ccy{color:var(--text-dim);font-family:var(--mono);font-size:12px;margin-right:8px;display:flex;align-items:center;height:100%}
+/* The input fills the box (it was ~20px tall inside a 40px one, so most taps missed it); 16px so iOS does not zoom on focus. */
+.stake-input input{flex:1;font-family:var(--mono);font-size:16px;font-weight:700;width:100%;height:100%;padding:0 12px 0 0}
+.stake-input input:disabled{opacity:.5}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.stake-hint{font-family:var(--mono);font-size:12px;line-height:1.4;color:var(--text-dim);letter-spacing:.04em;margin:-2px 0 8px 2px}
 .chips{display:flex;gap:5px;margin-bottom:10px}
-.chip{flex:1;padding:6px 0;border:1px solid var(--line);border-radius:6px;font-family:var(--mono);font-size:10px;color:var(--text-dim);font-weight:700}
+.chip{flex:1;min-height:40px;padding:6px 0;border:1px solid var(--line);border-radius:6px;font-family:var(--mono);font-size:12px;color:var(--text-dim);font-weight:700}
+.chip:disabled{opacity:.45;cursor:not-allowed}
 .chip:hover{border-color:var(--line-2);color:#fff}
 .chip.sel{border-color:var(--base-blue);background:rgba(0,0,255,.22);color:#fff}
 
@@ -208,9 +222,10 @@ input[type=number]{-moz-appearance:textfield}
 .cta{width:100%;padding:13px;border-radius:9px;background:var(--base-blue);color:#fff;font-weight:700;font-size:13px;letter-spacing:.04em;display:flex;align-items:center;justify-content:center;gap:10px;transition:background .12s}
 .cta:hover{background:var(--base-blue-hover)}
 .cta .basesq{width:13px;height:13px;background:#fff;border-radius:2px}
+.cta .chainmark{width:13px;height:13px}
 .cta.disabled,.cta:disabled{background:var(--surface-2);color:var(--text-faint);cursor:not-allowed;backdrop-filter:var(--glass-blur);-webkit-backdrop-filter:var(--glass-blur)}
-.cta.disabled .basesq,.cta:disabled .basesq{background:var(--text-faint)}
-.payout{display:flex;justify-content:space-between;font-family:var(--mono);font-size:9px;color:var(--text-faint);margin-top:8px;letter-spacing:.1em}
+.cta.disabled .basesq,.cta:disabled .basesq,.cta.disabled .chainmark,.cta:disabled .chainmark{background:var(--text-faint)}
+.payout{display:flex;justify-content:space-between;flex-wrap:wrap;gap:2px 12px;font-family:var(--mono);font-size:12px;line-height:1.4;color:var(--text-dim);margin-top:8px;letter-spacing:.02em}
 .payout b{color:var(--up);font-weight:700}
 
 /* Tab nav */
@@ -225,7 +240,7 @@ input[type=number]{-moz-appearance:textfield}
 @media (min-width:640px){
   .tabnav{position:absolute;transform:none;left:0;right:0}
 }
-.tabnav a,.tabnav button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font-family:var(--mono);font-size:9px;letter-spacing:.12em;color:var(--text-faint)}
+.tabnav a,.tabnav button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-height:48px;font-family:var(--mono);font-size:12px;letter-spacing:.06em;color:var(--text-faint)}
 .tabnav a.on,.tabnav a.active,.tabnav button.on{color:var(--base-blue-2)}
 .tabnav .tab-ico{width:20px;height:20px;display:grid;place-items:center}
 
@@ -355,6 +370,7 @@ input[type=number]{-moz-appearance:textfield}
 .geo-block{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;text-align:center;padding:40px;font-family:var(--mono)}
 .geo-block h1{font-size:40px;margin-bottom:20px;color:#fff}
 .geo-block p{font-size:14px;color:var(--text-dim);max-width:400px;line-height:1.6}
+.geo-block .geo-retry{max-width:260px;margin-top:20px}
 
 /* Util */
 .fade-in{animation:fadeIn .3s ease}
@@ -373,7 +389,7 @@ input[type=number]{-moz-appearance:textfield}
    must change with it. */
 .risk-strip{
   display:flex;align-items:center;justify-content:center;gap:7px;
-  font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;
+  font-family:var(--mono);font-size:12px;letter-spacing:.06em;text-transform:uppercase;
   color:var(--warn);background:rgba(255,181,71,.08);
   border-bottom:1px solid rgba(255,181,71,.20);
   padding:5px 12px;position:relative;z-index:2;flex:0 0 auto;
@@ -423,6 +439,10 @@ input[type=number]{-moz-appearance:textfield}
 .wallet-picker-choices .cta{background:var(--surface-2);color:var(--text)}
 .wallet-picker-choices .cta:hover{background:var(--line)}
 .wallet-picker-cancel{display:block;width:100%;text-align:center}
+.wallet-choice{justify-content:flex-start;text-align:left;gap:12px;min-height:48px;padding:10px 14px}
+.wallet-choice-icon{border-radius:5px;flex:0 0 auto}
+.wallet-choice-txt{display:flex;flex-direction:column;align-items:flex-start;gap:2px;min-width:0}
+.wallet-hint{font-family:var(--mono);font-size:12px;font-weight:400;color:var(--text-faint);letter-spacing:.02em;line-height:1.3}
 
 /* ── Pool feed ─────────────────────────────────────────────
    Only rendered where markets are backed by a pool. A row is deliberately
@@ -457,3 +477,39 @@ input[type=number]{-moz-appearance:textfield}
 .pool-reason{font-size:11px;color:var(--text-faint);margin-top:8px;line-height:1.45}
 
 .pool-note{font-size:11px;color:var(--text-faint);line-height:1.5;margin-top:16px;padding:0 2px}
+
+/* ── Network: which one this is, and whether wallet and deployment agree ──
+   The pill is on a testnet build only and is always shown, so a test
+   deployment is never mistaken for real money or for Base. The banners are
+   shown only when something is wrong (see components/ui/NetworkStatus.tsx). */
+.net-row{display:flex;justify-content:center;padding:0 18px 8px;position:relative;z-index:2;flex:0 0 auto}
+.net-pill{display:inline-flex;align-items:center;gap:7px;font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.1em;
+  color:var(--testnet);background:rgba(180,140,255,.10);border:1px solid rgba(180,140,255,.35);border-radius:999px;padding:4px 12px}
+.net-pill-dot{width:6px;height:6px;border-radius:50%;background:var(--testnet)}
+.net-banner{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 18px 8px;padding:10px 12px;border-radius:10px;
+  font-size:13px;line-height:1.4;color:var(--warn);background:rgba(255,181,71,.10);border:1px solid rgba(255,181,71,.35);
+  position:relative;z-index:2;flex:0 0 auto}
+.net-banner-bad{color:var(--down);background:var(--down-soft);border-color:rgba(255,61,110,.35)}
+.net-banner-txt{flex:1;min-width:0}
+.net-banner-err{font-family:var(--mono);font-size:12px;margin-top:4px;opacity:.9}
+.net-banner-btn{flex:0 0 auto;min-height:40px;padding:0 16px;border-radius:8px;background:var(--warn);color:#1a1206;
+  font-family:var(--mono);font-weight:800;font-size:12px;letter-spacing:.08em}
+.net-banner-btn:disabled{opacity:.6;cursor:not-allowed}
+
+/* ── Composer: getting started on Robinhood Chain ── */
+.wallet-lines{display:flex;align-items:center;flex-wrap:wrap;justify-content:space-between;gap:6px 12px;margin-top:0}
+.faucet-link{color:var(--up);font-weight:700;text-decoration:underline;text-underline-offset:2px;display:inline-flex;align-items:center;min-height:40px}
+.wrap-btn{flex:0 0 auto;padding:0 12px}
+.composer-note{font-family:var(--mono);font-size:12px;line-height:1.45;color:var(--down);margin:0 0 8px}
+.composer-note.warn{color:var(--warn)}
+
+/* ── Composer: what you are agreeing to (components/ui/PreSignRules.tsx) ── */
+.rules{margin:0 0 10px;border:1px solid var(--line);border-radius:9px;background:var(--surface-2)}
+.rules-toggle{width:100%;min-height:40px;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:0 12px;
+  font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.03em;color:var(--text-dim);text-align:left}
+.rules-toggle:hover{color:var(--text)}
+.rules-state{color:var(--up);letter-spacing:.1em}
+/* Capped, and scrolling inside itself: opened, five bullets would push the confirm button out of the sheet. */
+.rules-list{list-style:none;padding:0 12px 10px;display:flex;flex-direction:column;gap:8px;max-height:min(176px,26vh);overflow-y:auto;overscroll-behavior:contain}
+.rules-list li{font-size:12px;line-height:1.5;color:var(--text-dim)}
+.rules-list li b{color:var(--text);font-weight:700}

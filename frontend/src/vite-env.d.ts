@@ -1,8 +1,16 @@
 /// <reference types="vite/client" />
 
 interface ImportMetaEnv {
-  readonly VITE_NETWORK: 'mainnet' | 'sepolia'
-  readonly VITE_BASE_RPC_URL: string
+  /**
+   * Strict enum (see lib/chain and lib/env): `mainnet` and `sepolia` are Base,
+   * `rhc` and `rhc-testnet` are Robinhood Chain. Anything else makes the app
+   * show its fatal config screen instead of picking a default chain.
+   */
+  readonly VITE_NETWORK: 'mainnet' | 'sepolia' | 'rhc' | 'rhc-testnet'
+  /** Required by Base builds (mainnet, sepolia). */
+  readonly VITE_BASE_RPC_URL?: string
+  /** Required by Robinhood Chain builds (rhc, rhc-testnet). */
+  readonly VITE_RHC_RPC_URL?: string
   readonly VITE_USDC_ADDRESS: `0x${string}`
   readonly VITE_MARKET_FACTORY: `0x${string}`
   readonly VITE_ORACLE_RESOLVER: `0x${string}`
@@ -13,6 +21,16 @@ interface ImportMetaEnv {
   readonly VITE_LIQUIDITY_POOL: `0x${string}`
   readonly VITE_PYTH_FEED_ID?: string
   readonly VITE_API_URL: string
+  /** "1" skips the region check (previews and local dev without a Worker). */
+  readonly VITE_DISABLE_GEOBLOCK?: string
+  /** Faucet link shown to a testnet wallet with no ETH. Defaults in lib/env. */
+  readonly VITE_FAUCET_URL?: string
+  /**
+   * Public origin of this build, e.g. https://rhc.flipthememe.com. Used at
+   * build time for og:url and the preview image on Robinhood Chain builds.
+   */
+  readonly VITE_SITE_URL?: string
+  readonly VITE_SECURITY_CONTACT?: string
 }
 
 interface ImportMeta {

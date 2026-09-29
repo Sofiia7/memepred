@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { CURRENCY_SYMBOL, IS_POOL_BACKED } from '../lib/contracts'
 import { useMarkets, type Market } from '../hooks/useMarkets'
-import { useMarketStats, symbolFromStats } from '../hooks/useMarketStats'
+import { useMarketStats, statForMarket } from '../hooks/useMarketStats'
+import { useFreshness } from '../hooks/useFreshness'
 import { ScreenTitle, StatStrip } from '../components/ui/AppShell'
 import { MarketCardUI, type PickedBet } from '../components/ui/MarketCard'
 import { Composer } from '../components/ui/Composer'
@@ -33,8 +34,11 @@ function groupMarkets(markets: Market[]): Record<string, Market[]> {
 }
 
 export function Markets() {
-  const { data: markets, isLoading, isError, refetch } = useMarkets('OPEN')
+  const { data: markets, isLoading, isError, refetch, dataUpdatedAt } = useMarkets('OPEN')
   const { data: stats } = useMarketStats()
+  // useMarkets refetches every 15s; three missed rounds and the board is no
+  // longer "live", whatever the dot used to claim.
+  const freshness = useFreshness({ dataUpdatedAt, isError, hasData: !!markets }, 45_000)
   const [picked, setPicked] = useState<PickedBet | null>(null)
 
   const groups = useMemo(() => groupMarkets(markets ?? []), [markets])
@@ -67,6 +71,8 @@ export function Markets() {
       <ScreenTitle
         title="Live markets"
         live
+        liveLabel={freshness.label}
+        liveColor={freshness.color}
         icon={
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
             <circle cx="12" cy="12" r="9" stroke="#4d8dff" strokeWidth="2" />
@@ -93,11 +99,12 @@ export function Markets() {
       {groupKeys.map((key) => {
         const group = groups[key]
         const displaySymbol = group[0]?.feedSymbol || 'UNKNOWN'
-        // Stats are aggregated by symbol on the backend, not by pool - two
-        // distinct pools that happen to share a symbol would share this
-        // price/24h-change too. The card's identity (which pool this actually
-        // is) does not depend on this lookup; only the price ticker does.
-        const s = symbolFromStats(stats, displaySymbol)
+        // Looked up by feed first: two pools can share a symbol, and a symbol
+        // lookup gives the second the first one's price and 24h change. On
+        // Base, where the backend keys its rows by symbol, the symbol is the
+        // key; on a pool-backed chain it only serves a backend that has not
+        // started sending feedIds (see SymbolFallback).
+        const s = statForMarket(stats, group[0]?.feedId, displaySymbol, IS_POOL_BACKED ? 'unkeyed' : 'any')
         return (
           <MarketCardUI
             key={key}

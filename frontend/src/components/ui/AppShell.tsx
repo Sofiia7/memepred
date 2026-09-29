@@ -3,13 +3,18 @@ import { Link } from 'react-router-dom'
 import { AppHead } from './AppHead'
 import { TabNav } from './TabNav'
 import { WalletPicker } from './WalletPicker'
+import { NetworkPill } from './NetworkPill'
+import { WrongNetworkBanner, DeploymentBanner } from './NetworkStatus'
 import { RiskStrip } from '../RiskDisclosure'
 
 export function AppShell({ children }: { children: ReactNode }) {
   return (
     <div className="app">
       <AppHead />
+      <NetworkPill />
       <RiskStrip />
+      <WrongNetworkBanner />
+      <DeploymentBanner />
       <div className="app-body">
         {children}
         <div className="app-foot">

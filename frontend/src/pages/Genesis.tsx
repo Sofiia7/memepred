@@ -1,14 +1,24 @@
 import { useState } from 'react'
 import { useReadContract, useWriteContract, useAccount, usePublicClient } from 'wagmi'
-import { parseUnits, maxUint256 } from 'viem'
+import { parseUnits, formatUnits, maxUint256 } from 'viem'
 import { CONTRACTS, LIQUIDITY_POOL_ABI, ERC20_ABI, CURRENCY_DECIMALS } from '../lib/contracts'
 import { ScreenTitle } from '../components/ui/AppShell'
 import { StarIcon } from '../components/ui/icons'
 import { useConnectWallet } from '../hooks/useConnectWallet'
 import { useEnsureChain } from '../hooks/useEnsureChain'
-import { TARGET_CHAIN } from '../wagmi.config'
+// From lib/chain, not wagmi.config: the config is created as an import side effect.
+import { TARGET_CHAIN } from '../lib/chain'
 
 const NETWORK_LABEL = TARGET_CHAIN.name // "Base" or "Base Sepolia" - derived from the actual configured chain, not hardcoded
+
+/**
+ * Base units to a display number in the stake currency's own width. This page
+ * used to divide by a literal 1e6, which is right for six-decimal USDC and a
+ * million times wrong for eighteen-decimal WETH. It is unreachable on Robinhood
+ * Chain today (App.tsx redirects /genesis to /pools there), but a hard-coded
+ * width is a trap for the day that changes.
+ */
+const units = (v: bigint) => Number(formatUnits(v, CURRENCY_DECIMALS))
 
 export function GenesisPage() {
   const { address, isConnected } = useAccount()
@@ -95,17 +105,17 @@ export function GenesisPage() {
   const { writeContractAsync: withdraw } = useWriteContract()
   const { writeContractAsync: claimFees } = useWriteContract()
 
-  const totalPool = stats ? Number(stats[0]) / 1e6 : 0
-  const locked = stats ? Number(stats[2]) / 1e6 : 0
+  const totalPool = stats ? units(stats[0]) : 0
+  const locked = stats ? units(stats[2]) : 0
   const genesisLeft = stats ? Number(stats[3]) : 20
   const filled = 20 - genesisLeft
   const pct = (filled / 20) * 100
 
-  const mySharesValue = myAssets ? Number(myAssets) / 1e6 : 0
-  const myPending = pendingFees ? Number(pendingFees) / 1e6 : 0
+  const mySharesValue = myAssets ? units(myAssets) : 0
+  const myPending = pendingFees ? units(pendingFees) : 0
   const isGenesis = !!isGenesisAddr
   const hasPosition = (shareBalance ?? 0n) > 0n
-  const maxWithdrawUsd = maxWithdrawable ? Number(maxWithdrawable) / 1e6 : 0
+  const maxWithdrawUsd = maxWithdrawable ? units(maxWithdrawable) : 0
 
   async function handleDeposit() {
     if (!address) {

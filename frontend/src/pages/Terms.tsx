@@ -2,11 +2,11 @@ import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { ScreenTitle } from '../components/ui/AppShell'
 import { IS_POOL_BACKED } from '../lib/chain'
-import { MAX_BET, CURRENCY_SYMBOL, SETTLE_GRACE_SEC, RHC_DURATIONS_SEC } from '../lib/contracts'
-import { formatDuration } from '../lib/symbols'
+import { MAX_BET, CURRENCY_SYMBOL, SETTLE_GRACE_SEC, MATCH_TIMEOUT_SEC } from '../lib/contracts'
+import { PRICE_JUMP_REFUND_PCT } from '../lib/rules'
 
-const RHC_DURATIONS_TEXT = RHC_DURATIONS_SEC.map(formatDuration).join(', ')
 const SETTLE_GRACE_HOURS = SETTLE_GRACE_SEC / 3600
+const MATCH_TIMEOUT_MINUTES = MATCH_TIMEOUT_SEC / 60
 
 /**
  * ⚠️ ACTION REQUIRED BEFORE LAUNCH - set a real security contact.
@@ -45,7 +45,7 @@ export function TermsPage() {
       </div>
 
       <h3 className="terms-h">Terms of Service</h3>
-      <div className="terms-meta">Last updated: 2026-08-30</div>
+      <div className="terms-meta">Last updated: 2026-09-29</div>
 
       <Section n="1" title="Who runs this">
         FlipTheMeme is built and operated by an individual developer, not a
@@ -60,15 +60,19 @@ export function TermsPage() {
           <>
             A non-custodial, peer-to-peer prediction market on Robinhood
             Chain. You stake {CURRENCY_SYMBOL} to bet on the short-term price
-            direction (UP/DOWN) of a listed meme coin over a fixed window
-            ({RHC_DURATIONS_TEXT}). Winners split the losing side's stake,
+            direction (UP/DOWN) of a listed meme coin over a fixed window. The
+            window is set per market and shown on it (the demo market runs 5
+            minutes). Winners split the losing side's stake,
             minus the protocol fee (see the live contract - a percentage
             capped at 1%, applied to every winning bet whether it was matched
             against another trader or against the LP pool; an LP-matched win
             additionally pays a separate 1% LP taker fee on top of that,
             peer-matched wins do not). An exact tie - the settlement price
             equals the entry price - refunds both stakes in full, with no fee
-            taken from either side. Settlement is automatic, driven by the
+            taken from either side. The same goes for a price jump of more than{' '}
+            {PRICE_JUMP_REFUND_PCT}% at the end of the window, or a pool whose
+            price history no longer covers it: both stakes are refunded
+            immediately, with no fee and no winner. Settlement is automatic, driven by the
             token's own on-chain Uniswap v3 pool price (a time-weighted
             average, not an off-chain oracle). Nobody -including the
             operator- picks or can alter an outcome once it's settled
@@ -172,11 +176,16 @@ export function TermsPage() {
             <li><b>Oracle risk.</b> Settlement depends on reading the token's
               own on-chain Uniswap v3 pool - a time-weighted average price, not
               a single spot tick. A pool that's too thin, too new, or drained
-              out from under a position can't be read safely; when that
-              happens settlement is skipped and retried rather than forced
-              through on a bad price. Past a {SETTLE_GRACE_HOURS}-hour grace
-              period from when a match was due to settle, anyone can trigger a
-              refund of both stakes instead - no fee either way.</li>
+              out from under a position can't be read safely. What happens
+              then depends on why. If the price jumps more than{' '}
+              {PRICE_JUMP_REFUND_PCT}% at the end of the settlement window, or
+              the pool's stored price history no longer covers that window, the
+              match is not settled: both stakes are refunded immediately, with
+              no fee and no winner. If the pool has no liquidity at that moment,
+              settlement is skipped and retried rather than forced through on a
+              bad price, and past a {SETTLE_GRACE_HOURS}-hour grace period from
+              when the match was due, anyone can trigger a refund of both
+              stakes instead - no fee either way.</li>
           ) : (
             <li><b>Oracle risk.</b> Settlement depends on RedStone price feeds.
               Staleness or unavailability can delay settlement or trigger a
@@ -189,9 +198,19 @@ export function TermsPage() {
               this is not a loss for either trader, and it is not a payout
               either.</li>
           )}
-          <li><b>No guaranteed counterparty.</b> If nobody's on the other
-            side and the LP pool can't cover you, your bet is refunded - but
-            it's locked for up to 5 minutes while that's decided.</li>
+          {IS_POOL_BACKED ? (
+            <li><b>No guaranteed counterparty.</b> If nobody's on the other
+              side and the LP vault can't (or, on that market, isn't set up to)
+              cover you, the unmatched part waits in the book. You can cancel it
+              yourself at any time; if you don't, it stops matching after{' '}
+              {MATCH_TIMEOUT_MINUTES} minutes and is refunded automatically. Only
+              the part still waiting is held; whatever was matched keeps running
+              on its own.</li>
+          ) : (
+            <li><b>No guaranteed counterparty.</b> If nobody's on the other
+              side and the LP pool can't cover you, your bet is refunded - but
+              it's locked for up to {MATCH_TIMEOUT_MINUTES} minutes while that's decided.</li>
+          )}
           <li><b>Meme coins are extremely volatile</b> and can be manipulated,
             delisted from the price feed, or go to zero - independent of
             anything this product does.</li>

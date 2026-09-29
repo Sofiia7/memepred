@@ -7,9 +7,10 @@
 #
 #   wrangler deploy -c wrangler.watchdog.rhc.toml
 #
-# Before it can run, two things are needed that are decisions rather than code:
-# somewhere for the rhc backend to be reachable from the internet, and a KV
-# namespace of its own (`wrangler kv namespace create WATCHDOG_RHC`).
+# Status (2026-09-29): the KV namespace exists and API_HOST/SITE_HOST are set.
+# What is still missing are decisions rather than code: the DNS records that make
+# api-rhc.flipthememe.com and rhc.flipthememe.com resolve, and the alert channel
+# secrets below (until they are set the worker detects an outage but tells nobody).
 name = "flipthememe-watchdog-rhc"
 main = "watchdog.ts"
 compatibility_date = "2024-09-01"

@@ -13,7 +13,7 @@
 import { useState } from 'react'
 import type { Address } from 'viem'
 import { CURRENCY_SYMBOL } from '../lib/contracts'
-import { IS_POOL_BACKED } from '../lib/chain'
+import { TARGET_CHAIN } from '../lib/chain'
 
 interface Props {
   direction:  'UP' | 'DOWN'
@@ -26,7 +26,9 @@ interface Props {
 export function ShareCard({ direction, amount, payout, marketAddress, orderId }: Props) {
   const [copied, setCopied] = useState(false)
 
-  const network = IS_POOL_BACKED ? 'Robinhood Chain' : 'Base'
+  // The chain's own name, so a win on the testnet is not shared as a win on
+  // mainnet ("Robinhood Chain Testnet", "Base Sepolia").
+  const network = TARGET_CHAIN.name
   const text = `🎯 Just won ${payout} ${CURRENCY_SYMBOL} predicting ${direction} on FlipTheMeme (staked ${amount} ${CURRENCY_SYMBOL}) on ${network}.`
   const url = `${window.location.origin}/order/${marketAddress}/${orderId.toString()}`
 

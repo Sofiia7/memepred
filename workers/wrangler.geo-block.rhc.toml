@@ -5,17 +5,17 @@
 #
 #   wrangler deploy -c wrangler.geo-block.rhc.toml
 #
-# Needs, in order:
+# Status (2026-09-29). Steps 2 and 3 are DONE; only step 1 is missing:
 #   1. DNS record for api-rhc.flipthememe.com in the flipthememe.com zone
 #      (Proxied/orange-cloud), same as api.flipthememe.com already has -
-#      the route below cannot attach until this exists.
-#   2. Caddy on the VPS reverse-proxying that hostname to rhc-backend:3002
-#      (see deploy/docker-compose.rhc.yml and deploy/Caddyfile).
-#   3. wrangler secret put WORKER_SECRET -c wrangler.geo-block.rhc.toml
-#      This value must equal the RHC backend's own WORKER_SECRET env var
-#      (deploy/docker-compose.rhc.yml's rhc-backend service / its env_file) -
-#      not currently set for RHC at all (.env.rhc has no WORKER_SECRET line),
-#      so this is a new secret to generate, not one to reuse from Base.
+#      the route below cannot attach until this exists. NOT DONE: the wrangler
+#      token available so far has no zone/DNS scope.
+#   2. DONE. Caddy on the VPS reverse-proxies that hostname to rhc-backend:3002
+#      (site block lives in the live Caddyfile on the VPS, see deploy/README.md
+#      section 11 for why it is not simply the repo file).
+#   3. DONE. `wrangler secret put WORKER_SECRET -c wrangler.geo-block.rhc.toml`
+#      with the value that is also in the RHC backend's .env.rhc (its own
+#      secret, not Base's).
 name = "flipthememe-edge-rhc"
 main = "geo-block.ts"
 compatibility_date = "2024-09-01"

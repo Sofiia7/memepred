@@ -1,0 +1,63 @@
+/* Order, portfolio and market-page additions (2026-09-29 fix pass).
+   index.css is the design system and belongs to the app shell work; this file
+   holds the styles for the pieces added around it: transaction status lines,
+   the order card's extra states, the chart's empty/error states, continuous
+   markets and the portfolio's outcome labels. Imported by the components that
+   use them. Text here stays at 11px or above.
+
+   Load order matters: main.tsx imports ./App (and so this file) BEFORE
+   ./index.css, so on equal specificity index.css wins. Every rule below that
+   overrides something index.css already styles (.osc, .osc-btn, .osc-sub) is
+   therefore scoped one class deeper. */
+
+/* ── Transaction status (components/TxStatus) ────────────── */
+.tx-status{font-family:var(--mono);font-size:12px;line-height:1.5;margin-top:10px;padding:9px 11px;border-radius:9px;
+  border:1px solid var(--line-2);background:var(--surface);color:var(--text-dim);word-break:break-word}
+.tx-status a{color:var(--base-blue-2);text-decoration:underline;margin-left:8px;white-space:nowrap}
+.tx-confirmed{border-color:rgba(77,141,255,.4);color:var(--up)}
+.tx-failed{border-color:rgba(255,61,110,.4);color:var(--down)}
+.tx-compact{font-size:11px;padding:6px 9px;margin-top:0}
+
+/* ── Order card (components/OrderStatusCard) ─────────────── */
+.osc .osc-btn-ghost{background:transparent;border:1px solid var(--line-2);color:#fff}
+.osc .osc-btn-ghost:hover{background:var(--surface-2);border-color:var(--base-blue-2)}
+.osc .osc-btn-ghost:disabled{background:var(--surface-2);border-color:var(--line);color:var(--text-faint)}
+.osc .osc-warn{font-weight:700}
+.osc .osc-note{color:var(--text-dim);line-height:1.5}
+.osc-breakdown ul{margin:4px 0 0;padding-left:18px}
+.osc-breakdown .osc-note{margin-top:6px}
+.osc.osc-mixed{border-color:rgba(255,181,71,.35)}
+.osc-mixed .osc-head{color:var(--warn)}
+.osc-notfound .osc-sub{line-height:1.5}
+
+/* ── Chart states (components/MarketChart) ───────────────── */
+.chart-note{font-family:var(--mono);font-size:11px;line-height:1.4;color:var(--text-dim);padding:6px 12px 0}
+.chart-area{position:relative;height:180px;padding:8px}
+.chart-state{position:absolute;inset:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;
+  text-align:center;font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--text-faint)}
+.chart-state-error{color:var(--down)}
+.chart-retry{padding:8px 16px;min-height:36px;border:1px solid var(--line-2);border-radius:6px;color:#fff;
+  font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.1em}
+.chart-retry:hover{border-color:var(--base-blue-2)}
+
+/* ── Market card: title link and continuous markets ──────── */
+.coin-name-link{color:inherit;text-decoration:none;border-bottom:1px dashed var(--line-2)}
+.coin-name-link:hover{color:var(--up);border-bottom-color:var(--up)}
+.mkt-continuous{font-family:var(--mono);font-size:11px;line-height:1.4;color:var(--text-dim);padding:8px 12px 0}
+
+/* ── Pools: a duration chip that leads to its market ─────── */
+.pool-dur-link{display:inline-flex;align-items:center;gap:6px;min-height:28px;text-decoration:none;border:1px solid transparent}
+.pool-dur-link:hover{border-color:var(--up)}
+.pool-trade{font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#fff;
+  background:var(--base-blue);padding:2px 6px;border-radius:4px}
+
+/* ── Portfolio rows ──────────────────────────────────────── */
+.bet-item{display:flex;flex-direction:column;gap:4px}
+.bet-sub{font-family:var(--mono);font-size:11px;color:var(--text-dim);letter-spacing:.03em;margin-top:2px}
+.bet-outcome{font-weight:700;letter-spacing:.08em}
+.bet-outcome-win{color:var(--up)}
+.bet-outcome-loss{color:var(--down)}
+.bet-outcome-mixed,.bet-outcome-refunded{color:var(--warn)}
+.bet-outcome-tie{color:var(--text)}
+.bet-outcome-open{color:var(--base-blue-2)}
+.row-action{min-height:36px}

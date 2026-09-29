@@ -5,3 +5,6 @@ node_modules
 vite.config.d.ts
 vite.config.js
 дизайн/
+# Example env files are documentation (names and placeholders, no values), and the
+# repo-level frontend/**/.env* rule would otherwise hide them from git.
+!.env*.example

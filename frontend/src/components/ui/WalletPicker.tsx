@@ -1,11 +1,18 @@
 import { useConnect } from 'wagmi'
 import { useWalletPickerStore } from '../../hooks/useConnectWallet'
+import { TARGET_CHAIN_ID } from '../../lib/chain'
+import { buildWalletChoices, detectInjected } from '../../lib/walletChoices'
 
 /**
  * The connector picker useConnectWallet() opens instead of blindly connecting
  * to connectors[0]. Rendered once, near the root (see AppShell) - only ever
  * visible outside a Farcaster/Base App host, since that path connects
  * directly and never sets `open`.
+ *
+ * Rows say what was actually found (see lib/walletChoices): a wallet the
+ * browser announced under its own name, the generic injected connector named
+ * for what window.ethereum turned out to be, and a plain "none detected" rather
+ * than an opaque "Injected".
  */
 export function WalletPicker() {
   const open = useWalletPickerStore((s) => s.open)
@@ -14,10 +21,7 @@ export function WalletPicker() {
 
   if (!open) return null
 
-  // Not a real choice for anyone seeing this picker: useConnectWallet only
-  // opens it once isInMiniApp() has already come back false, and Farcaster's
-  // own connector fails silently outside its host either way.
-  const choices = connectors.filter((c) => c.id !== 'farcasterMiniApp')
+  const choices = buildWalletChoices(connectors, detectInjected())
 
   function close() {
     setOpen(false)
@@ -25,19 +29,27 @@ export function WalletPicker() {
 
   return (
     <div className="wallet-picker" onClick={close}>
-      <div className="wallet-picker-card" onClick={(e) => e.stopPropagation()}>
+      <div className="wallet-picker-card" role="dialog" aria-label="Connect a wallet" onClick={(e) => e.stopPropagation()}>
         <div className="wallet-picker-title">Connect a wallet</div>
         <div className="wallet-picker-choices">
-          {choices.map((c) => (
+          {choices.map(({ connector, label, hint, icon, disabled }) => (
             <button
-              key={c.uid}
-              className="cta"
+              key={connector.uid}
+              className="cta wallet-choice"
+              disabled={disabled}
               onClick={() => {
-                connect({ connector: c })
+                // The target chain rides along so the wallet is asked to switch
+                // as it connects, instead of the user finding out at the first
+                // signature that it was on another network.
+                connect({ connector, chainId: TARGET_CHAIN_ID })
                 close()
               }}
             >
-              {c.name}
+              {icon ? <img className="wallet-choice-icon" src={icon} alt="" width={20} height={20} /> : null}
+              <span className="wallet-choice-txt">
+                <span>{label}</span>
+                {hint ? <span className="wallet-hint">{hint}</span> : null}
+              </span>
             </button>
           ))}
         </div>

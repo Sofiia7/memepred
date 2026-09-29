@@ -11,8 +11,11 @@ import type { Chain } from 'viem'
  * which is fine while stakes are six-decimal USDC and a million times wrong
  * the moment they are eighteen-decimal WETH.
  *
- * VITE_NETWORK selects. `mainnet` still means Base mainnet and anything
- * unrecognised still means Base Sepolia, so an existing build is unaffected.
+ * VITE_NETWORK selects, and it is a strict enum: `mainnet` (Base mainnet),
+ * `sepolia` (Base Sepolia), `rhc` (Robinhood Chain) or `rhc-testnet`. An
+ * unrecognised value is refused by assertEnv() with a fatal screen instead of
+ * quietly becoming Base Sepolia - a typo in a deployment's environment must
+ * not put a Robinhood site on the wrong chain, with the wrong currency.
  */
 export const robinhoodChain = defineChain({
   id: 4663,
@@ -65,9 +68,10 @@ const WETH: CurrencyConfig = {
   displayDecimals: 4,
 }
 
-export type NetworkName = 'mainnet' | 'sepolia' | 'rhc' | 'rhc-testnet'
+export const NETWORK_NAMES = ['mainnet', 'sepolia', 'rhc', 'rhc-testnet'] as const
+export type NetworkName = (typeof NETWORK_NAMES)[number]
 
-interface Deployment {
+export interface Deployment {
   network: NetworkName
   chain: Chain
   currency: CurrencyConfig
@@ -85,15 +89,44 @@ const DEPLOYMENTS: Record<NetworkName, Deployment> = {
   'rhc-testnet': { network: 'rhc-testnet',  chain: robinhoodChainTestnet, currency: WETH, poolBacked: true  },
 }
 
-export function resolveDeployment(network: string | undefined): Deployment {
-  const key = (network ?? '').trim().toLowerCase()
-  if (key in DEPLOYMENTS) return DEPLOYMENTS[key as NetworkName]
-  // Unrecognised falls back to Base Sepolia, which is what this app did before
-  // there was more than one chain to choose from.
-  return DEPLOYMENTS.sepolia
+/**
+ * Strict parse of a VITE_NETWORK value. Case and surrounding whitespace are
+ * forgiven (a pasted value with a trailing newline or a BOM is still
+ * unambiguous); anything else that is not a member of the enum is undefined.
+ */
+export function parseNetwork(value: string | undefined | null): NetworkName | undefined {
+  const key = (value ?? '').trim().toLowerCase()
+  return (NETWORK_NAMES as readonly string[]).includes(key) ? (key as NetworkName) : undefined
 }
 
-export const DEPLOYMENT = resolveDeployment(import.meta.env.VITE_NETWORK)
+export class UnknownNetworkError extends Error {
+  constructor(readonly value: string | undefined) {
+    super(
+      `VITE_NETWORK must be one of ${NETWORK_NAMES.join(', ')}, ` +
+        `got ${value === undefined || value === '' ? 'nothing' : JSON.stringify(value)}`,
+    )
+    this.name = 'UnknownNetworkError'
+  }
+}
+
+/** Throws UnknownNetworkError for anything that is not a member of the enum. */
+export function resolveDeployment(network: string | undefined): Deployment {
+  const key = parseNetwork(network)
+  if (!key) throw new UnknownNetworkError(network)
+  return DEPLOYMENTS[key]
+}
+
+/**
+ * The value the rest of the app is built on, resolved when this module loads.
+ *
+ * It must not throw here: main.tsx renders its fatal config screen only after
+ * its imports have evaluated, and this module is one of them. So an invalid
+ * VITE_NETWORK evaluates to a placeholder (Base Sepolia, the app's oldest
+ * default) purely so the module graph can load - and assertEnv(), the first
+ * thing main.tsx runs, rejects that same value before anything mounts. The
+ * placeholder is never rendered.
+ */
+export const DEPLOYMENT = DEPLOYMENTS[parseNetwork(import.meta.env.VITE_NETWORK) ?? 'sepolia']
 
 /** Single source of truth for "the chain this app runs on". */
 export const TARGET_CHAIN = DEPLOYMENT.chain

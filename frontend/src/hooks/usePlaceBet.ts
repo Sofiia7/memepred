@@ -5,8 +5,12 @@
  *      can redirect to /order/:address/:orderId immediately after confirm.
  * 4.2: Reads `market.feedId()` on-chain instead of using a global
  *      VITE_PYTH_FEED_ID. Per-market feeds are correct for multi-coin.
+ * 2026-09-29 (audit U01): a bet is the intent frozen when execute() starts.
+ *      Nothing that happens to the props, the picked market or the connected
+ *      wallet while the wallet is open can change what gets approved, sent,
+ *      decoded or redirected to.
  */
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import {
   useWriteContract,
   useSendTransaction,
@@ -17,6 +21,7 @@ import {
 } from 'wagmi'
 import { parseUnits, decodeEventLog, type Address, type Hash, encodeFunctionData } from 'viem'
 import { CONTRACTS, ORDERBOOK_MARKET_ABI, ERC20_ABI, MARKET_FACTORY_ABI, CURRENCY_DECIMALS, CURRENCY_SYMBOL, IS_POOL_BACKED } from '../lib/contracts'
+import { TARGET_CHAIN_ID } from '../lib/chain'
 import { getPendingReferrer } from '../lib/referral'
 import { fetchBetPayload, withPayload } from '../lib/oracle'
 import { useEnsureChain } from './useEnsureChain'
@@ -44,6 +49,32 @@ interface UsePlaceBetArgs {
 
 type BetStep = 'idle' | 'approving' | 'approved' | 'betting' | 'confirmed' | 'error'
 
+/**
+ * Everything one bet is about, captured once when execute() starts.
+ *
+ * The approval and the bet are separated by wallet prompts that can sit open
+ * for as long as the user likes, and the props this hook is given are live: a
+ * click on the other side, another market, a new stake, or an account switch in
+ * the wallet all arrive as new props while the old execute() is still awaiting.
+ * Before this existed the continuation read those newer values - the approval
+ * was for one market and the order went to another - and a second click during
+ * the approval started a second, different bet. Now the flow reads this object
+ * and nothing else, including for the event it decodes and the order page the
+ * user is sent to.
+ */
+export interface BetIntent {
+  marketAddress: Address
+  direction:     Direction
+  amountWei:     bigint
+  expectedPrice: bigint
+  slippageBps:   number
+  /** The wallet the bet was started from. The wallet is asked to sign as this account. */
+  account:       Address
+  /** The chain the bet is for. The wallet is asked to sign on this chain and refuses on any other. */
+  chainId:       number
+  referrer:      Address
+}
+
 export function usePlaceBet({
   marketAddress,
   direction,
@@ -62,10 +93,28 @@ export function usePlaceBet({
   const effectiveReferrer = referrer ?? getPendingReferrer(address)
   const publicClient = usePublicClient()
   const ensureChain = useEnsureChain()
-  const [step, setStep] = useState<BetStep>('idle')
+  const [step, setStepState] = useState<BetStep>('idle')
   const [error, setError] = useState<string>()
   const [orderId, setOrderId] = useState<bigint>()
   const [submittedHash, setSubmittedHash] = useState<Hash>()
+  // The frozen intent of the bet in flight, or of the last one placed. Kept in
+  // state as well as a ref: effects and the caller need to see it change, the
+  // async continuation needs to read it without waiting for a render.
+  const [intent, setIntent] = useState<BetIntent>()
+  const intentRef = useRef<BetIntent | undefined>(undefined)
+  // True from the first line of execute() until it finishes. `step` alone is
+  // not enough: it stays 'idle' while the market is being verified and while
+  // the wallet is prompting for a network switch, and a second click in that
+  // window used to start a second bet.
+  const [inFlight, setInFlight] = useState(false)
+  const inFlightRef = useRef(false)
+  // Mirrors `step` synchronously. A click handler that fires twice before React
+  // has re-rendered would otherwise see the old value both times.
+  const stepRef = useRef<BetStep>('idle')
+  const setStep = useCallback((s: BetStep) => {
+    stepRef.current = s
+    setStepState(s)
+  }, [])
 
   // Computed on every render, not inside execute()'s try/catch - so it must
   // never throw on its own. parseUnits rejects anything that isn't plain
@@ -95,7 +144,7 @@ export function usePlaceBet({
   // be equally unprotected. This is the one place every bet actually goes
   // through, so it is the one place that can guarantee the check always runs
   // before an approval or a signature, no matter which page got here wrong.
-  const { data: isRealMarket, refetch: refetchIsMarket } = useReadContract({
+  const { data: isRealMarket } = useReadContract({
     address: CONTRACTS.MARKET_FACTORY,
     abi: MARKET_FACTORY_ABI,
     functionName: 'isMarket',
@@ -117,8 +166,13 @@ export function usePlaceBet({
   const { writeContractAsync: approve } = useWriteContract()
   const { writeContractAsync: placeBet } = useWriteContract()
 
-  const { sendTransactionAsync: sendBet, data: betTxHash } = useSendTransaction()
-  const finalBetHash = betTxHash ?? submittedHash
+  const { sendTransactionAsync: sendBet } = useSendTransaction()
+  // Only the hash this hook recorded for the current bet. useSendTransaction's
+  // own `data` keeps the PREVIOUS send's hash until the next one is made, which
+  // during a retry's approval would have reported the old bet's receipt (a
+  // revert, typically) as this bet's, and flipped a bet in progress to "error".
+  // Every send sets submittedHash right after it returns, so nothing is lost.
+  const finalBetHash = submittedHash
   const {
     data: betReceipt,
     isSuccess: betReceiptOk,
@@ -128,6 +182,11 @@ export function usePlaceBet({
     hash: finalBetHash,
     query: { enabled: !!finalBetHash },
   })
+
+  // A bet is in progress from the click until the receipt has come back with a
+  // verdict. Between the wallet accepting the bet and the receipt, `step` is
+  // still 'betting', which is what keeps this true through that wait.
+  const busy = inFlight || step === 'approving' || step === 'betting'
 
   // ── step, driven by what the receipt actually says ────────
   // Submitting a transaction only means the wallet accepted it - it does not
@@ -153,7 +212,7 @@ export function usePlaceBet({
       setStep('error')
       setError(betReceiptError?.message || 'Could not confirm the transaction - it may have been dropped. Please retry.')
     }
-  }, [finalBetHash, betReceiptOk, betReceipt, betReceiptErrored, betReceiptError])
+  }, [finalBetHash, betReceiptOk, betReceipt, betReceiptErrored, betReceiptError, setStep])
 
   // ── a different market or direction is a different bet ────
   // marketAddress/direction arrive as plain props, not a remount (Composer
@@ -161,19 +220,35 @@ export function usePlaceBet({
   // 'error'/'confirmed' status, error message or orderId from the last pick
   // when the user switches to a new one. Deliberately narrow: the stake or
   // expected price changing should not wipe an in-flight or just-finished bet.
+  //
+  // And never while a bet is in flight: that bet belongs to its own frozen
+  // intent, not to whatever the props say now, so a prop change must not reset
+  // it (this reset is what used to unlock the button mid-approval). Read from
+  // the refs rather than `busy`, so the check sees the current state of the
+  // flow and the effect does not re-run when `busy` flips. The outcome of a bet
+  // whose props changed underneath it therefore stays available, together with
+  // its `intent`, until the props change again - which is what lets the
+  // redirect after a confirmed bet still go to the market that bet was for.
   useEffect(() => {
+    if (inFlightRef.current || stepRef.current === 'approving' || stepRef.current === 'betting') return
     setStep('idle')
     setError(undefined)
     setOrderId(undefined)
     setSubmittedHash(undefined)
-  }, [marketAddress, direction])
+    intentRef.current = undefined
+    setIntent(undefined)
+  }, [marketAddress, direction, setStep])
 
   // ── 4.1: decode OrderPlaced log → orderId state ───────────
+  // Against the market the bet was sent to, from the frozen intent - the
+  // market currently picked may be a different one by the time the receipt
+  // arrives.
   useEffect(() => {
-    if (!betReceiptOk || !betReceipt) return
+    if (!betReceiptOk || !betReceipt || !intent) return
+    const market = intent.marketAddress.toLowerCase()
     for (const log of betReceipt.logs) {
       // We only care about logs emitted by the market we just called.
-      if (log.address.toLowerCase() !== marketAddress.toLowerCase()) continue
+      if (log.address.toLowerCase() !== market) continue
       try {
         const decoded = decodeEventLog({
           abi: ORDERBOOK_MARKET_ABI,
@@ -196,27 +271,67 @@ export function usePlaceBet({
         // (fee transfers, LP bookkeeping) that were never going to be OrderPlaced.
       }
     }
-  }, [betReceiptOk, betReceipt, marketAddress])
+  }, [betReceiptOk, betReceipt, intent])
 
   const execute = useCallback(async () => {
+    // One bet at a time. Refuses outright rather than queueing: a second click
+    // during an approval is not a request for a second bet.
+    if (inFlightRef.current || stepRef.current === 'approving' || stepRef.current === 'betting') return
     if (!address || amountWei === 0n) return
+
+    // Freeze the intent before anything is awaited. From here to the end of
+    // this function, `marketAddress`, `direction`, `amountWei`, `address` and
+    // the rest are not read again - only `snap` is.
+    const snap: BetIntent = {
+      marketAddress,
+      direction,
+      amountWei,
+      expectedPrice,
+      slippageBps,
+      account: address,
+      chainId: TARGET_CHAIN_ID,
+      referrer: effectiveReferrer,
+    }
+    inFlightRef.current = true
+    setInFlight(true)
+    intentRef.current = snap
+    setIntent(snap)
     setError(undefined)
     setOrderId(undefined)
     setSubmittedHash(undefined)
 
     try {
+      // Refuse before the user pays for an approval: a zero price is rejected
+      // by the contract ("expectedPrice zero") only at placeBet, after it.
+      if (snap.expectedPrice <= 0n) {
+        setStep('error')
+        setError('Price unavailable - cannot price this bet right now. Please retry in a moment.')
+        return
+      }
+
       // Only a confirmed `true` is trusted - `undefined` (still loading, or
       // the read errored) and `false` both refuse. Treating "not yet
       // confirmed" as "confirmed fine" is the exact bug this mirrors from
       // Market.tsx's old `notAMarket = isRealMarket === false`: an RPC
       // hiccup left isRealMarket undefined, which made that check false too,
-      // and opened the door to approving an unverified contract. Refetched
-      // rather than trusted stale if it has not resolved yet - wagmi's
-      // automatic refetch triggers (focus, reconnect) are not a guarantee
-      // this has run recently for a tab that has been open a while.
-      let marketConfirmed = isRealMarket
-      if (marketConfirmed === undefined) {
-        marketConfirmed = (await refetchIsMarket()).data
+      // and opened the door to approving an unverified contract. Asked of
+      // the chain directly, for the frozen market, if it has not resolved yet
+      // - wagmi's automatic refetch triggers (focus, reconnect) are not a
+      // guarantee this has run recently for a tab that has been open a while,
+      // and a refetch through the hook would answer for whatever market is
+      // picked by the time it returns, not the one this bet is for.
+      let marketConfirmed: boolean | undefined = isRealMarket
+      if (marketConfirmed === undefined && publicClient) {
+        try {
+          marketConfirmed = (await publicClient.readContract({
+            address: CONTRACTS.MARKET_FACTORY,
+            abi: MARKET_FACTORY_ABI,
+            functionName: 'isMarket',
+            args: [snap.marketAddress],
+          })) as boolean
+        } catch {
+          marketConfirmed = undefined
+        }
       }
       if (marketConfirmed !== true) {
         setStep('error')
@@ -231,7 +346,7 @@ export function usePlaceBet({
         return
       }
 
-      if (!allowance || allowance < amountWei) {
+      if (!allowance || allowance < snap.amountWei) {
         setStep('approving')
         // Bounded to this bet's own stake, not maxUint256. marketAddress comes
         // from a URL param one hop up the call chain (Market.tsx reads
@@ -245,7 +360,9 @@ export function usePlaceBet({
           address: CONTRACTS.USDC,
           abi: ERC20_ABI,
           functionName: 'approve',
-          args: [marketAddress, amountWei],
+          args: [snap.marketAddress, snap.amountWei],
+          account: snap.account,
+          chainId: snap.chainId,
         })
         // Wait for it to land, not merely to be submitted.
         //
@@ -284,10 +401,12 @@ export function usePlaceBet({
         // PoolOrderbookMarket obtains its 60s TWAP on-chain. It is an ordinary
         // contract call: no RedStone payload and no hand-built calldata.
         const hash = await placeBet({
-          address: marketAddress,
+          address: snap.marketAddress,
           abi: ORDERBOOK_MARKET_ABI,
           functionName: 'placeBet',
-          args: [direction, amountWei, effectiveReferrer, expectedPrice, BigInt(slippageBps)],
+          args: [snap.direction, snap.amountWei, snap.referrer, snap.expectedPrice, BigInt(snap.slippageBps)],
+          account: snap.account,
+          chainId: snap.chainId,
         })
         setSubmittedHash(hash)
       } else {
@@ -298,12 +417,14 @@ export function usePlaceBet({
           throw new Error(`Couldn't fetch a live price (${e?.message ?? 'network error'}). Please try again.`)
         }
         const hash = await sendBet({
-          to: marketAddress,
+          to: snap.marketAddress,
           data: withPayload(encodeFunctionData({
             abi: ORDERBOOK_MARKET_ABI,
             functionName: 'placeBet',
-            args: [direction, amountWei, effectiveReferrer, expectedPrice, BigInt(slippageBps)],
+            args: [snap.direction, snap.amountWei, snap.referrer, snap.expectedPrice, BigInt(snap.slippageBps)],
           }), payload),
+          account: snap.account,
+          chainId: snap.chainId,
         })
         setSubmittedHash(hash)
       }
@@ -314,8 +435,13 @@ export function usePlaceBet({
     } catch (err: any) {
       setStep('error')
       setError(err?.shortMessage || err?.message || 'Transaction failed')
+    } finally {
+      // The bet may still be waiting on its receipt (step 'betting'), which
+      // keeps `busy` true; this only ends the part that is execute()'s own.
+      inFlightRef.current = false
+      setInFlight(false)
     }
-  }, [address, amountWei, allowance, direction, marketAddress, effectiveReferrer, expectedPrice, slippageBps, marketFeedId, isRealMarket, refetchIsMarket, approve, placeBet, refetchAllowance, sendBet, ensureChain, publicClient])
+  }, [address, amountWei, allowance, direction, marketAddress, effectiveReferrer, expectedPrice, slippageBps, marketFeedId, isRealMarket, approve, placeBet, refetchAllowance, sendBet, ensureChain, publicClient, setStep])
 
   return {
     execute,
@@ -323,6 +449,19 @@ export function usePlaceBet({
     error,
     betTxHash: finalBetHash,
     orderId, // Sprint 4.1: now populated after confirmation
+    /**
+     * The frozen intent of the bet in flight or last placed. Anything that
+     * acts on "the bet" (the redirect to its order page, above all) reads its
+     * market from here, not from whatever is picked now.
+     */
+    intent,
+    /**
+     * True from the click until the bet has a verdict. Callers lock the stake,
+     * the amount chips, CLEAR and the UP/DOWN pick while it is true: none of
+     * them can change a bet already in flight, and letting them look as if
+     * they could is what made a second bet possible.
+     */
+    busy,
     isLoading: step === 'approving' || step === 'betting',
     // Derived from `step`, not from the receipt query directly: a fetched
     // receipt for a REVERTED transaction used to read as "confirmed" here

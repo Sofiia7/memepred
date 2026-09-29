@@ -1,9 +1,13 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { usePools, type Pool, type PoolStatus } from '../hooks/usePools'
+import { useMarkets, type Market } from '../hooks/useMarkets'
+import { useFreshness } from '../hooks/useFreshness'
 import { ScreenTitle, StatStrip } from '../components/ui/AppShell'
 import { ApiError } from '../components/ui/ApiError'
 import { CURRENCY_SYMBOL } from '../lib/contracts'
+import { addressToFeedId, formatDuration } from '../lib/symbols'
+import '../order.css'
 
 /**
  * What the keeper has seen and what it decided about it.
@@ -38,11 +42,24 @@ function age(sec: number): string {
   return `${Math.round(sec / 86400)}d`
 }
 
-function duration(sec: number): string {
-  return sec < 3600 ? `${sec / 60}m` : `${sec / 3600}h`
+/**
+ * The market behind one duration chip.
+ *
+ * The pools API only returns durations. A market is stored under its pool's
+ * address left-padded to 32 bytes (feedId), so the address a chip has to link
+ * to comes from the markets list, matched on that padded id and the duration.
+ */
+export function marketIndex(markets: Market[] | undefined): Map<string, Market> {
+  const index = new Map<string, Market>()
+  for (const m of markets ?? []) index.set(`${m.feedId.toLowerCase()}:${m.duration}`, m)
+  return index
 }
 
-function PoolRow({ p }: { p: Pool }) {
+export function marketForChip(index: Map<string, Market>, pool: string, durationSec: number): Market | undefined {
+  return index.get(`${addressToFeedId(pool)}:${durationSec}`)
+}
+
+function PoolRow({ p, index }: { p: Pool; index: Map<string, Market> }) {
   return (
     <div className="pool-row">
       <div className="pool-head">
@@ -64,11 +81,27 @@ function PoolRow({ p }: { p: Pool }) {
 
       {p.marketDurations.length > 0 ? (
         <div className="pool-markets">
-          {p.marketDurations.map((d) => (
-            <span key={d} className="pool-dur">
-              {duration(d)}
-            </span>
-          ))}
+          {p.marketDurations.map((d) => {
+            const market = marketForChip(index, p.pool, d)
+            // A chip that only describes a market is a dead end for someone who
+            // came here to trade it. When the markets list has the address, the
+            // chip is the way in; when it has not (yet), it stays a label.
+            return market ? (
+              <Link
+                key={d}
+                to={`/market/${market.address}`}
+                className="pool-dur pool-dur-link"
+                aria-label={`Trade ${p.symbol ?? 'this pool'} on the ${formatDuration(d)} market`}
+              >
+                {formatDuration(d)}
+                <span className="pool-trade">Trade →</span>
+              </Link>
+            ) : (
+              <span key={d} className="pool-dur">
+                {formatDuration(d)}
+              </span>
+            )
+          })}
         </div>
       ) : (
         // The reason is the content of this row when there is nothing to trade,
@@ -81,7 +114,11 @@ function PoolRow({ p }: { p: Pool }) {
 
 export function Pools() {
   const [filter, setFilter] = useState<PoolStatus | 'ALL'>('ALL')
-  const { data, isLoading, isError, refetch } = usePools(filter === 'ALL' ? undefined : filter)
+  const { data, isLoading, isError, refetch, dataUpdatedAt } = usePools(filter === 'ALL' ? undefined : filter)
+  const { data: openMarkets } = useMarkets('OPEN')
+  const index = useMemo(() => marketIndex(openMarkets), [openMarkets])
+  // The pool feed refetches every 30s; the dot goes amber after three misses.
+  const freshness = useFreshness({ dataUpdatedAt, isError, hasData: !!data }, 90_000)
 
   const pools = data?.pools ?? []
   const summary = useMemo(() => {
@@ -109,7 +146,8 @@ export function Pools() {
       <ScreenTitle
         title="Pools"
         live
-        liveLabel="watching"
+        liveLabel={freshness.level === 'live' ? 'watching' : freshness.label}
+        liveColor={freshness.color}
         icon={
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
             <path d="M3 17c2-2 4-2 6 0s4 2 6 0 4-2 6 0" stroke="#4d8dff" strokeWidth="2" />
@@ -149,7 +187,7 @@ export function Pools() {
 
       <div className="pool-list">
         {pools.map((p) => (
-          <PoolRow key={p.pool} p={p} />
+          <PoolRow key={p.pool} p={p} index={index} />
         ))}
       </div>
 

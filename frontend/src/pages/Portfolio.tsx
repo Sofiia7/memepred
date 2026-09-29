@@ -1,16 +1,29 @@
+import { useState } from 'react'
 import { useAccount } from 'wagmi'
 import { CURRENCY_DECIMALS, CURRENCY_SYMBOL, IS_POOL_BACKED } from '../lib/contracts'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { type Address } from 'viem'
 import { formatUnits } from 'viem'
-import { useClaim } from '../hooks/useClaim'
+import { useOrderActions } from '../hooks/useOrderActions'
 import { useReferral } from '../hooks/useReferral'
 import { useConnectWallet } from '../hooks/useConnectWallet'
 import { ScreenTitle, StatStrip } from '../components/ui/AppShell'
+import { TxStatus } from '../components/TxStatus'
 import { BadgeGrid } from '../components/BadgeGrid'
 import { WalletIcon, Chev } from '../components/ui/icons'
 import { symbolMeta, shortAddr } from '../lib/symbols'
+import {
+  BET_OUTCOME_LABEL,
+  betAtRisk,
+  betOutcome,
+  betPayout,
+  betStake,
+  betUnmatched,
+  isClaimableBet,
+  type BetLike,
+} from '../lib/portfolioModel'
+import '../order.css'
 
 const API = import.meta.env.VITE_API_URL
 
@@ -20,17 +33,12 @@ function money(value: number, decimals = 2): string {
     : `$${value.toFixed(decimals)}`
 }
 
-interface Bet {
+const DECIMALS = IS_POOL_BACKED ? 4 : 2
+
+type Bet = BetLike & {
   market_address: Address
-  order_id:       string | null
   match_id:       string | null
   direction:      'UP' | 'DOWN'
-  amount_usdc:    string
-  /** null while the bet is still running; a real boolean once it has settled. */
-  won:            boolean | null
-  payout_usdc:    string | null
-  claimed:        boolean
-  status:         'PENDING' | 'MATCHED' | 'SETTLED' | 'CLAIMED' | 'REFUNDED'
   placed_at:      string
   settled_at:     string | null
   feed_symbol:    string
@@ -49,43 +57,73 @@ interface Profile {
   recentBets:    Bet[]
 }
 
-function ClaimButton({ marketAddress, orderId }: { marketAddress: Address; orderId: bigint }) {
-  const { claim, pending } = useClaim(marketAddress)
+type Actions = ReturnType<typeof useOrderActions>
+
+/** A button that lives inside a row that is itself a link: it must not navigate. */
+function RowButton({ label, busy, disabled, onClick, title }: {
+  label: string
+  busy: boolean
+  disabled: boolean
+  onClick: () => void
+  title?: string
+}) {
   return (
     <button
-      className="cta"
-      style={{ padding: '6px 10px', fontSize: 10, height: 'auto', width: 'auto' }}
-      disabled={pending}
+      className="cta row-action"
+      style={{ padding: '8px 12px', fontSize: 11, height: 'auto', width: 'auto' }}
+      disabled={disabled}
+      title={title}
       onClick={(e) => {
-        // Row itself is a Link to /order/...; claiming from here shouldn't navigate.
+        // Row itself is a Link to /order/...; acting from here shouldn't navigate.
         e.preventDefault()
         e.stopPropagation()
-        claim(orderId)
+        onClick()
       }}
     >
-      {pending ? <span className="spinner" /> : null}
-      CLAIM
+      {busy ? <span className="spinner" /> : null}
+      {label}
     </button>
   )
 }
 
-function BetRow({ bet }: { bet: Bet }) {
+function BetRow({ bet, actions, doneKeys }: { bet: Bet; actions: Actions; doneKeys: Set<string> }) {
   const meta = symbolMeta(bet.feed_symbol)
   const isUp = bet.direction === 'UP'
-  const amount = parseFloat(bet.amount_usdc)
-  const payout = bet.payout_usdc ? parseFloat(bet.payout_usdc) : null
-  // Drive this off the order's own status rather than inferring it from the
-  // payout: a settled winner has no payout recorded until it is claimed, so the
-  // old chain (won === null ? … : won ? 'WON' : 'LOST') rendered every live and
-  // every unclaimed-winning bet as LOST, and hid the claim button behind a
-  // condition that could only become true after the money had already been
-  // taken. REFUNDED is its own outcome - the stake came back, nobody lost.
-  const status =
-    bet.status === 'REFUNDED' ? 'REFUNDED' :
-    bet.status === 'CLAIMED'  ? 'CLAIMED'  :
-    bet.won === null          ? 'PENDING'  :
-    bet.won                   ? 'WON'      : 'LOST'
-  const canClaim = bet.status === 'SETTLED' && bet.won === true && !bet.claimed && bet.order_id
+  const orderId = bet.order_id ? BigInt(bet.order_id) : null
+
+  const stake = betStake(bet)
+  const atRisk = betAtRisk(bet)
+  const payout = betPayout(bet)
+  const unmatched = betUnmatched(bet)
+  // One word for the whole order (audit U08): "WON" used to be printed as soon
+  // as a single match won, whatever the rest of the order did. The order page
+  // draws the same conclusion from the same fields, with the per-match list.
+  const outcome = betOutcome(bet)
+
+  const key = (kind: 'claim' | 'cancel') => `${kind}:${bet.market_address.toLowerCase()}:${bet.order_id}`
+  const canClaim = orderId !== null && isClaimableBet(bet) && !doneKeys.has(key('claim'))
+  const canCancel = orderId !== null && unmatched > 0 && !doneKeys.has(key('cancel')) && !canClaim
+
+  // Which row an in-flight or finished transaction belongs to: the hook is
+  // shared by the whole list, so its state says which order it was about.
+  const here =
+    orderId !== null &&
+    actions.state.market?.toLowerCase() === bet.market_address.toLowerCase() &&
+    actions.state.id === orderId
+  const busyHere = here && actions.isPending
+
+  // What the second line says, with the same terms and numbers as the order
+  // page: "at risk" is the filled part, "payout" is what the order accrued.
+  const detail =
+    outcome === 'open'
+      ? atRisk > 0
+        ? `${money(atRisk, DECIMALS)} of ${money(stake, DECIMALS)} matched`
+        : 'waiting for a match'
+      : outcome === 'tie' || outcome === 'refunded'
+        // The whole deposit came back: a REFUNDED order that never matched has
+        // filled_amount 0, and "0 returned" would be wrong.
+        ? `${money(stake, DECIMALS)} returned`
+        : `at risk ${money(atRisk, DECIMALS)} · payout ${money(payout ?? 0, DECIMALS)}`
 
   const rowContent = (
     <>
@@ -95,38 +133,59 @@ function BetRow({ bet }: { bet: Bet }) {
           <span className={'pick-pill ' + (isUp ? 'up' : 'dn')} style={{ marginRight: 6, padding: '2px 6px', fontSize: 9 }}>
             <Chev dir={isUp ? 'up' : 'down'} /> {bet.direction}
           </span>
-          {bet.feed_symbol} · {money(amount, IS_POOL_BACKED ? 4 : 2)}
+          {bet.feed_symbol} · {money(stake, DECIMALS)}
         </div>
-        <div className="lb-sub">{status}{payout !== null ? ` · payout ${money(payout, IS_POOL_BACKED ? 4 : 2)}` : ''}</div>
+        <div className="bet-sub">
+          <span className={'bet-outcome bet-outcome-' + outcome}>{BET_OUTCOME_LABEL[outcome]}</span>
+          {' · '}{detail}
+        </div>
       </div>
       {canClaim ? (
-        <ClaimButton marketAddress={bet.market_address} orderId={BigInt(bet.order_id!)} />
+        <RowButton
+          label="CLAIM"
+          busy={busyHere}
+          disabled={actions.isPending}
+          onClick={() => void actions.claim(orderId!, bet.market_address)}
+        />
+      ) : canCancel ? (
+        <RowButton
+          label="CANCEL REST"
+          busy={busyHere}
+          disabled={actions.isPending}
+          title={`Take back the ${money(unmatched, DECIMALS)} that has not found a match`}
+          onClick={() => void actions.cancel(orderId!, bet.market_address)}
+        />
       ) : (
         <span />
       )}
-      <div className={'lb-pnl ' + (bet.won === false ? 'dn' : '')}>
-        {payout !== null ? money(payout, IS_POOL_BACKED ? 4 : 2) : '-'}
+      <div className={'lb-pnl ' + (outcome === 'loss' ? 'dn' : '')}>
+        {payout !== null ? money(payout, DECIMALS) : '-'}
       </div>
     </>
   )
 
   // Every bet with an on-chain order_id has a status page - link to it so
   // "pending" bets are actually trackable instead of a dead-end list row.
-  if (bet.order_id) {
-    return (
-      <Link
-        to={`/order/${bet.market_address}/${bet.order_id}`}
-        className="lb-row"
-        style={{ gridTemplateColumns: '32px 1fr auto auto', textDecoration: 'none', color: 'inherit' }}
-      >
-        {rowContent}
-      </Link>
-    )
-  }
-
-  return (
+  const row = bet.order_id ? (
+    <Link
+      to={`/order/${bet.market_address}/${bet.order_id}`}
+      className="lb-row"
+      style={{ gridTemplateColumns: '32px 1fr auto auto', textDecoration: 'none', color: 'inherit' }}
+    >
+      {rowContent}
+    </Link>
+  ) : (
     <div className="lb-row" style={{ gridTemplateColumns: '32px 1fr auto auto' }}>
       {rowContent}
+    </div>
+  )
+
+  return (
+    <div className="bet-item">
+      {row}
+      {/* The receipt state of a claim or cancel started from this row, with the
+          reason when it failed: this page used to drop the error entirely. */}
+      {here && <TxStatus state={actions.state} compact />}
     </div>
   )
 }
@@ -137,7 +196,7 @@ function ReferralPanel() {
     ? `${window.location.origin}/?ref=${r.myCode}`
     : null
   const claimable = Number(formatUnits(r.claimableRewards ?? 0n, CURRENCY_DECIMALS))
-  const displayAmount = money(claimable, IS_POOL_BACKED ? 4 : 2)
+  const displayAmount = money(claimable, DECIMALS)
 
   return (
     <>
@@ -190,6 +249,23 @@ export function Portfolio() {
     retry: 2,
   })
 
+  // Rows whose claim or cancel has been confirmed on chain this session. The
+  // profile is served from an indexer that trails the chain (and a 30 second
+  // cache), so for a while the API still lists a claimed order as claimable;
+  // this is what keeps CLAIM from coming back for money that is already paid.
+  const [doneKeys, setDoneKeys] = useState<Set<string>>(() => new Set())
+
+  // ONE hook for every row: only one transaction at a time, wherever it was
+  // started, and the market travels with each call. It follows the transaction
+  // to the receipt, then refetches the profile.
+  const actions = useOrderActions(undefined, {
+    onConfirmed: ({ action, market, id }) => {
+      const kind = action === 'claim' ? 'claim' : action === 'cancelOrder' ? 'cancel' : null
+      if (kind) setDoneKeys((prev) => new Set(prev).add(`${kind}:${market.toLowerCase()}:${id}`))
+      void refetch()
+    },
+  })
+
   if (!isConnected) {
     return (
       <>
@@ -226,11 +302,12 @@ export function Portfolio() {
   }
 
   const ownedBadgeIds = new Set((profile.badges ?? []).map((b) => b.badge_id))
-  // Same condition as BetRow's canClaim - an order is claimable only while it
-  // is SETTLED. Without the status check an already-claimed bet reappeared here
-  // forever, because the API never sent `claimed` and `!undefined` is true.
+  // Same rule as each row's CLAIM button (lib/portfolioModel). It used to be
+  // "status is SETTLED and won", which left out a REFUNDED order that still held
+  // the winnings of another match, and listed an order as claimable once any
+  // match had won.
   const claimable = profile.recentBets.filter(
-    (b) => b.status === 'SETTLED' && b.won === true && b.order_id && !b.claimed,
+    (b) => isClaimableBet(b) && !doneKeys.has(`claim:${b.market_address.toLowerCase()}:${b.order_id}`),
   )
 
   return (
@@ -239,8 +316,10 @@ export function Portfolio() {
 
       <StatStrip
         items={[
-          { k: 'Profit', v: `${profile.profit >= 0 ? '+' : '−'}${money(Math.abs(profile.profit), IS_POOL_BACKED ? 4 : 2)}`, tone: profile.profit >= 0 ? 'up' : 'dn' },
-          { k: 'Accuracy', v: `${profile.accuracy}%`, u: `${profile.wonBets}/${profile.totalBets}` },
+          { k: 'Profit', v: `${profile.profit >= 0 ? '+' : '−'}${money(Math.abs(profile.profit), DECIMALS)}`, tone: profile.profit >= 0 ? 'up' : 'dn' },
+          // Same name and same meaning as the leaderboard's "WR": orders that
+          // won at least one match, out of the orders that have a result.
+          { k: 'Win rate', v: `${profile.accuracy}%`, u: `${profile.wonBets}/${profile.totalBets} settled` },
         ]}
       />
       <StatStrip
@@ -254,7 +333,9 @@ export function Portfolio() {
         <>
           <div className="b-title">Ready to claim ({claimable.length})</div>
           <div className="lb-list" style={{ marginBottom: 14 }}>
-            {claimable.map((b, i) => <BetRow key={i} bet={b} />)}
+            {claimable.map((b) => (
+              <BetRow key={`${b.market_address}:${b.order_id}`} bet={b} actions={actions} doneKeys={doneKeys} />
+            ))}
           </div>
         </>
       )}
@@ -269,7 +350,9 @@ export function Portfolio() {
         <div className="empty-state">No bets yet</div>
       ) : (
         <div className="lb-list">
-          {profile.recentBets.map((b, i) => <BetRow key={i} bet={b} />)}
+          {profile.recentBets.map((b, i) => (
+            <BetRow key={b.order_id ? `${b.market_address}:${b.order_id}` : i} bet={b} actions={actions} doneKeys={doneKeys} />
+          ))}
         </div>
       )}
 

@@ -1,96 +1,90 @@
 /**
- * Order page - Sprint 4.4
+ * Order page - Sprint 4.4, reworked for the 2026-09-29 fix pass.
  *
  * /order/:address/:orderId
- * Status card + claim/refund actions for a single order.
+ * Status card + claim / cancel / refund / recover actions for a single order.
+ *
+ * Three things changed from the original:
+ *  - the route parameters are validated (viem isAddress, a positive integer id)
+ *    before anything is read or signed, and a bad link says so;
+ *  - an order that does not exist is "Order not found" with a way back, not a
+ *    "Loading order..." that never ends;
+ *  - every action follows its transaction to the receipt (hooks/useOrderActions),
+ *    shows the wallet / submitted / confirmed / failed state with an explorer
+ *    link, and refetches the order once it is mined.
  */
 import { useState } from 'react'
-import { useParams, useNavigate, Link } from 'react-router-dom'
-import { useWriteContract } from 'wagmi'
+import { useParams, Link } from 'react-router-dom'
+import { useReadContract } from 'wagmi'
 import type { Address } from 'viem'
 import { ORDERBOOK_MARKET_ABI } from '../lib/contracts'
-import { useClaim } from '../hooks/useClaim'
-import { useEnsureChain } from '../hooks/useEnsureChain'
+import { orderExists } from '../lib/orderModel'
+import { parseMarketParam, parseOrderIdParam } from '../lib/routeParams'
+import { useOrderActions } from '../hooks/useOrderActions'
 import { OrderStatusCard } from '../components/OrderStatusCard'
+import { TxStatus } from '../components/TxStatus'
 import { ScreenTitle } from '../components/ui/AppShell'
 
 export function OrderPage() {
   const params = useParams<{ address: string; orderId: string }>()
-  const navigate = useNavigate()
+  const market = parseMarketParam(params.address)
+  const orderId = parseOrderIdParam(params.orderId)
 
-  const marketAddress = (params.address ?? '') as Address
-  const orderId = (() => {
-    try { return BigInt(params.orderId ?? '0') } catch { return 0n }
-  })()
-  const isValidOrder = Boolean(marketAddress) && orderId !== 0n
-
-  // Hooks must run unconditionally on every render - React Router doesn't
-  // remount OrderPage across param changes on the same route, so an early
-  // return before these (as this page used to have) changes the hook count
-  // between renders and crashes with "Rendered fewer hooks than expected"
-  // the moment a user navigates between two /order/:address/:orderId URLs.
-  const { claim, pending: claimPending, error: claimError } = useClaim(marketAddress)
-  const { writeContractAsync: refundExpired } = useWriteContract()
-  const ensureChain = useEnsureChain()
-  const [refundPending, setRefundPending] = useState(false)
-  const [refundError, setRefundError] = useState<string>()
-
-  if (!isValidOrder) {
+  // No hooks below this line except through OrderView, which only ever gets
+  // parameters that passed validation. Keyed by the order: React Router does not
+  // remount a page across param changes, so without the key one order's
+  // transaction status and refresh counter would follow the user to the next.
+  if (!market || orderId === null) {
     return (
       <>
-        <ScreenTitle title="Order not found" />
+        <ScreenTitle title="Invalid order link" />
+        <div className="empty-state">
+          This link does not point at an order. Check the address and the order number, or open the
+          order from your portfolio.
+        </div>
         <Link to="/" className="cta">Back to markets</Link>
       </>
     )
   }
+  return <OrderView key={`${market.toLowerCase()}:${orderId.toString()}`} marketAddress={market} orderId={orderId} />
+}
 
-  async function handleRefund() {
-    setRefundError(undefined)
-    setRefundPending(true)
-    try {
-      const chainCheck = await ensureChain()
-      if (!chainCheck.ok) { setRefundError(chainCheck.error); return }
-      await refundExpired({
-        address: marketAddress,
-        abi: ORDERBOOK_MARKET_ABI,
-        functionName: 'refundExpired',
-        args: [orderId],
-      })
-    } catch (e: any) {
-      setRefundError(e?.shortMessage || e?.message || 'Refund failed')
-    } finally {
-      setRefundPending(false)
-    }
-  }
+function OrderView({ marketAddress, orderId }: { marketAddress: Address; orderId: bigint }) {
+  // Bumped after each confirmed transaction: the card refetches on it.
+  const [refreshSignal, setRefreshSignal] = useState(0)
+  const actions = useOrderActions(marketAddress, {
+    onConfirmed: () => setRefreshSignal((n) => n + 1),
+  })
 
-  /**
-   * Recover a stake from a match the keeper never settled.
-   *
-   * Past settleAt + SETTLE_GRACE (24h) the contract refuses to settle at all -
-   * resolveOrderbookMarketBatch reverts with "settlement window expired" - and
-   * emergencyRefundMatch becomes the only way to get the money out. It is
-   * permissionless by design, but nothing in the app ever called it: the ABI
-   * entry existed and had no caller, so a keeper outage longer than a day left
-   * users staring at "Awaiting market settlement…" forever with their funds
-   * recoverable only by hand-crafting a call on Basescan.
-   */
-  async function handleEmergencyRefund(matchId: bigint) {
-    setRefundError(undefined)
-    setRefundPending(true)
-    try {
-      const chainCheck = await ensureChain()
-      if (!chainCheck.ok) { setRefundError(chainCheck.error); return }
-      await refundExpired({
-        address: marketAddress,
-        abi: ORDERBOOK_MARKET_ABI,
-        functionName: 'emergencyRefundMatch',
-        args: [matchId],
-      })
-    } catch (e: any) {
-      setRefundError(e?.shortMessage || e?.message || 'Recovery failed')
-    } finally {
-      setRefundPending(false)
-    }
+  // Whether the order exists at all. The same read the card makes, so react-query
+  // serves both from one cache entry. getOrder() of an id nobody used is a zeroed
+  // struct, not a revert, hence the zero-address check; an error that survives
+  // react-query's retries is a wrong market address or an unreachable network.
+  const { data: order, isError, refetch } = useReadContract({
+    address: marketAddress,
+    abi: ORDERBOOK_MARKET_ABI,
+    functionName: 'getOrder',
+    args: [orderId],
+  })
+
+  const missing = order !== undefined && !orderExists(order)
+  const unreadable = isError && order === undefined
+
+  if (missing || unreadable) {
+    return (
+      <>
+        <ScreenTitle title="Order not found" />
+        <div className="empty-state">
+          {missing
+            ? `There is no order #${orderId.toString()} on this market.`
+            : "Couldn't read this order. The link may point at the wrong market, or the network is unreachable."}
+        </div>
+        {unreadable && (
+          <button className="cta" style={{ marginBottom: 10 }} onClick={() => refetch()}>RETRY</button>
+        )}
+        <Link to="/" className="cta">Back to markets</Link>
+      </>
+    )
   }
 
   return (
@@ -100,23 +94,22 @@ export function OrderPage() {
       <OrderStatusCard
         marketAddress={marketAddress}
         orderId={orderId}
-        onClaim={() => claim(orderId)}
-        onRefund={handleRefund}
-        onEmergencyRefund={handleEmergencyRefund}
-        txPending={claimPending || refundPending}
+        onClaim={() => actions.claim(orderId)}
+        onCancel={() => actions.cancel(orderId)}
+        onRefund={() => actions.refundExpired(orderId)}
+        // Past settleAt + 24h the contract no longer settles a match, and this
+        // is the only way out. Permissionless by design, and it takes a MATCH id.
+        onEmergencyRefund={(matchId) => actions.recover(matchId)}
+        txPending={actions.isPending}
+        refreshSignal={refreshSignal}
       />
 
-      {(claimError || refundError) && (
-        <div className="osc-error">{claimError || refundError}</div>
-      )}
+      <TxStatus state={actions.state} />
 
       <div style={{ marginTop: 16 }}>
-        <button
-          className="cta"
-          onClick={() => navigate(`/market/${marketAddress}`)}
-        >
+        <Link className="cta" to={`/market/${marketAddress}`}>
           Back to market
-        </button>
+        </Link>
       </div>
     </>
   )

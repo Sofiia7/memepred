@@ -1,11 +1,14 @@
 import { useState, useMemo } from 'react'
+import { Link } from 'react-router-dom'
 import type { Address } from 'viem'
 import type { Market } from '../../hooks/useMarkets'
 import { useOdds } from '../../hooks/useOdds'
 import { useNow, countdownFrom } from '../../hooks/useNow'
-import { symbolMeta, formatPrice, formatDuration, shortAddr, feedIdToAddress } from '../../lib/symbols'
+import { symbolMeta, formatPrice, formatDuration, shortAddr, feedIdToAddress, isContinuousMarket } from '../../lib/symbols'
 import { Chev } from './icons'
 import { IS_POOL_BACKED } from '../../lib/chain'
+import { useBetBusy } from '../../hooks/useBetBusy'
+import '../../order.css'
 
 export interface PickedBet {
   marketAddress: Address
@@ -51,6 +54,8 @@ export function MarketCardUI({ symbol, feedId, livePrice = 0, chg24h = 0, market
   const safeIdx = Math.min(activeIdx, Math.max(0, sorted.length - 1))
   const active = sorted[safeIdx]
   const now = useNow(1000)
+  // True while the Composer is placing a bet: a pick made then could not change it (audit U01).
+  const betBusy = useBetBusy()
   if (!active) return null
   const isSelHere = picked?.marketAddress.toLowerCase() === active.address.toLowerCase()
 
@@ -60,7 +65,12 @@ export function MarketCardUI({ symbol, feedId, livePrice = 0, chg24h = 0, market
         <div className="coin-l">
           <div className={'coin-icon ' + meta.iconClass}>{meta.glyph}</div>
           <div>
-            <div className="coin-name">{symbol}<span className="pair"> / {IS_POOL_BACKED ? 'WETH' : 'USD'}</span></div>
+            {/* The card's only way to the market page: chart, queue depth, the
+                pool it is priced from. The link follows the selected duration. */}
+            <div className="coin-name">
+              <Link className="coin-name-link" to={`/market/${active.address}`}>{symbol}</Link>
+              <span className="pair"> / {IS_POOL_BACKED ? 'WETH' : 'USD'}</span>
+            </div>
             <div className="coin-sub">
               {meta.name}
               {/* A look-alike token can share a real one's symbol - the pool
@@ -86,14 +96,23 @@ export function MarketCardUI({ symbol, feedId, livePrice = 0, chg24h = 0, market
             onClick={() => setActiveIdx(i)}
           >
             <span className="tf-lbl">{formatDuration(m.duration)}</span>
-            <span className="tf-end">⌁ {countdownFrom(m.closeTime, now)}</span>
+            {/* A market with no close time has no round to count down to. The
+                old countdownFrom(null) printed 00:00 on every Robinhood card. */}
+            <span className="tf-end">{isContinuousMarket(m.closeTime) ? 'continuous' : `⌁ ${countdownFrom(m.closeTime!, now)}`}</span>
           </button>
         ))}
       </div>
 
+      {isContinuousMarket(active.closeTime) && (
+        <div className="mkt-continuous">
+          Continuous market - each bet settles {formatDuration(active.duration)} after it is matched.
+        </div>
+      )}
+
       <div className="ud">
         <button
           className={'b b-up ' + (isSelHere && picked?.side === 'up' ? 'sel' : '')}
+          disabled={betBusy}
           onClick={() => onPick({
             marketAddress: active.address as Address,
             feedId: active.feedId,
@@ -108,6 +127,7 @@ export function MarketCardUI({ symbol, feedId, livePrice = 0, chg24h = 0, market
         </button>
         <button
           className={'b b-dn ' + (isSelHere && picked?.side === 'down' ? 'sel' : '')}
+          disabled={betBusy}
           onClick={() => onPick({
             marketAddress: active.address as Address,
             feedId: active.feedId,

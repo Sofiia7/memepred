@@ -3,9 +3,14 @@ import type { Address } from 'viem'
 import { ORDERBOOK_MARKET_ABI } from '../lib/contracts'
 
 /**
- * Read pending depth on each side. With perfect symmetry the implied
- * probability is depthUp / (depthUp + depthDown); otherwise it leans toward
- * the longer queue (more demand on that side).
+ * Read pending depth on each side.
+ *
+ * What comes back is the two queues' LENGTHS (getPendingDepth returns
+ * `pendingUpQueue.length, pendingDownQueue.length`): how many orders are
+ * waiting, not how much is staked, and not the chance that either side wins.
+ * The payout of a bet is fixed and does not depend on them. `probUp` is the
+ * imbalance of the two queues written as a ratio, kept because it was here; it
+ * is not a probability and nothing on screen should present it as one.
  */
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
 
@@ -23,6 +28,6 @@ export function useOdds(marketAddress: Address) {
   const downDepth = data[1] as bigint
   const total = upDepth + downDepth
   const probUp = total === 0n ? 0.5 : Number(downDepth) / Number(total)
-  // The side with LESS queue has higher fill probability and lower implied price.
+  // The side with LESS queue is the one that fills sooner. That is all this says.
   return { upDepth, downDepth, probUp, isLoading, refetch }
 }

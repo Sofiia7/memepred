@@ -7,7 +7,7 @@
  */
 export function ApiError({ onRetry, message = "Couldn't reach the server" }: { onRetry: () => void; message?: string }) {
   return (
-    <div className="empty-state">
+    <div className="empty-state" role="alert">
       <div>{message}</div>
       <button className="cta" style={{ marginTop: 10 }} onClick={() => onRetry()}>
         RETRY

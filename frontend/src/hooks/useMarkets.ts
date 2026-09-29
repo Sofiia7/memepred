@@ -8,8 +8,13 @@ export interface Market {
   feedSymbol: string
   duration:   number
   openTime:   number
-  closeTime:  number
-  entryPrice: number
+  /**
+   * Null on Robinhood Chain, where a market has no close time: it lives
+   * forever and each match settles `duration` after it was made. Older API
+   * builds served 0 for the same thing (see lib/symbols.ts isContinuousMarket).
+   */
+  closeTime:  number | null
+  entryPrice: number | null
   exitPrice:  number | null
   status:     'OPEN' | 'CLOSED' | 'RESOLVED' | 'REFUNDED'
   upWon:      boolean | null

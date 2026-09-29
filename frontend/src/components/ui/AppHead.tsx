@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
 import { useAccount, useDisconnect } from 'wagmi'
 import { useConnectWallet } from '../../hooks/useConnectWallet'
+import { ChainMark } from './ChainMark'
 
 export function AppHead() {
   const { address, isConnected } = useAccount()
@@ -24,7 +25,7 @@ export function AppHead() {
         </button>
       ) : (
         <button className="connect" onClick={connectWallet}>
-          <span className="basesq" />
+          <ChainMark />
           Sign in
         </button>
       )}
