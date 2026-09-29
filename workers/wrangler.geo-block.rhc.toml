@@ -23,3 +23,14 @@ compatibility_date = "2024-09-01"
 routes = [
   { pattern = "api-rhc.flipthememe.com/*", zone_name = "flipthememe.com" }
 ]
+
+# 2026-09-29, Sofia's decision: Singapore is open on THIS deployment, because it
+# is the testnet demo for the Arbitrum Open House Singapore buildathon and its
+# judges may be there. The Base worker (wrangler.toml) has no such variable and
+# keeps the full restricted list - opening a country there is a separate
+# decision, it carries real money. Only restricted jurisdictions can be opened
+# this way; OFAC countries are ignored by design (see blockedFor in
+# geo-block.ts). Keep it identical to VITE_GEO_OPEN_COUNTRIES in the frontend
+# build of this deployment, or the page copy and the edge will disagree.
+[vars]
+GEO_OPEN_COUNTRIES = "SG"

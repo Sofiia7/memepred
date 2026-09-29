@@ -28,6 +28,7 @@ import { useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { MAX_BET, CURRENCY_SYMBOL, IS_POOL_BACKED } from '../lib/contracts'
 import { PRICE_JUMP_REFUND_PCT, REFUND_GRACE_HOURS } from '../lib/rules'
+import { restrictedNames } from '../lib/restrictedRegions'
 import { NetworkPill } from './ui/NetworkPill'
 
 const ACK_KEY = 'ftm_risk_ack_v1'
@@ -140,9 +141,8 @@ export function RiskGate({ children }: { children: React.ReactNode }) {
         </ol>
 
         <p className="risk-fine">
-          Not available in the US, UK, Canada, Australia, Japan, Singapore,
-          France, Germany, the Netherlands, or sanctioned countries. Full
-          detail in the <Link to="/terms">Terms</Link>.
+          Not available in {restrictedNames('short').join(', ')}, or sanctioned
+          countries. Full detail in the <Link to="/terms">Terms</Link>.
         </p>
 
         <button className="cta risk-accept" onClick={accept}>

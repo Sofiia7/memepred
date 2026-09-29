@@ -19,6 +19,8 @@
  *     duplication that can drift.
  */
 
+import { blockedCodes } from './restrictedRegions'
+
 export type GeoStatus = 'allowed' | 'blocked' | 'unverified'
 
 export interface GeoResult {
@@ -30,21 +32,15 @@ export interface GeoResult {
 /** How long either request may take before the check gives up (unverified). */
 export const GEO_TIMEOUT_MS = 8_000
 
-// Mirrors workers/geo-block.ts's BLOCKED set - kept in sync manually since
-// this is only the fallback used if /api/geo/config is unreachable.
+// Mirrors what workers/geo-block.ts enforces for this deployment (see
+// lib/restrictedRegions, and restrictedRegions.test.ts, which fails if the two
+// disagree). Only the fallback used if /api/geo/config is unreachable.
 //
 // Note this list is nearly unreachable in practice: the Worker evaluates
-// BLOCKED *before* it serves /api/geo, so a user in a blocked country gets
-// 451 there and checkGeo() returns early without ever consulting this. It
-// still gets kept in sync so the two files never disagree on the record.
-const FALLBACK_BLOCKED = [
-  // OFAC comprehensively-sanctioned
-  'CU', 'IR', 'KP', 'SY',
-  // Restricted jurisdictions (see workers/geo-block.ts for the reasoning)
-  'US', 'PR', 'GU', 'VI', 'AS', 'MP', 'UM',
-  'GB', 'FR', 'DE', 'NL', 'CA', 'AU', 'JP', 'SG',
-  'T1',
-]
+// its blocked set *before* it serves /api/geo, so a user in a blocked country
+// gets 451 there and checkGeo() returns early without ever consulting this. It
+// still gets kept in sync so the two never disagree on the record.
+const FALLBACK_BLOCKED = blockedCodes()
 
 let cachedBlocked: string[] | null = null
 

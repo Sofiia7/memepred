@@ -23,6 +23,13 @@ interface ImportMetaEnv {
   readonly VITE_API_URL: string
   /** "1" skips the region check (previews and local dev without a Worker). */
   readonly VITE_DISABLE_GEOBLOCK?: string
+  /**
+   * Comma-separated ISO codes this deployment has opened, e.g. "SG". The
+   * frontend half of the Worker's GEO_OPEN_COUNTRIES: same codes on both
+   * sides. Only GB, FR, DE, NL, CA, AU, JP and SG can be opened (see
+   * lib/restrictedRegions); unset keeps the full list.
+   */
+  readonly VITE_GEO_OPEN_COUNTRIES?: string
   /** Faucet link shown to a testnet wallet with no ETH. Defaults in lib/env. */
   readonly VITE_FAUCET_URL?: string
   /**

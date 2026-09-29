@@ -341,7 +341,7 @@ Doing this without her doing step 1/2 herself would break the live site
 ## Public API URL — turned out to already be resolved before I could act
 
 Checked 2026-07-07: `api.flipthememe.com` already resolves (A record →
-89.124.77.59, the VPS) and Caddy serves it with a valid cert — confirmed
+the VPS) and Caddy serves it with a valid cert — confirmed
 live via curl, `/health` and `/api/markets` both 200 with correct CORS for
 `https://flipthememe.com`. Vercel prod env (`memepred-frontend` project)
 already had `VITE_API_URL` and `VITE_DISABLE_GEOBLOCK=1` set (added
@@ -386,7 +386,7 @@ run). Plan: fix client path → public testnet → audit+legal → mainnet.
 
 ## Backend deployed to VPS (2026-07-06) — first real deploy, live but not public yet
 
-Deployed to the openclaw-bot VPS (89.124.77.59, shared with meteora bot — see
+Deployed to the openclaw-bot VPS (shared with meteora bot — see
 global CLAUDE.md rule: SSH only as `openclaw-bot_TEST`/openclaw user, never root)
 at `/home/openclaw/memepred`. A STALE prior checkout already existed there (2
 commits, pre-OrderbookMarket architecture, docker never actually booted, no
@@ -422,7 +422,7 @@ without her confirming where it's actually managed first.
 
 **Recommended (not yet done, her call):** skip the Cloudflare Worker/geo-block
 for now (testnet stage, no compliance urgency yet) and just add a plain A
-record `api.memepred.xyz` → `89.124.77.59` wherever she finds the zone is
+record `api.memepred.xyz` → the VPS address wherever she finds the zone is
 actually managed. Revisit Cloudflare NS delegation as a mainnet-readiness
 task, not a blocker for the Sepolia/CEF-demo stage.
 

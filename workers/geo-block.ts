@@ -20,11 +20,23 @@
  * Required Worker secret:
  *   WORKER_SECRET    matches backend's WORKER_SECRET (used by /api/geo)
  *
+ * Optional Worker variable (wrangler.toml [vars], not a secret):
+ *   GEO_OPEN_COUNTRIES   ISO codes opened for THIS deployment only (see Env)
+ *
  * Deploy: wrangler deploy (route is configured in wrangler.toml).
  */
 
 export interface Env {
   WORKER_SECRET: string
+  /**
+   * Optional, per deployment: comma-separated ISO codes to take OFF the
+   * restricted-jurisdictions list for this Worker only, e.g. "SG". Unset (the
+   * Base worker) means the full list below. It can open only the countries in
+   * OPENABLE_JURISDICTIONS: an OFAC country, the U.S. and its territories,
+   * Tor and any junk value are ignored, so a typo in a toml file can never
+   * widen the sanctions or CFTC exposure or switch the whole list off.
+   */
+  GEO_OPEN_COUNTRIES?: string
 }
 
 // ── LAYER 1: OFAC comprehensively-sanctioned countries ─────────────────
@@ -75,7 +87,33 @@ const RESTRICTED_JURISDICTIONS = [
   'T1'
 ]
 
-const BLOCKED = new Set([...OFAC_SANCTIONED, ...RESTRICTED_JURISDICTIONS])
+/**
+ * The only restricted jurisdictions a deployment may open through
+ * GEO_OPEN_COUNTRIES. The U.S. and its territories are deliberately not here
+ * (see the CFTC note above: not serving them is the one thing that cures that
+ * exposure) and neither is Tor ('T1'), which would sidestep every other line.
+ * Adding a country here is a code change and a decision, not a typo away.
+ */
+const OPENABLE_JURISDICTIONS = new Set(['GB', 'FR', 'DE', 'NL', 'CA', 'AU', 'JP', 'SG'])
+
+/**
+ * The blocked set for one deployment: every OFAC country, plus every restricted
+ * jurisdiction that this deployment has not explicitly opened through
+ * GEO_OPEN_COUNTRIES. Exported so the tests (and the frontend's parity test)
+ * can pin exactly what each deployment enforces.
+ */
+export function blockedFor(env: Pick<Env, 'GEO_OPEN_COUNTRIES'>): Set<string> {
+  const open = new Set(
+    (env.GEO_OPEN_COUNTRIES ?? '')
+      .split(',')
+      .map((c) => c.trim().toUpperCase())
+      .filter((c) => OPENABLE_JURISDICTIONS.has(c))
+  )
+  return new Set([
+    ...OFAC_SANCTIONED,
+    ...RESTRICTED_JURISDICTIONS.filter((c) => !open.has(c))
+  ])
+}
 
 // ── GEO-EXEMPT PATHS ───────────────────────────────────────────────────
 // 2026-07-25: turning on the US block immediately took the uptime monitor
@@ -127,6 +165,7 @@ export default {
       return new Response(null, { status: 204, headers: corsHeaders })
     }
 
+    const BLOCKED = blockedFor(env)
     if (BLOCKED.has(country) && !GEO_EXEMPT_PATHS.has(inUrl.pathname)) {
       return new Response(
         JSON.stringify({

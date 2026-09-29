@@ -271,3 +271,34 @@ describe('checkGeo, the preview switch', () => {
     expect((await checkGeo()).status).toBe('unverified')
   })
 })
+
+describe('checkGeo, a deployment that has opened a country', () => {
+  const configDown = {
+    '/api/geo/config': () => {
+      throw new TypeError('config down')
+    },
+  }
+
+  it('the fallback lets an opened country in when the Worker list cannot be read', async () => {
+    vi.stubEnv('VITE_GEO_OPEN_COUNTRIES', 'SG')
+    vi.stubGlobal('fetch', routeFetch({ '/api/geo': () => res(200, { country: 'SG' }), ...configDown }))
+    const { checkGeo } = await load()
+    expect(await checkGeo()).toEqual({ status: 'allowed', country: 'SG' })
+  })
+
+  it.each(['US', 'GB', 'DE', 'IR', 'T1'])('but still blocks %s', async (country) => {
+    vi.stubEnv('VITE_GEO_OPEN_COUNTRIES', 'SG')
+    vi.stubGlobal('fetch', routeFetch({ '/api/geo': () => res(200, { country }), ...configDown }))
+    const { checkGeo } = await load()
+    expect(await checkGeo()).toEqual({ status: 'blocked', country })
+  })
+
+  it('cannot be used to open an OFAC country, the US or Tor', async () => {
+    vi.stubEnv('VITE_GEO_OPEN_COUNTRIES', 'IR,US,T1,SG')
+    for (const country of ['IR', 'US', 'T1']) {
+      vi.stubGlobal('fetch', routeFetch({ '/api/geo': () => res(200, { country }), ...configDown }))
+      const { checkGeo } = await load()
+      expect(await checkGeo()).toEqual({ status: 'blocked', country })
+    }
+  })
+})

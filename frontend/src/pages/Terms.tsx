@@ -4,6 +4,7 @@ import { ScreenTitle } from '../components/ui/AppShell'
 import { IS_POOL_BACKED } from '../lib/chain'
 import { MAX_BET, CURRENCY_SYMBOL, SETTLE_GRACE_SEC, MATCH_TIMEOUT_SEC } from '../lib/contracts'
 import { PRICE_JUMP_REFUND_PCT } from '../lib/rules'
+import { joinList, restrictedNames } from '../lib/restrictedRegions'
 
 const SETTLE_GRACE_HOURS = SETTLE_GRACE_SEC / 3600
 const MATCH_TIMEOUT_MINUTES = MATCH_TIMEOUT_SEC / 60
@@ -101,11 +102,8 @@ export function TermsPage() {
           <li><b>Comprehensively sanctioned countries</b> - Cuba, Iran, North
             Korea, Syria. This one isn't a choice; it's U.S. sanctions law and
             it applies regardless of where an operator sits.</li>
-          <li><b>Restricted jurisdictions</b> - the United States (including
-            Puerto Rico, Guam, the U.S. Virgin Islands, American Samoa, the
-            Northern Mariana Islands), the United Kingdom, France, Germany,
-            the Netherlands, Canada, Australia, Japan, and Singapore. These
-            are places whose regulators treat short-horizon price contracts
+          <li><b>Restricted jurisdictions</b> - {joinList(restrictedNames('long'), 'and', true)}.
+            These are places whose regulators treat short-horizon price contracts
             like this one as a licensed derivatives or gambling product. This
             product holds no such licence anywhere, so it does not serve
             them. Tor exit nodes are blocked for the same reason.</li>
