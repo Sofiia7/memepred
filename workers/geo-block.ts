@@ -11,10 +11,10 @@
  * 2026-07-07: simplified away from the original "separate ORIGIN_URL /
  * api-origin hostname" design. Cloudflare's documented behavior is that a
  * same-zone fetch() subrequest from within a Worker always goes straight to
- * the zone's configured origin server — it does NOT re-invoke the Worker
+ * the zone's configured origin server - it does NOT re-invoke the Worker
  * (this is the documented loop-prevention rule, not an assumption). So the
  * pass-through fetch below reuses the incoming request's own URL
- * (api.flipthememe.com) instead of needing a second DNS-only hostname —
+ * (api.flipthememe.com) instead of needing a second DNS-only hostname - 
  * one less moving part, and Caddy's existing cert already covers it.
  *
  * Required Worker secret:
@@ -40,11 +40,11 @@ export interface Env {
 }
 
 // ── LAYER 1: OFAC comprehensively-sanctioned countries ─────────────────
-// U.S. federal sanctions law, strict liability — applies no matter where the
+// U.S. federal sanctions law, strict liability - applies no matter where the
 // operator is incorporated, and doesn't scale with traffic volume or revenue
 // the way "regulatory risk" does. Do not remove without legal sign-off.
 // Russia is deliberately NOT included: Russia sanctions are sectoral/
-// program-based, not a blanket embargo like the four below — adding it would
+// program-based, not a blanket embargo like the four below - adding it would
 // be a separate business decision, not an OFAC minimum.
 const OFAC_SANCTIONED = [
   'CU', 'IR', 'KP', 'SY'
@@ -57,7 +57,7 @@ const OFAC_SANCTIONED = [
 //   1. docs/legal/tos-privacy-draft.md §3 already states these exact
 //      territories are restricted AND cites this file as the enforcement
 //      point. Publishing that text while this list was down would be a
-//      written representation contradicted by our own public code — the
+//      written representation contradicted by our own public code - the
 //      thing that turns "we didn't know" into "they knew and said
 //      otherwise". Either the list or the ToS had to move; the list moved.
 //
@@ -69,7 +69,7 @@ const OFAC_SANCTIONED = [
 //      elsewhere does not cure it; not serving U.S. persons does.
 //
 // Keep this list, docs/legal/tos-privacy-draft.md §3, and the frontend's
-// geoblock copy in sync — /api/geo/config below is what the frontend reads,
+// geoblock copy in sync - /api/geo/config below is what the frontend reads,
 // so the UI follows this constant automatically.
 const RESTRICTED_JURISDICTIONS = [
   // United States + territories under the same federal regulators. The
@@ -78,10 +78,10 @@ const RESTRICTED_JURISDICTIONS = [
   'US', 'PR', 'GU', 'VI', 'AS', 'MP', 'UM',
   // Gambling/derivatives regulators with a track record of acting against
   // offshore prediction markets.
-  'GB', // United Kingdom (Gambling Commission) — note: 'GB', not 'UK'
+  'GB', // United Kingdom (Gambling Commission) - note: 'GB', not 'UK'
   'FR', 'DE', 'NL', 'CA', 'AU', 'JP', 'SG',
   // Cloudflare's pseudo-country for Tor exit nodes. Included so the block
-  // can't be sidestepped with one browser download — the point of this list
+  // can't be sidestepped with one browser download - the point of this list
   // is a good-faith exclusion, and a trivially bypassable one argues against
   // us. Remove if Tor traffic turns out to be legitimate users.
   'T1'
@@ -117,13 +117,13 @@ export function blockedFor(env: Pick<Env, 'GEO_OPEN_COUNTRIES'>): Set<string> {
 
 // ── GEO-EXEMPT PATHS ───────────────────────────────────────────────────
 // 2026-07-25: turning on the US block immediately took the uptime monitor
-// down — UptimeRobot checks from Ohio and got a correct, working 451, which
+// down - UptimeRobot checks from Ohio and got a correct, working 451, which
 // its dashboard reports as an outage. The block was doing its job; the
 // monitor was the casualty.
 //
 // What the jurisdiction block exists to prevent is *offering the product* to
 // people in these places: seeing markets, placing bets, moving funds. A
-// liveness probe is none of that. `/health` returns `{status, ts}` — no
+// liveness probe is none of that. `/health` returns `{status, ts}` - no
 // market data, no user data, no action, nothing that could be construed as
 // solicitation. Blocking it buys zero legal protection and costs all of our
 // monitoring, so it is exempt.
@@ -248,7 +248,7 @@ export default {
     // Strip any caller-supplied secret to prevent spoofing.
     headers.delete('cf-connecting-ip') // origin should not trust it here
 
-    // Same-hostname request — Cloudflare sends same-zone Worker subrequests
+    // Same-hostname request - Cloudflare sends same-zone Worker subrequests
     // straight to the configured origin, never back into this Worker.
     const upstream = new Request(request.url, {
       method:   request.method,
