@@ -1,7 +1,7 @@
 /**
- * Scripted testnet traffic for the Robinhood Chain demo and its soak run: small bets from a few
- * throwaway wallets on every live market, winners claim, and a running report of how long the
- * keeper took to settle each match after it was due.
+ * Scripted testnet traffic for the Robinhood Chain demo and its soak run: once per cycle a burst of
+ * small bets from a few throwaway wallets on every live market, ONE price step per pool right
+ * after them so the bets have a winner, then claims for the winners and a running report.
  *
  *   scripts/node_modules/.bin/tsx scripts/rhc/soak-traders.mts [--dry]
  *
@@ -10,22 +10,32 @@
  * volume it makes as traction; it is there so the demo has something to show and the keeper has
  * real work.
  *
- * Pair it with scripts/rhc/price-mover.mts (a different wallet, the pool owner), which is what
- * makes some bets win and some lose. Do not point both at the same key: two processes sending
- * from one account collide on nonces. The keeper's and the badge minter's wallets are run by the
- * server, so this script never uses them either.
+ * WHY THE PRICE STEPS ARE RATIONED. The testnet pools are stand-ins (MockUniswapV3Pool) that keep
+ * every price step forever and re-read all of them on every observe(). Each pushTick therefore adds
+ * about 8.4 thousand gas to every bet and every settlement on that pool, permanently: a price mover
+ * that ticks every 45 seconds took a settlement from 290 to 530 thousand gas in 14 minutes and
+ * would have reached 14 million in a day (docs/rhc/ECONOMICS.md, "Найденный дефект"). A real
+ * Uniswap pool does not do this. So this script bets in bursts and pushes once per pool per burst,
+ * never more than SOAK_MAX_PUSHES in total. Nobody else pushes, or no bet ever wins: with a still
+ * price every match ends in a tie and is simply refunded.
  *
- * Env (a repo-root .env supplies PRIVATE_KEY, which only funds the throwaway wallets with gas):
+ * Anyone can call pushTick on a stand-in pool, so no owner key is needed; the wallet PRIVATE_KEY in
+ * a repo-root .env only funds the throwaway wallets with gas. The keeper's and the badge minter's
+ * wallets are run by the server, so this script never uses them (two processes sending from one
+ * account collide on nonces).
+ *
+ * Env:
  *   RHC_API           default https://api-rhc.flipthememe.com (markets and deployment addresses come from it)
  *   RHC_RPC_URL       default the public testnet RPC
- *   SOAK_HOURS        how long to place bets, default 24; it then waits for the open orders to close
- *   SOAK_GAP_SEC      mean seconds between actions, default 110
+ *   SOAK_HOURS        how long to keep starting bursts, default 24; it then waits for open orders to close
+ *   SOAK_CYCLE_MIN    minutes between bursts, default 60 (each burst places 1-2 bets per market)
+ *   SOAK_MAX_PUSHES   hard cap on price steps over the whole run, default 150 (0 = never push)
  *   SOAK_WALLETS      throwaway wallets, default 3
- *   SOAK_FUND_ETH     gas sent to a wallet holding under half of it, default 0.002
- *   SOAK_BURST_PCT    chance an action is a burst of 4 to 6 quick bets on the 60 s market, default 12
+ *   SOAK_FUND_ETH     gas sent to a wallet holding under half of it, default 0.0015
  *   --dry             print what it found and would do, send nothing
  *
- * At 0.01 gwei a bet or a claim costs about 0.000003 ETH, so 0.002 ETH a wallet is thousands of them.
+ * On restart it reads each wallet's recent orders from the API and claims what is still unclaimed,
+ * then carries on, so a reboot does not strand winnings.
  */
 import { readFileSync, writeFileSync, appendFileSync, existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -51,10 +61,10 @@ loadEnvFile(resolve(here, '../../.env'))
 const RPC = process.env.RHC_RPC_URL ?? 'https://rpc.testnet.chain.robinhood.com'
 const API = process.env.RHC_API ?? 'https://api-rhc.flipthememe.com'
 const HOURS = Number(process.env.SOAK_HOURS ?? '24')
-const GAP = Number(process.env.SOAK_GAP_SEC ?? '110')
+const CYCLE_MIN = Number(process.env.SOAK_CYCLE_MIN ?? '60')
+const MAX_PUSHES = Number(process.env.SOAK_MAX_PUSHES ?? '150')
 const WALLET_COUNT = Number(process.env.SOAK_WALLETS ?? '3')
-const FUND = parseEther(process.env.SOAK_FUND_ETH ?? '0.002')
-const BURST_PCT = Number(process.env.SOAK_BURST_PCT ?? '12')
+const FUND = parseEther(process.env.SOAK_FUND_ETH ?? '0.0015')
 const DRY = process.argv.includes('--dry')
 const WALLET_FILE = process.env.SOAK_WALLETS_FILE ?? resolve(here, '.soak-wallets.json')
 const LOG_FILE = resolve(here, 'soak.log')
@@ -83,12 +93,17 @@ const MARKET = parseAbi([
 ])
 const RESOLVER_ABI = parseAbi(['function spotPriceWad(bytes32) view returns (uint256)'])
 const LP_ABI = parseAbi(['function isAuthorizedMarket(address) view returns (bool)', 'function totalAssets() view returns (uint256)'])
+const POOL = parseAbi([
+  'function pushTick(uint32 startTs,int24 tick)',
+  'function slot0() view returns (uint160,int24,uint16,uint16,uint16,uint8,bool)',
+])
 
 const ZERO = '0x0000000000000000000000000000000000000000' as Address
 const UP = 0
 const DOWN = 1
 // Order.status as the contract numbers it.
 const PENDING = 0, MATCHED = 1, SETTLED = 2, CLAIMED = 3, REFUNDED = 4
+const API_STATUS: Record<string, number> = { PENDING, MATCHED, SETTLED, CLAIMED, REFUNDED }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 const rand = (n: number) => Math.floor(Math.random() * n)
@@ -108,7 +123,7 @@ async function api<T>(path: string): Promise<T> {
   return (await r.json()) as T
 }
 interface Deployment { chainId: number; resolver: Address; liquidityPool: Address; stakeToken: Address }
-interface Mkt { address: Address; feedId: Hex; symbol: string; duration: number; vault: boolean; min: bigint; max: bigint }
+interface Mkt { address: Address; feedId: Hex; pool: Address; symbol: string; duration: number; vault: boolean; min: bigint; max: bigint }
 
 // ── Wallets ────────────────────────────────────────────────────────────────────────────────────
 type W = { name: string; account: ReturnType<typeof privateKeyToAccount>; wallet: ReturnType<typeof createWalletClient> }
@@ -147,7 +162,7 @@ interface Tracked {
   done?: string
 }
 const tracked: Tracked[] = []
-const counts = { placed: 0, skipped: 0, claims: 0, claimFailed: 0 }
+const counts = { placed: 0, skipped: 0, claims: 0, pushes: 0 }
 const skipReasons = new Map<string, number>()
 const lags: number[] = []
 const closed = new Map<string, number>()
@@ -189,20 +204,46 @@ const amountFor = (m: Mkt) => {
   return ok.length ? pick(ok) : m.min
 }
 
-async function oneBetAction(dep: Deployment, ws: W[], markets: Mkt[], only60?: boolean) {
-  const pool = only60 ? markets.filter((m) => m.duration <= 60) : markets
-  // The 5 minute markets get more of the traffic than the 60 second one.
-  const weighted = pool.flatMap((m) => Array(m.duration <= 60 ? 2 : 3).fill(m) as Mkt[])
-  const m = pick(weighted.length ? weighted : markets)
-  const amount = amountFor(m)
-  if (m.vault) {
-    await placeTracked(dep, pick(ws), m, rand(2) === 0 ? UP : DOWN, amount)
-  } else {
-    // No vault behind this market: it needs a peer, so two wallets take opposite sides at once.
-    const a = pick(ws)
-    const b = pick(ws.filter((x) => x !== a))
-    const dir = rand(2) === 0 ? UP : DOWN
-    if (await placeTracked(dep, a, m, dir, amount)) await placeTracked(dep, b, m, dir === UP ? DOWN : UP, amount)
+/** One or two bets on every market. The 60 s market goes last so the price step lands just after it. */
+async function betBurst(dep: Deployment, ws: W[], markets: Mkt[]) {
+  const ordered = [...markets].sort((a, b) => b.duration - a.duration)
+  log(`burst: ${ordered.length} markets, 1-2 bets each`)
+  for (const m of ordered) {
+    for (let i = 0, n = 1 + rand(2); i < n; i++) {
+      const amount = amountFor(m)
+      if (m.vault) {
+        await placeTracked(dep, pick(ws), m, rand(2) === 0 ? UP : DOWN, amount)
+      } else {
+        // No vault behind this market: it needs a peer, so two wallets take opposite sides at once.
+        const a = pick(ws)
+        const b = pick(ws.filter((x) => x !== a))
+        const dir = rand(2) === 0 ? UP : DOWN
+        if (await placeTracked(dep, a, m, dir, amount)) await placeTracked(dep, b, m, dir === UP ? DOWN : UP, amount)
+      }
+    }
+  }
+}
+
+/** One price step per pool, a mean-reverting walk like price-mover.mts, but never a step under 15 ticks: a step that small could tie. */
+async function pushRound(ws: W[], pools: Address[]) {
+  const LIMIT = 500
+  const STEP = 40
+  for (const pool of pools) {
+    if (counts.pushes >= MAX_PUSHES) return
+    try {
+      const tick = Number((await pub.readContract({ address: pool, abi: POOL, functionName: 'slot0' }))[1])
+      const pull = Math.max(-1, Math.min(1, tick / LIMIT))
+      const r = Math.random() * 2 - 1 - pull * 0.6
+      let delta = Math.round(Math.max(-1, Math.min(1, r)) * STEP)
+      if (Math.abs(delta) < 15) delta = delta >= 0 ? 15 : -15
+      const next = Math.max(-LIMIT * 2, Math.min(LIMIT * 2, tick + delta))
+      const ts = (await chainNow()) + 1
+      await send(pick(ws), pool, POOL, 'pushTick', [ts, next])
+      counts.pushes++
+      log(`price step on ${pool.slice(0, 10)}...: tick ${tick} -> ${next} (${counts.pushes}/${MAX_PUSHES} steps used)`)
+    } catch (e) {
+      log(`price step on ${pool.slice(0, 10)}... failed: ${oneLine(e)}`)
+    }
   }
 }
 
@@ -230,7 +271,6 @@ async function housekeeping() {
           counts.claims++
           log(`${t.w.name} claimed ${formatEther(o.payout)} on order ${t.orderId} (${t.market.symbol} ${t.market.duration}s)`)
         } catch (e) {
-          counts.claimFailed++
           log(`${t.w.name} claim of order ${t.orderId} not possible yet: ${oneLine(e).slice(0, 70)}`)
         }
       } else if (status === CLAIMED) {
@@ -249,6 +289,27 @@ async function housekeeping() {
   }
 }
 
+/** After a restart: pick up each wallet's recent orders from the API and finish what is unfinished. */
+async function resume(ws: W[], markets: Mkt[]) {
+  let picked = 0
+  for (const w of ws) {
+    try {
+      const profile = await api<any>(`/api/profile/${w.account.address}`)
+      for (const row of profile.recentOrders ?? []) {
+        const market = markets.find((m) => m.address.toLowerCase() === String(row.market_address).toLowerCase())
+        if (!market) continue
+        const status = API_STATUS[String(row.status)]
+        if (status === CLAIMED || (status === SETTLED && !(Number(row.payout_usdc) > 0)) || (status === REFUNDED && !(Number(row.payout_usdc) > 0))) continue
+        tracked.push({ w, market, orderId: BigInt(row.order_id), amount: parseEther(String(row.amount_usdc)), placedAt: Math.floor(new Date(row.placed_at).getTime() / 1000) })
+        picked++
+      }
+    } catch (e) {
+      log(`could not read ${w.name}'s orders from the API: ${oneLine(e)}`)
+    }
+  }
+  if (picked) log(`resumed ${picked} unfinished order(s) from an earlier run`)
+}
+
 async function report(ws: W[]) {
   const open = tracked.filter((t) => !t.done).length
   const matched = tracked.filter((t) => t.matchId !== undefined)
@@ -261,9 +322,9 @@ async function report(ws: W[]) {
   const reasons = [...skipReasons.entries()].map(([k, v]) => `${v}x ${k}`).join('; ')
   log(
     `REPORT placed ${counts.placed}, skipped ${counts.skipped} | matched ${matched.length} (vault ${vault}, peer ${matched.length - vault}) ` +
-    `| closed: ${closedText} | open ${open} | claims ${counts.claims} | keeper lag after due p50 ${percentile(lags, 50)}s ` +
-    `p95 ${percentile(lags, 95)}s max ${lags.length ? Math.max(...lags) : NaN}s (n=${lags.length}) | lowest wallet ETH ${minEth.toFixed(5)} | api deep ${deep}` +
-    (reasons ? ` | skips: ${reasons}` : ''),
+    `| closed: ${closedText} | open ${open} | claims ${counts.claims} | price steps ${counts.pushes}/${MAX_PUSHES} ` +
+    `| seen settled after due (upper bound, polled every 30 s; keeper-lag.mts is exact) p50 ${percentile(lags, 50)}s p95 ${percentile(lags, 95)}s (n=${lags.length}) ` +
+    `| lowest wallet ETH ${minEth.toFixed(5)} | api deep ${deep}` + (reasons ? ` | skips: ${reasons}` : ''),
   )
 }
 
@@ -279,20 +340,24 @@ async function main() {
     const vault = (await pub.readContract({ address: dep.liquidityPool, abi: LP_ABI, functionName: 'isAuthorizedMarket', args: [address] })) as boolean
     const min = (await pub.readContract({ address, abi: MARKET, functionName: 'MIN_BET' })) as bigint
     const max = (await pub.readContract({ address, abi: MARKET, functionName: 'MAX_BET' })) as bigint
-    markets.push({ address, feedId: r.feedId as Hex, symbol: String(r.feedSymbol ?? r.symbol ?? address.slice(0, 8)), duration: Number(r.duration), vault, min, max })
+    const feedId = r.feedId as Hex
+    // The stand-in pool's address is the feed id's low 20 bytes.
+    const pool = `0x${feedId.slice(26)}` as Address
+    markets.push({ address, feedId, pool, symbol: String(r.feedSymbol ?? r.symbol ?? address.slice(0, 8)), duration: Number(r.duration), vault, min, max })
   }
+  const pools = [...new Set(markets.map((m) => m.pool))]
   const vaultAssets = (await pub.readContract({ address: dep.liquidityPool, abi: LP_ABI, functionName: 'totalAssets' })) as bigint
   const ws = loadWallets()
 
   console.log(`markets (${markets.length}):`)
-  for (const m of markets) console.log(`  ${m.address} ${m.symbol} ${m.duration}s  vault ${m.vault ? 'yes' : 'no (peer to peer)'}  bet ${formatEther(m.min)}-${formatEther(m.max)}`)
-  console.log(`vault assets ${formatEther(vaultAssets)} WETH`)
+  for (const m of markets) console.log(`  ${m.address} ${m.symbol} ${m.duration}s  vault ${m.vault ? 'yes' : 'no (peer to peer)'}  bet ${formatEther(m.min)}-${formatEther(m.max)}  pool ${m.pool}`)
+  console.log(`vault assets ${formatEther(vaultAssets)} WETH; ${pools.length} pools; at most ${MAX_PUSHES} price steps in total`)
   for (const w of ws) console.log(`  ${w.name} ${w.account.address}  ETH ${formatEther(await pub.getBalance({ address: w.account.address }))}`)
   if (markets.length === 0) throw new Error('no markets to trade on')
   if (markets.some((m) => !m.vault) && ws.length < 2) throw new Error('a market without a vault needs at least two wallets')
   if (DRY) { console.log('dry run, nothing sent'); return }
 
-  // Gas from the pool owner's wallet, then free testnet WETH and approvals.
+  // Gas from the funder's wallet, then free testnet WETH and approvals.
   const funderKey = process.env.PRIVATE_KEY
   if (!funderKey) throw new Error('PRIVATE_KEY is required (it only funds the throwaway wallets with gas)')
   const funder = privateKeyToAccount((funderKey.startsWith('0x') ? funderKey : `0x${funderKey}`) as Hex)
@@ -310,20 +375,23 @@ async function main() {
       if (al < 2n ** 200n) await send(w, dep.stakeToken, ERC20, 'approve', [m.address, 2n ** 255n])
     }
   }
-  log(`ready: ${ws.length} wallets, ${markets.length} markets, betting for ${HOURS} h, mean gap ${GAP} s`)
+  await resume(ws, markets)
+  log(`ready: ${ws.length} wallets, ${markets.length} markets, a burst every ${CYCLE_MIN} min for ${HOURS} h, at most ${MAX_PUSHES} price steps`)
 
   let stop = false
   process.on('SIGINT', () => { stop = true; log('stop requested, finishing open orders') })
   const endAt = Date.now() + HOURS * 3600_000
+  let nextCycle = Date.now()
   let nextReport = Date.now() + 10 * 60_000
   while (!stop && Date.now() < endAt) {
     try {
-      if (rand(100) < BURST_PCT) {
-        const n = 4 + rand(3)
-        log(`burst of ${n} quick bets on the 60 s market`)
-        for (let i = 0; i < n; i++) await oneBetAction(dep, ws, markets, true)
-      } else {
-        await oneBetAction(dep, ws, markets)
+      if (Date.now() >= nextCycle) {
+        await betBurst(dep, ws, markets)
+        // Let the last match land, then step every pool once so the burst has winners.
+        await sleep(8_000)
+        if (MAX_PUSHES > 0) await pushRound(ws, pools)
+        // A little jitter, so the bursts do not sit on the hour like a cron job.
+        nextCycle = Date.now() + CYCLE_MIN * 60_000 * (0.8 + Math.random() * 0.4)
       }
       await housekeeping()
       if (Date.now() >= nextReport) { await report(ws); nextReport = Date.now() + 10 * 60_000 }
@@ -331,12 +399,10 @@ async function main() {
       log(`cycle failed, carrying on: ${oneLine(e)}`)
       await sleep(15_000)
     }
-    // Exponential gaps, so the traffic is bursty the way real traffic is, but never dead or frantic.
-    const gap = Math.min(GAP * 3, Math.max(15, -Math.log(1 - Math.random()) * GAP)) * 1000
-    await sleep(gap)
+    await sleep(30_000)
   }
 
-  log('no more bets, waiting for the open orders to close (up to 15 minutes)')
+  log('no more bursts, waiting for the open orders to close (up to 15 minutes)')
   const drainUntil = Date.now() + 15 * 60_000
   while (Date.now() < drainUntil && tracked.some((t) => !t.done)) {
     await housekeeping()

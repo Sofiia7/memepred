@@ -13,10 +13,17 @@
  *   RHC_MOVER_EVERY   seconds between pushes per pool, default 30
  *   RHC_MOVER_STEP    largest single step in ticks, default 40 (about 0.4%)
  *   RHC_MOVER_LIMIT   the walk is pulled back towards tick 0 beyond this, default 500
- *   RHC_MOVER_MAX_TX  stop after this many pushes in total, default unlimited
+ *   RHC_MOVER_MAX_TX  stop after this many pushes in total, default 60 (0 = unlimited, do not)
  *
- * Each push costs a few thousand gwei of testnet gas; the default cadence over
- * three pools is roughly 0.002 ETH a day at 0.01 gwei.
+ * READ THIS BEFORE RUNNING IT FOR LONG. The stand-in pool keeps every push forever and
+ * re-reads all of them on every observe(), so each push adds about 8.4 thousand gas to
+ * every bet and every settlement on that pool, permanently. 50 pushes on 2026-09-29 took a
+ * settlement from 290 to 530 thousand gas; a day of pushes every 45 s would take it to 14
+ * million (docs/rhc/ECONOMICS.md, "Найденный дефект"). So RHC_MOVER_MAX_TX now defaults to
+ * 60 pushes in total; for a video, about 15 pushes per pool at RHC_MOVER_EVERY=120 is plenty.
+ * scripts/rhc/soak-traders.mts does its own rationed steps and does not need this script.
+ *
+ * Each push costs about 0.6 microether at 0.01 gwei.
  *
  * The step is kept well inside the 2% entry guard (a bet is refused while the pool's
  * spot has run more than 2% away from its own 60 s average) so traders can still enter.
@@ -51,7 +58,8 @@ if (pools.length === 0) throw new Error('RHC_MOVER_POOLS is required (comma sepa
 const every = Number(process.env.RHC_MOVER_EVERY ?? '30') * 1000
 const step = Number(process.env.RHC_MOVER_STEP ?? '40')
 const limit = Number(process.env.RHC_MOVER_LIMIT ?? '500')
-const maxTx = process.env.RHC_MOVER_MAX_TX ? Number(process.env.RHC_MOVER_MAX_TX) : Infinity
+const maxTxEnv = Number(process.env.RHC_MOVER_MAX_TX ?? '60')
+const maxTx = maxTxEnv === 0 ? Infinity : maxTxEnv
 
 const rawKey = process.env.PRIVATE_KEY
 if (!rawKey) throw new Error('PRIVATE_KEY is required')
@@ -68,6 +76,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 async function main() {
   if ((await pub.getChainId()) !== 46630) throw new Error('this script only runs on Robinhood Chain testnet (46630)')
   console.log(`price mover: ${pools.length} pool(s), every ${every / 1000}s, step up to ${step} ticks, wallet ${account.address}`)
+  console.log(`WARNING: every push permanently adds about 8.4k gas to every bet and settlement on its pool. Stopping after ${maxTx === Infinity ? 'no limit (you asked for that)' : maxTx + ' pushes'}.`)
   let sent = 0
   for (;;) {
     for (const pool of pools) {
