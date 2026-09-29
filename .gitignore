@@ -47,7 +47,7 @@ venv/
 # Downloaded font cache (scripts/generate-genesis-nft-art.py)
 .cache/
 
-# Generated NFT art working files (~37MB) — already pinned on IPFS/Pinata,
+# Generated NFT art working files (~37MB) - already pinned on IPFS/Pinata,
 # CIDs are in contracts/script/Deploy.s.sol. Not worth bloating the repo.
 nft-art/
 
@@ -95,3 +95,4 @@ workers/.wrangler/
 # Raw measurements behind docs/rhc/ECONOMICS.md (logs and json): the point of keeping them is that anyone can re-check the estimates
 !docs/rhc/measurements/economics/*.json
 !docs/rhc/measurements/economics/*.log
+!docs/rhc/measurements/sharp-edge/*.json
