@@ -1,9 +1,9 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeAll } from 'vitest'
 import { PGlite } from '@electric-sql/pglite'
 import { readFileSync, readdirSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { processLog, applyMatchTied, type TxPool } from './indexer'
+import { processLog, applyMatchTied, insertMarketRow, type TxPool } from './indexer'
 
 const MIGRATIONS_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'db', 'migrations')
 
@@ -16,13 +16,30 @@ function stripTimescale(sql: string): string {
     .replace(/SELECT create_hypertable\([^;]*\);/g, '')
 }
 
-/** A fresh, fully-migrated Postgres-in-WASM instance, wrapped as a TxPool. */
+/**
+ * One migrated database per file. Building a Postgres in WASM and running every
+ * migration is the slow part (seconds, and far more on a busy machine, where it
+ * used to push individual tests past their timeout); each test starts from
+ * emptied tables instead.
+ */
+let shared: Promise<PGlite> | null = null
+function migrated(): Promise<PGlite> {
+  shared ??= (async () => {
+    const db = new PGlite()
+    const files = readdirSync(MIGRATIONS_DIR).filter((f) => f.endsWith('.sql')).sort()
+    for (const file of files) {
+      await db.exec(stripTimescale(readFileSync(join(MIGRATIONS_DIR, file), 'utf8')))
+    }
+    return db
+  })()
+  return shared
+}
+beforeAll(async () => { await migrated() }, 180_000)
+
+/** A migrated Postgres-in-WASM instance with empty tables, wrapped as a TxPool. */
 async function freshDb(): Promise<{ db: PGlite; pool: TxPool }> {
-  const db = new PGlite()
-  const files = readdirSync(MIGRATIONS_DIR).filter((f) => f.endsWith('.sql')).sort()
-  for (const file of files) {
-    await db.exec(stripTimescale(readFileSync(join(MIGRATIONS_DIR, file), 'utf8')))
-  }
+  const db = await migrated()
+  await db.exec('TRUNCATE TABLE referrals, order_matches, matches, orders, markets, _ingested_logs CASCADE')
   const pool: TxPool = {
     async connect() {
       return {
@@ -201,5 +218,63 @@ describe('processLog (audit A02, 2026-09-28)', () => {
     })
 
     expect(called).toBe(false)
+  })
+})
+
+describe('insertMarketRow (factory stamp, migration 008)', () => {
+  const CHECKSUMMED = '0xC52b8b69d266F9656Be11511907192EaFD521BcB'
+  const row = (over: Record<string, unknown> = {}) => ({
+    market: '0xDc4e0000000000000000000000000000000000AA',
+    feedId: '0x' + '11'.repeat(32),
+    symbol: 'PEPE',
+    duration: 300,
+    openedAt: 1_800_000_000,
+    closeAt: null,
+    chainId: 46630,
+    token: '0xtoken',
+    factory: CHECKSUMMED,
+    ...over,
+  })
+
+  it('stamps the factory that announced the market, lower-cased like every address the queries compare', async () => {
+    const { db, pool } = await freshDb()
+    const tx = await pool.connect()
+    await insertMarketRow(tx, row())
+    tx.release()
+
+    const r = await db.query<any>(`SELECT market_address, factory_address, close_time, chain_id FROM markets`)
+    expect(r.rows[0].factory_address).toBe(CHECKSUMMED.toLowerCase())
+    expect(r.rows[0].market_address).toBe('0xdc4e0000000000000000000000000000000000aa')
+    expect(r.rows[0].close_time).toBeNull() // rhc: a market has no close time
+    expect(r.rows[0].chain_id).toBe(46630)
+  })
+
+  it('stores null when it was not told a factory, so the row reads as "not current" on rhc', async () => {
+    const { db, pool } = await freshDb()
+    const tx = await pool.connect()
+    await insertMarketRow(tx, row({ factory: null }))
+    tx.release()
+    expect((await db.query<any>(`SELECT factory_address FROM markets`)).rows[0].factory_address).toBeNull()
+  })
+
+  it('does not restamp a row it already has: a replay changes nothing', async () => {
+    const { db, pool } = await freshDb()
+    const tx = await pool.connect()
+    await insertMarketRow(tx, row())
+    await insertMarketRow(tx, row({ factory: '0x' + 'e'.repeat(40) }))
+    tx.release()
+    const r = await db.query<any>(`SELECT factory_address FROM markets`)
+    expect(r.rows).toHaveLength(1)
+    expect(r.rows[0].factory_address).toBe(CHECKSUMMED.toLowerCase())
+  })
+
+  it('leaves what migration 008 found alone: existing rows keep NULL', async () => {
+    const { db } = await freshDb()
+    // A row written the way the indexer did before the column existed.
+    await db.query(
+      `INSERT INTO markets(market_address, feed_id, feed_symbol, duration_secs, open_time)
+       VALUES ('0xold', '0xfeed', 'OLD', 300, NOW())`,
+    )
+    expect((await db.query<any>(`SELECT factory_address FROM markets`)).rows[0].factory_address).toBeNull()
   })
 })

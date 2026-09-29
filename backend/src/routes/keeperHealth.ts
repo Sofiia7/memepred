@@ -12,7 +12,8 @@
  *   200  keeper and resolver balances ok, no invariant drift, watchdog ticked
  *        < 5 min ago
  *   503  keeper wallet out of gas, resolver balance critical, USDC invariant
- *        drift, or the watchdog hasn't ticked in 5+ min
+ *        drift, an indexer stuck on one log, or the watchdog hasn't ticked in
+ *        5+ min
  *
  * Why the second path exists at all: `/health` is a liveness probe that
  * returns `{status:'ok'}` for as long as the Fastify process has a pulse, and
@@ -28,6 +29,8 @@
  */
 import { FastifyInstance } from 'fastify'
 import { redis } from '../db/redis.js'
+import { CHAIN_PROFILE } from '../chainProfile.js'
+import { POISON_KEY } from '../keeper/poisonTracker.js'
 
 const STATE_KEY       = 'watchdog:state'
 const INVARIANT_KEY   = 'invariant:critical'
@@ -57,6 +60,35 @@ const NONCE_WEDGED_LEVEL = 3
 const SETTLEMENTS_WARN_SECS = 15 * 60
 const SETTLEMENTS_DOWN_SECS = 60 * 60
 
+/**
+ * How long a due match may wait for the keeper before that is worth a warning.
+ *
+ * SETTLEMENTS_WARN_SECS above is about a settlement path that has STOPPED; this
+ * is about one that is merely slower than the price history it reads. A pool
+ * that trades every second keeps only about 300 seconds of observations, and
+ * the resolver refunds a match whose exit window has fallen out of them - so a
+ * due match still unresolved after roughly 120-240 seconds is at risk of being
+ * refunded instead of settled, and the warning has to come well before that.
+ *
+ * Tunable with READY_MATCH_WARN_SEC. 90 seconds by default on the rhc profile
+ * (pool-backed, where that history limit exists); off (0) on Base, whose
+ * settlement reads a price the keeper pushed itself and whose 60 second cadence
+ * would trip a threshold this low on a healthy keeper. 0 disables it anywhere.
+ */
+function defaultReadyMatchWarnSec(): number {
+  const raw = process.env.READY_MATCH_WARN_SEC
+  if (raw !== undefined && raw.trim() !== '') {
+    const n = Number(raw)
+    if (Number.isFinite(n) && n >= 0) return n
+  }
+  return CHAIN_PROFILE.name === 'rhc' ? 90 : 0
+}
+
+/** Knobs the verdict depends on, injectable so tests do not touch the environment. */
+export interface HealthConfig {
+  readyMatchWarnSec: number
+}
+
 interface Snapshot {
   resolverEthWei:    string
   resolverEthAlert:  'ok' | 'warn' | 'critical' | 'unknown'
@@ -74,6 +106,12 @@ interface Snapshot {
    * parses as healthy rather than as an outage.
    */
   settlementsOverdueSecs?: number
+  /**
+   * Seconds the oldest due, unresolved match has been waiting since it came
+   * due - see the watchdog. Unlike settlementsOverdueSecs it sees a match
+   * before it is five minutes late. Optional for the same reason.
+   */
+  readyMatchLagSecs?: number
   /** No feed answered the watchdog's last tick: the oracle side is down. */
   oracleOutage?:     boolean
   lastTick:          number
@@ -95,6 +133,7 @@ type Code =
   | 'nonce-wedged'
   | 'resolver-eth-critical'
   | 'settlements-stalled'
+  | 'indexer-stalled'
   | 'invariant-unmeasured'
 
 /**
@@ -105,7 +144,21 @@ type Code =
  */
 type Warn = 'keeper-eth-low' | 'resolver-eth-low' | 'feed-degraded' | 'gas-throttled'
           | 'nonce-escalating' | 'settlements-overdue' | 'oracle-outage'
-          | 'invariant-unmeasured'
+          | 'invariant-unmeasured' | 'ready-match-lag'
+
+/**
+ * What the indexer left in Redis when one log kept failing (keeper/
+ * poisonTracker.ts). Every field is untrusted input to this route.
+ */
+interface PoisonInfo {
+  txHash?:        unknown
+  logIndex?:      unknown
+  market?:        unknown
+  event?:         unknown
+  failures?:      unknown
+  firstFailedAt?: unknown
+  error?:         unknown
+}
 
 interface Verdict {
   ok:         boolean
@@ -114,7 +167,19 @@ interface Verdict {
   reason?:    string
   snapshot?:  Snapshot
   invariant?: { drift?: number } | null
+  indexer?:   PoisonInfo | null
   ageMs?:     number
+}
+
+/** A field of an untrusted record as a short printable string. */
+const shown = (v: unknown, max = 100): string => (typeof v === 'string' || typeof v === 'number') ? String(v).slice(0, max) : '?'
+
+function describePoison(p: PoisonInfo): string {
+  const since = typeof p.firstFailedAt === 'number' ? ` since ${new Date(p.firstFailedAt).toISOString()}` : ''
+  const where = p.txHash ? `${shown(p.event)} ${shown(p.txHash)}#${shown(p.logIndex)}` : shown(p.event)
+  const market = p.market ? ` on ${shown(p.market)}` : ''
+  return `indexer stalled: ${where}${market} has failed ${shown(p.failures)} times in a row${since} - ` +
+         `the orderbook cursor is frozen, nothing behind it is being indexed`
 }
 
 type Reader = (key: string) => Promise<string | null>
@@ -123,7 +188,11 @@ type Reader = (key: string) => Promise<string | null>
  * The single judgement both routes render. Kept out of Fastify so the two
  * paths can never drift into disagreeing about whether the keeper is up.
  */
-export async function evaluateKeeperHealth(get: Reader, now: number): Promise<Verdict> {
+export async function evaluateKeeperHealth(
+  get: Reader,
+  now: number,
+  cfg: HealthConfig = { readyMatchWarnSec: defaultReadyMatchWarnSec() },
+): Promise<Verdict> {
   const raw = await get(STATE_KEY)
   if (!raw) return { ok: false, code: 'no-snapshot', reason: 'no watchdog snapshot - keeper not running?' }
 
@@ -174,7 +243,25 @@ export async function evaluateKeeperHealth(get: Reader, now: number): Promise<Ve
   const overdue          = snap.settlementsOverdueSecs ?? 0
   const settlementsDead  = overdue >= SETTLEMENTS_DOWN_SECS
 
-  if (stale || crit || keeperCrit || nonceWedged || invariant || settlementsDead || monitorBlind) {
+  // One log the indexer cannot get through stops the whole orderbook stream and
+  // says nothing: the cursor freezes, the reconcilers behind it never run, and
+  // the invariant monitor compares at the frozen block and reads ok. The indexer
+  // publishes the failing log once it has failed several ticks in a row and
+  // takes the record down when it goes through. The KEY existing is the signal,
+  // so a record this route cannot read still counts.
+  const poisonRaw = await get(POISON_KEY)
+  let poison: PoisonInfo | null = null
+  if (poisonRaw) {
+    try {
+      const parsed = JSON.parse(poisonRaw)
+      poison = parsed && typeof parsed === 'object' ? parsed as PoisonInfo : {}
+    } catch {
+      poison = {}
+    }
+  }
+  const indexerStalled = poison !== null
+
+  if (stale || crit || keeperCrit || nonceWedged || invariant || settlementsDead || indexerStalled || monitorBlind) {
     return {
       ok: false,
       code:
@@ -183,6 +270,7 @@ export async function evaluateKeeperHealth(get: Reader, now: number): Promise<Ve
         : keeperCrit      ? 'keeper-out-of-gas'
         : nonceWedged     ? 'nonce-wedged'
         : settlementsDead ? 'settlements-stalled'
+        : indexerStalled  ? 'indexer-stalled'
         : monitorBlind    ? 'invariant-unmeasured'
         :                   'resolver-eth-critical',
       reason:
@@ -191,10 +279,12 @@ export async function evaluateKeeperHealth(get: Reader, now: number): Promise<Ve
         : keeperCrit      ? `keeper wallet out of gas (${snap.keeperAddress ?? 'unknown'}) - nothing is being settled`
         : nonceWedged     ? `nonce ${snap.stuckNonce} wedged after ${snap.escalationLevel} fee escalations - no writes are landing`
         : settlementsDead ? `oldest match ${Math.round(overdue / 60)} min past its settleAt - settlement is not running`
+        : indexerStalled  ? describePoison(poison!)
         : monitorBlind    ? `invariant monitor blind ${Math.round(blindMs / 60_000)} min - balance reads are failing`
         :                   'resolver eth critical',
       snapshot: snap,
       invariant,
+      indexer:  poison,
       ageMs:    age,
     }
   }
@@ -206,6 +296,9 @@ export async function evaluateKeeperHealth(get: Reader, now: number): Promise<Ve
   if (snap.gasThrottled) warn.push('gas-throttled')
   if ((snap.escalationLevel ?? 0) > 0) warn.push('nonce-escalating')
   if (overdue >= SETTLEMENTS_WARN_SECS) warn.push('settlements-overdue')
+  // Earlier and finer than the line above: a due match the keeper has not
+  // resolved within the price history's reach is at risk of a refund.
+  if (cfg.readyMatchWarnSec > 0 && (snap.readyMatchLagSecs ?? 0) >= cfg.readyMatchWarnSec) warn.push('ready-match-lag')
   // Upstream and self-healing, and the watchdog pauses nothing over it - but a
   // dead oracle stops both price pushes and settlement, so it must be visible
   // now rather than an hour later via the settlement backlog.
@@ -219,20 +312,26 @@ interface Opts {
   /** Defaults to Redis; injected in tests. */
   get?: Reader
   now?: () => number
+  /** Defaults to READY_MATCH_WARN_SEC / the profile's default; injected in tests. */
+  readyMatchWarnSec?: number
 }
 
 export async function keeperHealthRoutes(app: FastifyInstance, opts: Opts = {}) {
   const get = opts.get ?? ((key: string) => redis.get(key))
   const now = opts.now ?? Date.now
+  const cfg: HealthConfig = { readyMatchWarnSec: opts.readyMatchWarnSec ?? defaultReadyMatchWarnSec() }
 
   app.get('/api/keeper/health', async (_req, reply) => {
-    const v = await evaluateKeeperHealth(get, now())
+    const v = await evaluateKeeperHealth(get, now(), cfg)
     if (!v.ok) {
       return reply.code(503).send({
         status:    'down',
         reason:    v.reason,
         snapshot:  v.snapshot,
         invariant: v.invariant ?? undefined,
+        // The failing log, for whoever is debugging it. This route is behind
+        // the edge; the public probe below carries only the code.
+        indexer:   v.indexer ?? undefined,
         ageMs:     v.ageMs,
       })
     }
@@ -242,7 +341,7 @@ export async function keeperHealthRoutes(app: FastifyInstance, opts: Opts = {}) 
   // Monitor-facing. The status code carries the signal; the string is for the
   // alert body. Nothing else goes in here - see the header comment.
   app.get('/health/deep', async (_req, reply) => {
-    const v = await evaluateKeeperHealth(get, now())
+    const v = await evaluateKeeperHealth(get, now(), cfg)
     return v.ok
       ? reply.send({ status: 'ok', warn: v.warn?.length ? v.warn : undefined })
       : reply.code(503).send({ status: 'down', reason: v.code })

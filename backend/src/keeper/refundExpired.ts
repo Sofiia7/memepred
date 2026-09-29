@@ -5,6 +5,7 @@ import { pg } from '../db/pg.js'
 import { getKeeperWalletClient, sendKeeperTx } from './keeperWallet.js'
 import { gasGuard, recordReceipt } from './gasGuardInstance.js'
 import { isRefundable } from './refundEligibility.js'
+import { andFactory } from '../lib/marketScope.js'
 
 const ORDERBOOK_MARKET_ABI = [
   {
@@ -107,10 +108,16 @@ export async function refundExpiredOrders() {
   // acceptable because refundExpired is permissionless on-chain and the order
   // page offers the button directly - the keeper doing it is a convenience,
   // not the only route to the money.
+  //
+  // On rhc only markets of the CURRENT factory. Markets left behind by an
+  // earlier deployment stay 'OPEN' forever (a market there has no close time),
+  // so without this every one of them that ever held a PENDING or MATCHED order
+  // was scanned - up to 500 getOrder calls each - every five minutes. Their
+  // users can still call refundExpired themselves; it is permissionless.
   const result = await pg.query(
     `SELECT DISTINCT m.market_address
        FROM markets m
-      WHERE (m.status = 'OPEN' OR m.close_time > NOW() - INTERVAL '${REFUND_LOOKBACK}')
+      WHERE (m.status = 'OPEN' OR m.close_time > NOW() - INTERVAL '${REFUND_LOOKBACK}')${andFactory('m.factory_address')}
         AND EXISTS (
           SELECT 1 FROM orders o
            WHERE o.market_address = m.market_address

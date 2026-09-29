@@ -1,5 +1,6 @@
 /**
- * The API's plugin stack: CORS, rate limiting, and the user-presence hook.
+ * The API's plugin stack: CORS, rate limiting, the user-presence hook and the
+ * error handler.
  *
  * Extracted from index.ts so it can be exercised by `app.inject()` without a
  * Postgres and a Redis. index.ts does top-level connects and a listen(), which
@@ -64,6 +65,42 @@ export const EDGE_EXEMPT_PATHS = new Set([
   '/health/deep',
 ])
 
+/**
+ * The status an error should be answered with. Anything that is not a client or
+ * server error code is a 500: an error nobody classified is the server's.
+ */
+function statusOf(err: unknown): number {
+  const e = err as { statusCode?: unknown; status?: unknown } | null | undefined
+  const s = e?.statusCode ?? e?.status
+  return typeof s === 'number' && Number.isInteger(s) && s >= 400 && s <= 599 ? s : 500
+}
+
+/**
+ * Keep what went wrong on the server.
+ *
+ * Fastify's default error handler answers every error with its own `message`.
+ * For anything the client did (a bad body, a rate limit) that is exactly right.
+ * For anything the SERVER did it is a leak: a pg error's message carries SQL
+ * fragments, column and constraint names, sometimes a host, and a position in
+ * the statement - a free schema tour for whoever finds a route that throws.
+ *
+ * So a 5xx answers `{ error: 'internal', requestId }` and nothing else, and the
+ * whole error goes to the server log under the same request id, which is what
+ * lets a report be matched to its cause. A 4xx is handed straight back to
+ * Fastify's own serialiser, so validation errors and rate limits keep exactly
+ * the shape clients already parse.
+ */
+export function registerErrorHandler(app: FastifyInstance) {
+  app.setErrorHandler((err, req, reply) => {
+    const status = statusOf(err)
+    if (status >= 500) {
+      req.log.error({ err, requestId: req.id }, 'request failed')
+      return reply.code(status).send({ error: 'internal', requestId: req.id })
+    }
+    return reply.send(err)
+  })
+}
+
 export interface HttpPluginOpts {
   corsOrigins:   string[]
   workerSecret?: string
@@ -72,6 +109,9 @@ export interface HttpPluginOpts {
 }
 
 export async function registerHttpPlugins(app: FastifyInstance, opts: HttpPluginOpts) {
+  // First, so every route registered after it inherits it.
+  registerErrorHandler(app)
+
   await app.register(cors, { origin: opts.corsOrigins })
 
   // keyGenerator, not the default req.ip - see lib/clientKey.ts. Without it the

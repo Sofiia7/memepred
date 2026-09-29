@@ -1,6 +1,8 @@
 import { CHAIN_PROFILE } from '../chainProfile.js'
 import { bytes32ToFeedId } from '../lib/redstone.js'
 import { poolTotals } from './poolTotals.js'
+import { PoisonTracker, redisPoisonSink } from './poisonTracker.js'
+import { AttemptTracker, notParkedSql } from './attemptTracker.js'
 /**
  * indexer - Sprint 3.2
  *
@@ -22,6 +24,7 @@ import {
   type Log,
 } from 'viem'
 import { pg } from '../db/pg.js'
+import { redis } from '../db/redis.js'
 
 const chain = CHAIN_PROFILE.chain
 // The profile's RPC, not BASE_RPC_URL. This one survived the sweep because it
@@ -43,6 +46,10 @@ const E_ORDER_FILLED    = parseAbiItem('event OrderFilled(uint256 indexed orderI
 const E_MATCH_SETTLED   = parseAbiItem('event MatchSettled(uint256 indexed matchId, bool upWon, uint256 entry, uint256 exit)')
 const E_MATCH_TIED      = parseAbiItem('event MatchTied(uint256 indexed matchId, uint256 price)')
 const E_ORDER_REFUNDED  = parseAbiItem('event OrderRefunded(uint256 indexed orderId, address trader, uint256 amount)')
+// Emitted once per refunded match, AFTER the OrderRefunded of each side, by both
+// emergencyRefundMatch (24h after settleAt) and refundUnpriceableMatch (the
+// resolver, right after settleAt). Deployments before commit 091ce58 never emit it.
+const E_MATCH_REFUNDED  = parseAbiItem('event MatchRefunded(uint256 indexed matchId)')
 const E_CLAIMED         = parseAbiItem('event Claimed(uint256 indexed orderId, address trader, uint256 payout)')
 const E_REFERRAL_REGD   = parseAbiItem('event ReferralRegistered(address indexed referee, address indexed referrer)')
 
@@ -96,6 +103,8 @@ export interface TxClient {
 export interface TxPool {
   connect(): Promise<TxClient & { release(): void }>
 }
+/** Anything that can run one statement: a pg.Pool, a client, a test database. */
+export type Queryable = Pick<TxClient, 'query'>
 
 /**
  * Claim a log's dedup row and run `body` against the SAME client, inside the
@@ -182,9 +191,9 @@ async function activeMarkets(): Promise<Address[]> {
  * this status before, so `markets.status` only ever moved OPEN -> CLOSED and
  * the API's `?status=RESOLVED` filter could never return a row.
  */
-async function markResolvedMarkets(addresses: Address[]) {
+async function markResolvedMarkets(addresses: string[], db: Queryable = pg) {
   if (addresses.length === 0) return
-  await pg.query(`
+  await db.query(`
     UPDATE markets m SET status = 'RESOLVED'
     WHERE m.market_address = ANY($1::text[])
       AND m.status = 'CLOSED'
@@ -211,11 +220,11 @@ async function markResolvedMarkets(addresses: Address[]) {
  * explicitly - every address touched by this batch - so a market whose last
  * order was refunded is written back to 0 instead of keeping a stale total.
  */
-async function syncMarketPools(addresses: Address[]) {
+async function syncMarketPools(addresses: string[], db: Queryable = pg) {
   if (addresses.length === 0) return
   const lower = [...new Set(addresses.map((a) => a.toLowerCase()))]
 
-  const r = await pg.query(`
+  const r = await db.query(`
     SELECT market_address, direction, amount_usdc, filled_amount, status, unmatched_refunded
     FROM orders WHERE market_address = ANY($1::text[])
   `, [lower])
@@ -231,7 +240,7 @@ async function syncMarketPools(addresses: Address[]) {
 
   for (const addr of lower) {
     const p = totals.get(addr) ?? { up: 0, down: 0 }
-    await pg.query(
+    await db.query(
       'UPDATE markets SET up_pool = $1, down_pool = $2 WHERE market_address = $3',
       [p.up, p.down, addr],
     )
@@ -268,10 +277,49 @@ function feedSymbolFromId(feedId: string): string {
 }
 
 // ── FACTORY: MarketCreated → markets row ──────────────────────
+export interface NewMarketRow {
+  market: string
+  feedId: string
+  symbol: string
+  duration: number
+  /** Unix seconds the market was created at. */
+  openedAt: number
+  /** Unix seconds; null on rhc, where a market has no close time. */
+  closeAt: number | null
+  chainId: number
+  token: string | null
+  /** The factory that announced it, or null when the indexer was not told which. */
+  factory: string | null
+}
+
+/**
+ * Record a market the factory announced, stamped with the factory that did.
+ *
+ * The stamp is what tells a current market from one an earlier deployment left
+ * behind (lib/marketScope.ts). Lower-cased here so that a checksummed address
+ * in the environment and the lower-case one every query compares against are
+ * the same string. ON CONFLICT DO NOTHING keeps a replay from restamping a row.
+ */
+export async function insertMarketRow(tx: TxClient, m: NewMarketRow): Promise<void> {
+  await tx.query(`
+    INSERT INTO markets(market_address, feed_id, feed_symbol, duration_secs, open_time, close_time,
+                        status, chain_id, token_address, factory_address)
+    VALUES (LOWER($1), $2, $3, $4, to_timestamp($5),
+            CASE WHEN $6::bigint IS NULL THEN NULL ELSE to_timestamp($6::bigint) END,
+            'OPEN', $7, $8, LOWER($9))
+    ON CONFLICT (market_address) DO NOTHING
+  `, [m.market, m.feedId, m.symbol, m.duration, m.openedAt, m.closeAt, m.chainId, m.token, m.factory])
+}
+
 async function indexFactory(toBlock: bigint) {
   const stream = 'factory'
   const from   = (await getCursor(stream)) + 1n
   if (from > toBlock) return
+
+  // The factory being scanned, stamped on every market it announces. This is
+  // what lets the API and the keeper tell a current market from one left behind
+  // by an earlier deployment (lib/marketScope.ts, migration 008).
+  const factoryAddress = FACTORY ?? null
 
   for (let start = from; start <= toBlock; start += CHUNK) {
     const end = start + CHUNK - 1n > toBlock ? toBlock : start + CHUNK - 1n
@@ -284,17 +332,15 @@ async function indexFactory(toBlock: bigint) {
       // set per match - so the column stays null rather than being given an
       // invented far-future value that later code would have to believe.
       const closeTs = CHAIN_PROFILE.rollsOverMarkets ? Number(timestamp) + Number(duration) : null
-      await processLog(pg, log, async (client) => {
-        await client.query(`
-          INSERT INTO markets(market_address, feed_id, feed_symbol, duration_secs, open_time, close_time,
-                              status, chain_id, token_address)
-          VALUES (LOWER($1), $2, $3, $4, to_timestamp($5),
-                  CASE WHEN $6::bigint IS NULL THEN NULL ELSE to_timestamp($6::bigint) END,
-                  'OPEN', $7, $8)
-          ON CONFLICT (market_address) DO NOTHING
-        `, [market, feedId, symbol, Number(duration), Number(timestamp), closeTs,
-            CHAIN_PROFILE.chain.id, token])
-      })
+      await processLog(pg, log, (client) => insertMarketRow(client, {
+        market, feedId, symbol,
+        duration: Number(duration),
+        openedAt: Number(timestamp),
+        closeAt: closeTs,
+        chainId: CHAIN_PROFILE.chain.id,
+        token,
+        factory: factoryAddress,
+      }))
     }
     await setCursor(stream, end)
   }
@@ -378,29 +424,49 @@ const ORDER_VIEW_ABI = [
   },
 ] as const
 
+/** OrderbookMarket.OrderStatus, by ordinal. */
+const ORDER_STATUS = ['PENDING', 'MATCHED', 'SETTLED', 'CLAIMED', 'REFUNDED'] as const
+
+/** The fields of an order the projection reads back from the chain rather than deriving. */
+export interface OnChainOrder {
+  status: number
+  payout: bigint
+  unmatchedRefunded: boolean
+}
+
+/** Reads one order from the chain. Throws when it cannot. */
+export type ReadOrder = (market: string, orderId: string) => Promise<OnChainOrder>
+
+const readOrderOnChain: ReadOrder = async (market, orderId) => {
+  const o = await client.readContract({
+    address: market as Address,
+    abi: ORDER_VIEW_ABI,
+    functionName: 'getOrder',
+    args: [BigInt(orderId)],
+  })
+  return { status: Number(o[5]), payout: o[9], unmatchedRefunded: o[10] }
+}
+
 /**
  * Read each of a settled match's orders' on-chain payout. Split from applying
  * it (below) so the RPC happens before the settled log's own transaction -
  * see processLog's doc comment.
  */
 async function fetchSettlementPayouts(
+  db: Queryable,
+  readOrder: ReadOrder,
   market: string,
   matchId: string,
 ): Promise<Array<{ orderId: string; payout: bigint }>> {
-  const orders = await pg.query(
+  const orders = await db.query(
     `SELECT order_id FROM order_matches WHERE market_address = $1 AND match_id = $2`,
     [market, matchId],
   )
   const out: Array<{ orderId: string; payout: bigint }> = []
   for (const { order_id } of orders.rows) {
     try {
-      const o = await client.readContract({
-        address: market as `0x${string}`,
-        abi: ORDER_VIEW_ABI,
-        functionName: 'getOrder',
-        args: [BigInt(order_id)],
-      })
-      out.push({ orderId: order_id, payout: o[9] })
+      const o = await readOrder(market, String(order_id))
+      out.push({ orderId: String(order_id), payout: o.payout })
     } catch (err) {
       // One unreadable order must not stop the batch: the next tick re-reads
       // it, and a wrong payout is worse than a late one.
@@ -476,6 +542,409 @@ export async function applyMatchTied(
   `, [settledAtUnix, market, matchId])
 }
 
+/** The orders that took part in a match, from the projection. */
+async function participantsOf(db: Queryable, market: string, matchId: string): Promise<string[]> {
+  const r = await db.query(
+    `SELECT order_id FROM order_matches WHERE market_address = $1 AND match_id = $2`,
+    [market, matchId],
+  )
+  return r.rows.map((row) => String(row.order_id))
+}
+
+/**
+ * Identifies "an OrderRefunded log that a match-level event of the SAME
+ * transaction already accounts for". By transaction AND order, not by
+ * transaction alone: one settlement transaction can carry several matches, and
+ * a coarser filter would also swallow an unrelated order's genuine refund
+ * riding in the same batch.
+ */
+function matchLevelRefundKey(txHash: string | null, market: string, orderId: string): string {
+  return `${txHash}:${market}:${orderId}`
+}
+
+export interface RefundedOrderState {
+  orderId: string
+  status: (typeof ORDER_STATUS)[number]
+  payout: bigint
+  unmatchedRefunded: boolean
+}
+
+/**
+ * Read back every participant of a refunded match from the chain.
+ *
+ * MatchRefunded says a match was refunded, not what that did to each order:
+ * _refundMatch forces both orders to REFUNDED whatever else they hold, may also
+ * hand back an unmatched tail in the same transaction, and leaves any winnings
+ * from other matches accrued. Re-deriving that here would be a second
+ * implementation of the contract's rule, so it is read instead - the same
+ * choice reconcilePayouts and reconcileOverdueMatches make. The RPC belongs
+ * before the transaction (see processLog's doc comment), and a failed read
+ * THROWS: a wrong status on a row that moved money is worse than a late one,
+ * and the poison tracker reports it if it keeps failing.
+ */
+export async function fetchRefundedOrders(
+  db: Queryable,
+  readOrder: ReadOrder,
+  market: string,
+  matchId: string,
+): Promise<RefundedOrderState[]> {
+  const out: RefundedOrderState[] = []
+  for (const orderId of await participantsOf(db, market, matchId)) {
+    const o = await readOrder(market, orderId)
+    out.push({
+      orderId,
+      status: ORDER_STATUS[o.status] ?? 'PENDING',
+      payout: o.payout,
+      unmatchedRefunded: o.unmatchedRefunded,
+    })
+  }
+  return out
+}
+
+/**
+ * MatchRefunded → close the match as refunded and set its participants from
+ * what the chain says.
+ *
+ * emergencyRefundMatch (24h after settleAt) and refundUnpriceableMatch (the
+ * resolver, right after settleAt) both end here. `emergency_refunded` is the
+ * projection's existing word for "resolved by refunding both stakes" (007), so
+ * both paths use it. The matched amount came back, so the generic
+ * OrderRefunded handler must NOT also run for these participants in the same
+ * transaction - it would set unmatched_refunded on an order that was fully
+ * filled - and the caller skips those logs; the chain read carries the truth
+ * for an unmatched tail that was handed back at the same time.
+ */
+export async function applyMatchRefunded(
+  tx: TxClient,
+  market: string,
+  matchId: string,
+  settledAtUnix: number,
+  orders: RefundedOrderState[],
+): Promise<void> {
+  await tx.query(`
+    UPDATE matches SET settled = TRUE, emergency_refunded = TRUE,
+                      settled_at = COALESCE(settled_at, to_timestamp($1))
+    WHERE market_address = $2 AND match_id = $3
+  `, [settledAtUnix, market, matchId])
+  for (const o of orders) {
+    await tx.query(`
+      UPDATE orders
+         SET status = $1,
+             payout_usdc = $2::numeric / ${UNIT_DIVISOR},
+             unmatched_refunded = $3,
+             refunded_at = COALESCE(refunded_at, to_timestamp($4))
+       WHERE market_address = $5 AND order_id = $6
+    `, [o.status, o.payout.toString(), o.unmatchedRefunded, settledAtUnix, market, o.orderId])
+  }
+}
+
+/** A log as the handlers below see it: what viem decodes, and what the tests can fake. */
+export interface IndexedLog {
+  address: string
+  blockNumber: bigint | null
+  transactionHash: string | null
+  logIndex: number | null
+  eventName?: string
+  args?: any
+}
+
+/**
+ * Everything one chunk of orderbook logs needs from outside itself, so the
+ * handling can run against a test database and a scripted chain.
+ */
+export interface MarketLogDeps {
+  db: TxPool & Queryable
+  blockTs: (blockNumber: bigint) => Promise<number>
+  readOrder: ReadOrder
+  /** Counts consecutive failures of one log; see poisonTracker.ts. Absent in tests that do not care. */
+  poison?: PoisonTracker
+}
+
+/**
+ * Project one chunk of orderbook logs into the tables.
+ *
+ * Extracted from indexMarketEvents so the ordering rules below can be tested
+ * with real SQL and made-up logs; the RPC that fetches the logs stays with the
+ * caller.
+ *
+ * Order matters and is fixed: placed, matched, LP-matched, filled, settled,
+ * then the skip set for match-level refunds, then refunded-match, the generic
+ * OrderRefunded, tied, claimed. In particular the matched and LP-matched
+ * inserts come BEFORE anything that reads `order_matches`: a backfill catching
+ * up fast enough puts a match's creation and its tie or refund in the same
+ * chunk (RHC's 100,000-block window is about 2.3 hours, well over a 60s market).
+ */
+export async function processMarketLogs(all: IndexedLog[], deps: MarketLogDeps): Promise<void> {
+  const { db, blockTs, readOrder } = deps
+  // The log being handled, so a failure can be blamed on it (poisonTracker.ts).
+  let current: IndexedLog | null = null
+  try {
+    // Partition by event name. Order within each bucket is preserved from the
+    // caller, which sorts by block then log index - the same ordering the
+    // per-event calls produced, so downstream handling is unchanged.
+    const byName = (n: string) => all.filter((l) => l.eventName === n)
+    const placed        = byName('OrderPlaced')
+    const matched       = byName('OrderMatched')
+    const lpMatched     = byName('LPMatched')
+    const filled        = byName('OrderFilled')
+    const settled       = byName('MatchSettled')
+    const tied          = byName('MatchTied')
+    const refunded      = byName('OrderRefunded')
+    const matchRefunded = byName('MatchRefunded')
+    const claimed       = byName('Claimed')
+
+    // OrderPlaced → INSERT orders
+    for (const log of placed) {
+      current = log
+      const a = log.args
+      const ts = await blockTs(log.blockNumber!)
+      await processLog(db, log, async (tx) => {
+        await tx.query(`
+          INSERT INTO orders(market_address, order_id, trader_address, direction, amount_usdc, placed_at, feed_symbol, placed_tx)
+          SELECT LOWER($1), $2, LOWER($3), $4, $5::numeric / ${UNIT_DIVISOR}, to_timestamp($6), m.feed_symbol, $7
+          FROM markets m WHERE m.market_address = LOWER($1)
+          ON CONFLICT (market_address, order_id) DO NOTHING
+        `, [log.address, a.orderId.toString(), a.trader,
+            a.dir === 0 ? 'UP' : 'DOWN', a.amount.toString(), ts, log.transactionHash])
+      })
+    }
+
+    // OrderMatched → INSERT matches + order_matches (×2)
+    for (const log of matched) {
+      current = log
+      const a = log.args
+      const ts = await blockTs(log.blockNumber!)
+      const mkt = log.address.toLowerCase()
+      await processLog(db, log, async (tx) => {
+        await tx.query(`
+          INSERT INTO matches(market_address, match_id, is_lp_match, up_order_id, down_order_id,
+                              amount_usdc, entry_price, matched_at, settle_at)
+          SELECT $1, $2, FALSE, $3, $4, $5::numeric / ${UNIT_DIVISOR}, $6::numeric,
+                to_timestamp($7), to_timestamp($7) + (m.duration_secs || ' seconds')::INTERVAL
+          FROM markets m WHERE m.market_address = $1
+          ON CONFLICT (market_address, match_id) DO NOTHING
+        `, [mkt, a.matchId.toString(), a.upId.toString(), a.downId.toString(),
+            a.amount.toString(), a.entryPrice.toString(), ts])
+        // Link both sides.
+        for (const side of [a.upId, a.downId]) {
+          await tx.query(`
+            INSERT INTO order_matches(market_address, order_id, match_id, matched_amount)
+            VALUES ($1, $2, $3, $4::numeric / ${UNIT_DIVISOR})
+            ON CONFLICT DO NOTHING
+          `, [mkt, side.toString(), a.matchId.toString(), a.amount.toString()])
+        }
+        // Bump filled_amount on both orders.
+        for (const side of [a.upId, a.downId]) {
+          await tx.query(`
+            UPDATE orders SET filled_amount = filled_amount + $1::numeric / ${UNIT_DIVISOR},
+                              matched_at = COALESCE(matched_at, to_timestamp($2))
+            WHERE market_address = $3 AND order_id = $4
+          `, [a.amount.toString(), ts, mkt, side.toString()])
+        }
+      })
+    }
+
+    // LPMatched → INSERT matches + order_matches (LP side)
+    for (const log of lpMatched) {
+      current = log
+      const a = log.args
+      const ts = await blockTs(log.blockNumber!)
+      const mkt = log.address.toLowerCase()
+      await processLog(db, log, async (tx) => {
+        await tx.query(`
+          INSERT INTO matches(market_address, match_id, is_lp_match, user_order_id,
+                              amount_usdc, entry_price, matched_at, settle_at)
+          SELECT $1, $2, TRUE, $3, $4::numeric / ${UNIT_DIVISOR}, $5::numeric,
+                to_timestamp($6), to_timestamp($6) + (m.duration_secs || ' seconds')::INTERVAL
+          FROM markets m WHERE m.market_address = $1
+          ON CONFLICT (market_address, match_id) DO NOTHING
+        `, [mkt, a.matchId.toString(), a.orderId.toString(),
+            a.amount.toString(), a.entryPrice.toString(), ts])
+        await tx.query(`
+          INSERT INTO order_matches(market_address, order_id, match_id, matched_amount)
+          VALUES ($1, $2, $3, $4::numeric / ${UNIT_DIVISOR})
+          ON CONFLICT DO NOTHING
+        `, [mkt, a.orderId.toString(), a.matchId.toString(), a.amount.toString()])
+        await tx.query(`
+          UPDATE orders SET filled_amount = filled_amount + $1::numeric / ${UNIT_DIVISOR},
+                            matched_at = COALESCE(matched_at, to_timestamp($2))
+          WHERE market_address = $3 AND order_id = $4
+        `, [a.amount.toString(), ts, mkt, a.orderId.toString()])
+      })
+    }
+
+    // OrderFilled → mark order MATCHED (fully filled)
+    for (const log of filled) {
+      current = log
+      const a = log.args
+      const mkt = log.address.toLowerCase()
+      await processLog(db, log, async (tx) => {
+        await tx.query(`
+          UPDATE orders SET status = 'MATCHED'
+          WHERE market_address = $1 AND order_id = $2 AND status = 'PENDING'
+        `, [mkt, a.orderId.toString()])
+      })
+    }
+
+    // MatchSettled → mark match settled + close orders that ran out of pending matches
+    // (payouts are read back per settled match; see fetchSettlementPayouts)
+    for (const log of settled) {
+      current = log
+      const a = log.args
+      const ts = await blockTs(log.blockNumber!)
+      const mkt = log.address.toLowerCase()
+      // RPC first, outside the transaction below - see processLog's doc comment.
+      const payouts = await fetchSettlementPayouts(db, readOrder, mkt, a.matchId.toString())
+      await processLog(db, log, async (tx) => {
+        await tx.query(`
+          UPDATE matches SET settled = TRUE, up_won = $1, exit_price = $2::numeric,
+                            settled_at = to_timestamp($3)
+          WHERE market_address = $4 AND match_id = $5
+        `, [a.upWon, a.exit.toString(), ts, mkt, a.matchId.toString()])
+        // Promote orders to SETTLED iff all their matches are settled.
+        await tx.query(`
+          UPDATE orders o SET status = 'SETTLED', settled_at = to_timestamp($1)
+          WHERE o.market_address = $2 AND o.status = 'MATCHED'
+            AND NOT EXISTS (
+              SELECT 1 FROM order_matches om
+              JOIN matches m ON m.market_address = om.market_address AND m.match_id = om.match_id
+              WHERE om.market_address = o.market_address AND om.order_id = o.order_id
+                AND m.settled = FALSE
+            )
+        `, [ts, mkt])
+        await applySettlementPayouts(tx, mkt, payouts)
+      })
+    }
+
+    // A tie or a refunded match emits OrderRefunded for its participants in
+    // the SAME transaction as the match-level event: OrderbookMarket
+    // ._refundTiedMatch runs first and settleMatch emits MatchTied right after;
+    // _refundMatch emits one OrderRefunded per side (plus one for an unmatched
+    // tail) and MatchRefunded last. The generic OrderRefunded handler below
+    // must not also touch those specific orders. For the matched amount it
+    // sets unmatched_refunded=TRUE (wrong - nothing was "unmatched", the whole
+    // matched amount came back) and only promotes status when
+    // filled_amount==0, so a fully-filled order stayed MATCHED forever (a tie
+    // emits no MatchSettled to promote it the normal way). The dedicated
+    // handlers further below (applyMatchTied, applyMatchRefunded) do it
+    // correctly instead. Matched by (transaction, market, orderId) - see
+    // matchLevelRefundKey.
+    //
+    // Computed here, after matched/lpMatched/settled are processed rather
+    // than before any of this chunk's own logs are: a backfill catching up
+    // fast enough can have a match's OrderMatched/LPMatched AND its
+    // MatchTied or MatchRefunded land in the same chunk, and this needs the
+    // order_matches rows matched/lpMatched just inserted, not only ones from
+    // earlier chunks.
+    const matchLevelRefunds = new Set<string>()
+    for (const log of [...tied, ...matchRefunded]) {
+      current = log
+      const mkt = log.address.toLowerCase()
+      for (const orderId of await participantsOf(db, mkt, log.args.matchId.toString())) {
+        matchLevelRefunds.add(matchLevelRefundKey(log.transactionHash, mkt, orderId))
+      }
+    }
+
+    // MatchRefunded → the match is closed as refunded, its participants are
+    // read back from the chain (RPC first, outside the transaction).
+    //
+    // Before the generic OrderRefunded loop below, not after it: the chain is
+    // read at its head, so the answer already includes whatever a LATER
+    // transaction did to the same order (a cancel of a resting remainder), and
+    // that later log must be applied on top of it rather than have a read that
+    // may be a block behind overwrite it.
+    for (const log of matchRefunded) {
+      current = log
+      const a = log.args
+      const ts = await blockTs(log.blockNumber!)
+      const mkt = log.address.toLowerCase()
+      const orders = await fetchRefundedOrders(db, readOrder, mkt, a.matchId.toString())
+      await processLog(db, log, (tx) => applyMatchRefunded(tx, mkt, a.matchId.toString(), ts, orders))
+    }
+
+    // OrderRefunded → either full refund (status PENDING → REFUNDED) or
+    // partial (unmatched portion). The contract emits the unmatched amount,
+    // so we just record unmatched_refunded=true on the order.
+    for (const log of refunded) {
+      current = log
+      const a = log.args
+      const mkt = log.address.toLowerCase()
+      if (matchLevelRefunds.has(matchLevelRefundKey(log.transactionHash, mkt, a.orderId.toString()))) continue // handled below instead
+      const ts = await blockTs(log.blockNumber!)
+      await processLog(db, log, async (tx) => {
+        await tx.query(`
+          UPDATE orders SET
+            unmatched_refunded = TRUE,
+            refunded_at = COALESCE(refunded_at, to_timestamp($1)),
+            status = CASE
+              WHEN filled_amount = 0 THEN 'REFUNDED'
+              ELSE status
+            END
+          WHERE market_address = $2 AND order_id = $3
+        `, [ts, mkt, a.orderId.toString()])
+      })
+    }
+
+    // MatchTied → settle the match with no winner, and promote its orders.
+    for (const log of tied) {
+      current = log
+      const a = log.args
+      const ts = await blockTs(log.blockNumber!)
+      const mkt = log.address.toLowerCase()
+      await processLog(db, log, (tx) => applyMatchTied(tx, mkt, a.matchId.toString(), a.price.toString(), ts))
+    }
+
+    // Claimed → status CLAIMED, payout recorded, streak/profit update
+    for (const log of claimed) {
+      current = log
+      const a = log.args
+      const mkt = log.address.toLowerCase()
+      const ts = await blockTs(log.blockNumber!)
+      await processLog(db, log, async (tx) => {
+        await tx.query(`
+          UPDATE orders SET status = 'CLAIMED', claimed_at = to_timestamp($1),
+                            payout_usdc = $2::numeric / ${UNIT_DIVISOR}
+          WHERE market_address = $3 AND order_id = $4
+        `, [ts, a.payout.toString(), mkt, a.orderId.toString()])
+      })
+    }
+
+    // What follows belongs to the chunk, not to any one log.
+    current = { address: '', blockNumber: null, transactionHash: null, logIndex: null, eventName: 'projection-sync' }
+
+    // Only worth re-checking markets that just had a settlement (a tie or a
+    // refund, which close a match just as finally) land.
+    if (settled.length > 0 || tied.length > 0 || matchRefunded.length > 0) {
+      await markResolvedMarkets([...new Set([...settled, ...tied, ...matchRefunded].map((l) => l.address))], db)
+    }
+
+    // Any of these events can move committed money, and a refund can move it
+    // back, so recompute every market this batch touched.
+    await syncMarketPools(all.map((l) => l.address), db)
+
+    await deps.poison?.succeeded()
+  } catch (err) {
+    if (current) {
+      const c: IndexedLog = current
+      await deps.poison?.failed({
+        txHash: c.transactionHash,
+        logIndex: c.logIndex,
+        market: c.address ? c.address.toLowerCase() : null,
+        event: c.eventName ?? 'unknown',
+      }, err)
+    }
+    throw err
+  }
+}
+
+/** The dependencies for the real indexer: the real database, the real chain, and Redis for the alarm. */
+const MARKET_LOG_DEPS: MarketLogDeps = {
+  db: pg,
+  blockTs,
+  readOrder: readOrderOnChain,
+  poison: new PoisonTracker(redisPoisonSink(redis)),
+}
+
 // ── ORDERBOOK: per-market events → orders/matches/order_matches ──
 async function indexMarketEvents(toBlock: bigint) {
   const stream = 'orderbook'
@@ -519,7 +988,7 @@ async function indexMarketEvents(toBlock: bigint) {
         address: slice,
         events: [
           E_ORDER_PLACED, E_ORDER_MATCHED, E_LP_MATCHED, E_ORDER_FILLED,
-          E_MATCH_SETTLED, E_MATCH_TIED, E_ORDER_REFUNDED, E_CLAIMED,
+          E_MATCH_SETTLED, E_MATCH_TIED, E_ORDER_REFUNDED, E_MATCH_REFUNDED, E_CLAIMED,
         ],
         fromBlock: start,
         toBlock:   end,
@@ -533,223 +1002,7 @@ async function indexMarketEvents(toBlock: bigint) {
         ? Number(a.logIndex! - b.logIndex!)
         : Number(a.blockNumber! - b.blockNumber!))
 
-    // Partition by event name. Order within each bucket is preserved from the
-    // node's response, which is block- then log-index-ordered - the same
-    // ordering the per-event calls produced, so downstream handling is
-    // unchanged.
-    const byName = (n: string) => all.filter((l) => (l as any).eventName === n)
-    const placed    = byName('OrderPlaced')
-    const matched   = byName('OrderMatched')
-    const lpMatched = byName('LPMatched')
-    const filled    = byName('OrderFilled')
-    const settled   = byName('MatchSettled')
-    const tied      = byName('MatchTied')
-    const refunded  = byName('OrderRefunded')
-    const claimed   = byName('Claimed')
-
-    // OrderPlaced → INSERT orders
-    for (const log of placed) {
-      const a = (log as any).args
-      const ts = await blockTs(log.blockNumber!)
-      await processLog(pg, log, async (client) => {
-        await client.query(`
-          INSERT INTO orders(market_address, order_id, trader_address, direction, amount_usdc, placed_at, feed_symbol, placed_tx)
-          SELECT LOWER($1), $2, LOWER($3), $4, $5::numeric / ${UNIT_DIVISOR}, to_timestamp($6), m.feed_symbol, $7
-          FROM markets m WHERE m.market_address = LOWER($1)
-          ON CONFLICT (market_address, order_id) DO NOTHING
-        `, [log.address, a.orderId.toString(), a.trader,
-            a.dir === 0 ? 'UP' : 'DOWN', a.amount.toString(), ts, log.transactionHash])
-      })
-    }
-
-    // OrderMatched → INSERT matches + order_matches (×2)
-    for (const log of matched) {
-      const a = (log as any).args
-      const ts = await blockTs(log.blockNumber!)
-      const mkt = log.address.toLowerCase()
-      await processLog(pg, log, async (client) => {
-        await client.query(`
-          INSERT INTO matches(market_address, match_id, is_lp_match, up_order_id, down_order_id,
-                              amount_usdc, entry_price, matched_at, settle_at)
-          SELECT $1, $2, FALSE, $3, $4, $5::numeric / ${UNIT_DIVISOR}, $6::numeric,
-                to_timestamp($7), to_timestamp($7) + (m.duration_secs || ' seconds')::INTERVAL
-          FROM markets m WHERE m.market_address = $1
-          ON CONFLICT (market_address, match_id) DO NOTHING
-        `, [mkt, a.matchId.toString(), a.upId.toString(), a.downId.toString(),
-            a.amount.toString(), a.entryPrice.toString(), ts])
-        // Link both sides.
-        for (const side of [a.upId, a.downId]) {
-          await client.query(`
-            INSERT INTO order_matches(market_address, order_id, match_id, matched_amount)
-            VALUES ($1, $2, $3, $4::numeric / ${UNIT_DIVISOR})
-            ON CONFLICT DO NOTHING
-          `, [mkt, side.toString(), a.matchId.toString(), a.amount.toString()])
-        }
-        // Bump filled_amount on both orders.
-        for (const side of [a.upId, a.downId]) {
-          await client.query(`
-            UPDATE orders SET filled_amount = filled_amount + $1::numeric / ${UNIT_DIVISOR},
-                              matched_at = COALESCE(matched_at, to_timestamp($2))
-            WHERE market_address = $3 AND order_id = $4
-          `, [a.amount.toString(), ts, mkt, side.toString()])
-        }
-      })
-    }
-
-    // LPMatched → INSERT matches + order_matches (LP side)
-    for (const log of lpMatched) {
-      const a = (log as any).args
-      const ts = await blockTs(log.blockNumber!)
-      const mkt = log.address.toLowerCase()
-      await processLog(pg, log, async (client) => {
-        await client.query(`
-          INSERT INTO matches(market_address, match_id, is_lp_match, user_order_id,
-                              amount_usdc, entry_price, matched_at, settle_at)
-          SELECT $1, $2, TRUE, $3, $4::numeric / ${UNIT_DIVISOR}, $5::numeric,
-                to_timestamp($6), to_timestamp($6) + (m.duration_secs || ' seconds')::INTERVAL
-          FROM markets m WHERE m.market_address = $1
-          ON CONFLICT (market_address, match_id) DO NOTHING
-        `, [mkt, a.matchId.toString(), a.orderId.toString(),
-            a.amount.toString(), a.entryPrice.toString(), ts])
-        await client.query(`
-          INSERT INTO order_matches(market_address, order_id, match_id, matched_amount)
-          VALUES ($1, $2, $3, $4::numeric / ${UNIT_DIVISOR})
-          ON CONFLICT DO NOTHING
-        `, [mkt, a.orderId.toString(), a.matchId.toString(), a.amount.toString()])
-        await client.query(`
-          UPDATE orders SET filled_amount = filled_amount + $1::numeric / ${UNIT_DIVISOR},
-                            matched_at = COALESCE(matched_at, to_timestamp($2))
-          WHERE market_address = $3 AND order_id = $4
-        `, [a.amount.toString(), ts, mkt, a.orderId.toString()])
-      })
-    }
-
-    // OrderFilled → mark order MATCHED (fully filled)
-    for (const log of filled) {
-      const a = (log as any).args
-      const mkt = log.address.toLowerCase()
-      await processLog(pg, log, async (client) => {
-        await client.query(`
-          UPDATE orders SET status = 'MATCHED'
-          WHERE market_address = $1 AND order_id = $2 AND status = 'PENDING'
-        `, [mkt, a.orderId.toString()])
-      })
-    }
-
-    // MatchSettled → mark match settled + close orders that ran out of pending matches
-    // (payouts are read back per settled match; see fetchSettlementPayouts)
-    for (const log of settled) {
-      const a = (log as any).args
-      const ts = await blockTs(log.blockNumber!)
-      const mkt = log.address.toLowerCase()
-      // RPC first, outside the transaction below - see processLog's doc comment.
-      const payouts = await fetchSettlementPayouts(mkt, a.matchId.toString())
-      await processLog(pg, log, async (client) => {
-        await client.query(`
-          UPDATE matches SET settled = TRUE, up_won = $1, exit_price = $2::numeric,
-                            settled_at = to_timestamp($3)
-          WHERE market_address = $4 AND match_id = $5
-        `, [a.upWon, a.exit.toString(), ts, mkt, a.matchId.toString()])
-        // Promote orders to SETTLED iff all their matches are settled.
-        await client.query(`
-          UPDATE orders o SET status = 'SETTLED', settled_at = to_timestamp($1)
-          WHERE o.market_address = $2 AND o.status = 'MATCHED'
-            AND NOT EXISTS (
-              SELECT 1 FROM order_matches om
-              JOIN matches m ON m.market_address = om.market_address AND m.match_id = om.match_id
-              WHERE om.market_address = o.market_address AND om.order_id = o.order_id
-                AND m.settled = FALSE
-            )
-        `, [ts, mkt])
-        await applySettlementPayouts(client, mkt, payouts)
-      })
-    }
-
-    // A tie emits OrderRefunded for BOTH sides in the SAME transaction as
-    // MatchTied - OrderbookMarket._refundTiedMatch runs first, settleMatch
-    // emits MatchTied right after. The generic OrderRefunded handler below
-    // must not also touch those specific orders: it sets
-    // unmatched_refunded=TRUE (wrong - nothing was "unmatched", the whole
-    // matched amount came back) and only promotes status when
-    // filled_amount==0, so a fully-filled tied order stayed MATCHED forever
-    // (a tie emits no MatchSettled to promote it the normal way). The
-    // dedicated tied-match handler further below does both correctly
-    // instead. Matched by (market, orderId), not by transaction hash - one
-    // settlement transaction can carry several matches, and a coarser
-    // tx-hash filter would also swallow an unrelated order's genuine
-    // unmatched-tail refund riding in the same batch.
-    //
-    // Computed here, after matched/lpMatched/settled are processed rather
-    // than before any of this chunk's own logs are: a backfill catching up
-    // fast enough can have a match's OrderMatched/LPMatched AND its
-    // MatchTied land in the same chunk (RHC's 100,000-block window is ~2.3
-    // hours, well over a 60s market's duration), and this needs the
-    // order_matches rows matched/lpMatched just inserted, not only ones from
-    // earlier chunks.
-    const tiedOrderKeys = new Set<string>()
-    for (const log of tied) {
-      const a = (log as any).args
-      const mkt = log.address.toLowerCase()
-      const linked = await pg.query(
-        `SELECT order_id FROM order_matches WHERE market_address = $1 AND match_id = $2`,
-        [mkt, a.matchId.toString()],
-      )
-      for (const row of linked.rows) tiedOrderKeys.add(`${mkt}:${row.order_id}`)
-    }
-
-    // OrderRefunded → either full refund (status PENDING → REFUNDED) or
-    // partial (unmatched portion). The contract emits the unmatched amount,
-    // so we just record unmatched_refunded=true on the order.
-    for (const log of refunded) {
-      const a = (log as any).args
-      const mkt = log.address.toLowerCase()
-      if (tiedOrderKeys.has(`${mkt}:${a.orderId.toString()}`)) continue // handled below instead
-      const ts = await blockTs(log.blockNumber!)
-      await processLog(pg, log, async (client) => {
-        await client.query(`
-          UPDATE orders SET
-            unmatched_refunded = TRUE,
-            refunded_at = COALESCE(refunded_at, to_timestamp($1)),
-            status = CASE
-              WHEN filled_amount = 0 THEN 'REFUNDED'
-              ELSE status
-            END
-          WHERE market_address = $2 AND order_id = $3
-        `, [ts, mkt, a.orderId.toString()])
-      })
-    }
-
-    // MatchTied → settle the match with no winner, and promote its orders.
-    for (const log of tied) {
-      const a = (log as any).args
-      const ts = await blockTs(log.blockNumber!)
-      const mkt = log.address.toLowerCase()
-      await processLog(pg, log, (client) => applyMatchTied(client, mkt, a.matchId.toString(), a.price.toString(), ts))
-    }
-
-    // Claimed → status CLAIMED, payout recorded, streak/profit update
-    for (const log of claimed) {
-      const a = (log as any).args
-      const mkt = log.address.toLowerCase()
-      const ts = await blockTs(log.blockNumber!)
-      await processLog(pg, log, async (client) => {
-        await client.query(`
-          UPDATE orders SET status = 'CLAIMED', claimed_at = to_timestamp($1),
-                            payout_usdc = $2::numeric / ${UNIT_DIVISOR}
-          WHERE market_address = $3 AND order_id = $4
-        `, [ts, a.payout.toString(), mkt, a.orderId.toString()])
-      })
-    }
-
-    // Only worth re-checking markets that just had a settlement (or a tie,
-    // which settles a match just as finally) land.
-    if (settled.length > 0 || tied.length > 0) {
-      await markResolvedMarkets([...new Set([...settled, ...tied].map((l) => l.address as Address))])
-    }
-
-    // Any of these events can move committed money, and a refund can move it
-    // back, so recompute every market this batch touched.
-    await syncMarketPools(all.map((l) => l.address as Address))
+    await processMarketLogs(all as unknown as IndexedLog[], MARKET_LOG_DEPS)
 
     await setCursor(stream, end)
   }
@@ -816,9 +1069,6 @@ async function indexReferrals(toBlock: bigint) {
  * log for any other reason. Bounded per tick, oldest first, because it costs an
  * RPC read per order and nothing about it is urgent.
  */
-/** OrderbookMarket.OrderStatus, by ordinal. */
-const ORDER_STATUS = ['PENDING', 'MATCHED', 'SETTLED', 'CLAIMED', 'REFUNDED'] as const
-
 async function reconcilePayouts(limit = 20) {
   const stale = await pg.query(
     `SELECT o.market_address, o.order_id
@@ -897,9 +1147,13 @@ const MATCH_VIEW_ABI = [
  * is ever reached.
  *
  * Reading getMatch() back is version-independent: it works whether or not a
- * deployment has a MatchRefunded event (the currently-deployed testnet
- * contract does not), the same reasoning reconcilePayouts already applies to
- * getOrder() rather than trusting the event stream alone.
+ * deployment has a MatchRefunded event, the same reasoning reconcilePayouts
+ * already applies to getOrder() rather than trusting the event stream alone.
+ * Deployments from commit 091ce58 on DO emit MatchRefunded, and the handler in
+ * processMarketLogs applies it as soon as it is indexed - both for the
+ * resolver's prompt refund of an unpriceable match and for emergencyRefundMatch
+ * - so on those this is only the safety net: an older deployment that never
+ * emits it, or a log that was missed. It is not the primary path any more.
  *
  * exitPrice distinguishes an emergency refund from a real settlement: every
  * path through settleMatch (win, loss, or tie) sets it to the resolver's
@@ -916,20 +1170,33 @@ const MATCH_VIEW_ABI = [
  * next tick - a query that costs nothing when it finds nothing is worth
  * running eagerly rather than adding a second, looser threshold to reason
  * about.
+ *
+ * The oldest `limit` rows are taken every tick, so a row that stays unsettled
+ * on chain (a refund that keeps reverting, a market nobody can move) would be
+ * the oldest one on every tick forever and, with enough of them, starve every
+ * newer candidate. Each row that shows no progress is counted, and after
+ * OVERDUE_MAX_ATTEMPTS in a row it is left out of the selection for
+ * OVERDUE_COOLDOWN_MS (attemptTracker.ts), then given one more chance.
  */
+const OVERDUE_MAX_ATTEMPTS = Number(process.env.OVERDUE_RECONCILE_MAX_ATTEMPTS ?? '20')
+const OVERDUE_COOLDOWN_MS = Number(process.env.OVERDUE_RECONCILE_COOLDOWN_MS ?? String(60 * 60_000))
+const overdueAttempts = new AttemptTracker({ maxAttempts: OVERDUE_MAX_ATTEMPTS, cooldownMs: OVERDUE_COOLDOWN_MS })
+
 async function reconcileOverdueMatches(limit = 20) {
   const stale = await pg.query(
     `SELECT market_address, match_id
        FROM matches
       WHERE settled = FALSE
         AND settle_at <= NOW() - INTERVAL '24 hours 10 minutes'
+        AND ${notParkedSql('$2')}
       ORDER BY settle_at ASC
       LIMIT $1`,
-    [limit],
+    [limit, overdueAttempts.parkedKeys()],
   )
   if (stale.rowCount === 0) return
 
   for (const { market_address, match_id } of stale.rows) {
+    const attemptKey = AttemptTracker.keyOf(market_address, match_id)
     try {
       const m = await client.readContract({
         address: market_address as Address,
@@ -937,7 +1204,17 @@ async function reconcileOverdueMatches(limit = 20) {
         functionName: 'getMatch',
         args: [BigInt(match_id)],
       })
-      if (!m[6]) continue // genuinely still unsettled on chain - not this function's job
+      if (!m[6]) {
+        // genuinely still unsettled on chain - not this function's job, but
+        // count it so it cannot hold its slot forever.
+        if (overdueAttempts.fail(attemptKey)) {
+          console.warn(
+            `[indexer] overdue match ${market_address}#${match_id} is still unsettled on chain after ` +
+            `${OVERDUE_MAX_ATTEMPTS} looks - leaving it out of the sweep for ${Math.round(OVERDUE_COOLDOWN_MS / 60_000)} min`,
+          )
+        }
+        continue
+      }
 
       const exitPrice = m[5]
       const emergencyRefunded = exitPrice === 0n
@@ -973,7 +1250,9 @@ async function reconcileOverdueMatches(limit = 20) {
           [status, o[9].toString(), o[10], market_address, order_id],
         )
       }
+      overdueAttempts.clear(attemptKey)
     } catch (err) {
+      overdueAttempts.fail(attemptKey)
       console.error(`[indexer] overdue-match reconcile failed for ${market_address} match ${match_id}:`, err)
     }
   }

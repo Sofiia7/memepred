@@ -40,6 +40,8 @@ import { redis } from '../db/redis.js'
 import { pg } from '../db/pg.js'
 import { getKeeperWalletClient, escalationState } from './keeperWallet.js'
 import { gasGuard } from './gasGuardInstance.js'
+import { andFactory, andMarketInFactory } from '../lib/marketScope.js'
+import { readyMatchLagQuery } from './settlementLag.js'
 
 const REDIS_KEY = 'watchdog:state'
 const REDIS_TTL_SEC = 300 // state expires if keeper dies - surfaces as stale
@@ -140,6 +142,13 @@ export const watchdogState = {
   // because nothing settled on-chain. Published so a settlement path that has
   // quietly stopped reads as an outage.
   settlementsOverdueSecs: 0,
+  // How long the oldest due, unresolved match has been waiting - from the
+  // moment it came due, not after the five minutes stale_settlements needs
+  // before it shows a match at all. A pool that trades every second keeps only
+  // about 300 seconds of price history, so a match the keeper has not resolved
+  // within roughly 120-240 seconds risks being refunded instead of settled;
+  // this is what lets the health probe warn while there is still time.
+  readyMatchLagSecs: 0,
   // True when no feed answered this tick. Distinct from a per-feed fail
   // streak: it means the oracle side is down, not that any market is stale.
   oracleOutage:    false,
@@ -154,14 +163,23 @@ export const watchdogState = {
  */
 async function checkSettlementBacklog() {
   try {
+    // On rhc, the current factory's markets only: the keeper does not act on an
+    // earlier deployment's, so a match left there is not a stalled settlement.
     const { rows } = await pg.query<{ oldest: number | null }>(
-      'SELECT MAX(overdue_secs) AS oldest FROM stale_settlements'
+      `SELECT MAX(overdue_secs) AS oldest FROM stale_settlements WHERE TRUE${andMarketInFactory('market_address')}`
     )
     watchdogState.settlementsOverdueSecs = Number(rows[0]?.oldest ?? 0)
   } catch (err) {
     // Leave the previous reading rather than reporting a clean board we did not
     // observe. A database we cannot reach is not evidence that settlement works.
     console.error('[watchdog] settlement backlog query failed:', err)
+  }
+
+  try {
+    const { rows } = await pg.query<{ lag: number | null }>(readyMatchLagQuery())
+    watchdogState.readyMatchLagSecs = Number(rows[0]?.lag ?? 0)
+  } catch (err) {
+    console.error('[watchdog] ready-match lag query failed:', err)
   }
 }
 
@@ -200,6 +218,7 @@ export async function oracleWatchdogTick() {
         stuckNonce:        watchdogState.stuckNonce,
         escalationLevel:   watchdogState.escalationLevel,
         settlementsOverdueSecs: watchdogState.settlementsOverdueSecs,
+        readyMatchLagSecs: watchdogState.readyMatchLagSecs,
         oracleOutage:      watchdogState.oracleOutage,
         lastTick:          watchdogState.lastTick,
       }),
@@ -287,8 +306,11 @@ async function checkResolverEthBalance() {
  */
 async function watchedFeeds(): Promise<`0x${string}`[]> {
   if (CHAIN_PROFILE.name === 'rhc') {
+    // Current factory only: a feed that has markets solely in an earlier
+    // deployment is not one this keeper trades, and a failing ping on it would
+    // count toward pausing markets it does not own.
     const r = await pg.query(
-      `SELECT DISTINCT feed_id FROM markets WHERE chain_id = $1 AND status = 'OPEN'`,
+      `SELECT DISTINCT feed_id FROM markets WHERE chain_id = $1 AND status = 'OPEN'${andFactory('factory_address')}`,
       [CHAIN_PROFILE.chain.id],
     )
     return r.rows.map((row) => row.feed_id as `0x${string}`)

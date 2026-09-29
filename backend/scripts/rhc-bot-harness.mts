@@ -118,7 +118,9 @@ const MARKET_ABI = [
     { name: 'trader', type: 'address' }, { name: 'direction', type: 'uint8' }, { name: 'amount', type: 'uint256' },
     { name: 'filledAmount', type: 'uint256' }, { name: 'referrer', type: 'address' }, { name: 'status', type: 'uint8' },
     { name: 'placedAt', type: 'uint256' }, { name: 'matchId', type: 'uint256' }, { name: 'pendingSettlements', type: 'uint256' },
-    { name: 'payout', type: 'uint256' }, { name: 'unmatchedRefunded', type: 'bool' } ] },
+    { name: 'payout', type: 'uint256' }, { name: 'unmatchedRefunded', type: 'bool' },
+    // Appended by audit L01; positional reads (indexes 0, 5, 6, 9) are unaffected but the ABI should say so.
+    { name: 'expectedPrice', type: 'uint256' }, { name: 'slippageBps', type: 'uint256' } ] },
 ] as const
 
 const ERC20_ABI = [

@@ -2,6 +2,8 @@ import { FastifyInstance } from 'fastify'
 import { z }     from 'zod'
 import { pg }    from '../db/pg.js'
 import { redis } from '../db/redis.js'
+import { CHAIN_PROFILE } from '../chainProfile.js'
+import { andFactory, andMarketInFactory } from '../lib/marketScope.js'
 import { zAddress, zFeedId, zStatus, parse } from '../lib/validate.js'
 
 const ListQuery = z.object({
@@ -25,7 +27,11 @@ export async function marketsRoutes(app: FastifyInstance) {
     const cached = await redis.get(cacheKey)
     if (cached) return JSON.parse(cached)
 
-    let query = 'SELECT * FROM markets WHERE 1=1'
+    // On rhc, only markets of the factory this deployment is on. Earlier
+    // deployments leave their markets in the table (their balances still count
+    // for the ledger), but they are not something to show or to bet on: the
+    // frontend labels them "NOT A REAL MARKET". See lib/marketScope.ts.
+    let query = `SELECT * FROM markets WHERE 1=1${andFactory('factory_address')}`
     const params: any[] = []
 
     if (q.status) { params.push(q.status); query += ` AND status = $${params.length}` }
@@ -63,7 +69,12 @@ export async function marketsRoutes(app: FastifyInstance) {
     const cached = await redis.get(cacheKey)
     if (cached) return JSON.parse(cached)
 
-    const result = await pg.query('SELECT * FROM markets WHERE market_address = $1', [p.address])
+    // A market of an earlier factory is 404 on rhc, exactly as if it did not
+    // exist: see the list route above.
+    const result = await pg.query(
+      `SELECT * FROM markets WHERE market_address = $1${andFactory('factory_address')}`,
+      [p.address],
+    )
     if (!result.rows[0]) return reply.code(404).send({ error: 'market not found' })
 
     const r = result.rows[0]
@@ -95,47 +106,61 @@ export async function marketsRoutes(app: FastifyInstance) {
     return out
   })
 
-  // 24h aggregate stats: total bet volume + per-symbol latest price & 24h change %
+  // 24h aggregate stats: total bet volume + latest price & 24h change % per feed
   app.get('/stats', async () => {
     const cacheKey = 'markets:stats:24h'
     const cached = await redis.get(cacheKey)
     if (cached) return JSON.parse(cached)
 
-    // Total volume (sum of filled USDC at risk in last 24h)
+    // Total volume (sum of filled USDC at risk in last 24h). On rhc only the
+    // current factory's markets count: an earlier deployment's orders are not
+    // part of what this product is doing today.
     const volRes = await pg.query<{ vol: string }>(
       `SELECT COALESCE(SUM(filled_amount), 0)::text AS vol
          FROM orders
-        WHERE placed_at >= NOW() - INTERVAL '24 hours'`,
+        WHERE placed_at >= NOW() - INTERVAL '24 hours'${andMarketInFactory('market_address')}`,
     )
     const volume24h = parseFloat(volRes.rows[0]?.vol ?? '0')
 
-    // Per-symbol: latest price + price closest to 24h ago
+    // Latest price + price closest to 24h ago, one row per feed.
+    //
+    // On rhc the key is the FEED (the pool), not the symbol: a symbol there is
+    // whatever the token's deployer chose, two pools can carry the same one,
+    // and grouping by it merged their prices into whichever row happened to be
+    // newest. A pool address cannot collide. On Base a symbol IS the feed, and
+    // price_history there still holds rows written under an older oracle's ids
+    // for the same symbols, so grouping by feed_id would list a symbol twice -
+    // it stays keyed by symbol, exactly as it was. `feedId` is returned either
+    // way; `symbol` stays for the clients that look prices up by it.
+    // (The key is one of two fixed identifiers, never input.)
+    const key = CHAIN_PROFILE.name === 'rhc' ? 'feed_id' : 'symbol'
     const sym = await pg.query<{
-      symbol: string; latest: string; prior: string | null
+      feed_id: string; symbol: string; latest: string; prior: string | null
     }>(
       `WITH latest AS (
-         SELECT DISTINCT ON (symbol) symbol, price, recorded_at
+         SELECT DISTINCT ON (${key}) feed_id, symbol, price, recorded_at
            FROM price_history
-          ORDER BY symbol, recorded_at DESC
+          ORDER BY ${key}, recorded_at DESC
        ),
        prior AS (
-         SELECT DISTINCT ON (symbol) symbol, price
+         SELECT DISTINCT ON (${key}) feed_id, symbol, price
            FROM price_history
           WHERE recorded_at <= NOW() - INTERVAL '24 hours'
-          ORDER BY symbol, recorded_at DESC
+          ORDER BY ${key}, recorded_at DESC
        )
-       SELECT l.symbol,
+       SELECT l.feed_id,
+              l.symbol,
               l.price::text  AS latest,
               p.price::text  AS prior
          FROM latest l
-         LEFT JOIN prior p USING (symbol)`
+         LEFT JOIN prior p ON p.${key} = l.${key}`
     )
 
     const symbols = sym.rows.map(r => {
       const latest = parseFloat(r.latest)
       const prior = r.prior !== null ? parseFloat(r.prior) : null
       const chg24h = prior && prior > 0 ? ((latest - prior) / prior) * 100 : 0
-      return { symbol: r.symbol, price: latest, chg24h }
+      return { feedId: r.feed_id, symbol: r.symbol, price: latest, chg24h }
     })
 
     const out = { volume24h, symbols }

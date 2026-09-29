@@ -22,9 +22,12 @@ function store(entries: Record<string, string | null>) {
   return async (key: string) => entries[key] ?? null
 }
 
-async function build(entries: Record<string, string | null>): Promise<FastifyInstance> {
+async function build(
+  entries: Record<string, string | null>,
+  extra: { readyMatchWarnSec?: number } = {},
+): Promise<FastifyInstance> {
   const app = Fastify()
-  await app.register(keeperHealthRoutes, { get: store(entries), now: () => NOW })
+  await app.register(keeperHealthRoutes, { get: store(entries), now: () => NOW, ...extra })
   await app.ready()
   return app
 }
@@ -316,5 +319,156 @@ describe('invariant monitor that cannot measure', () => {
     expect(res.statusCode).toBe(200)
     expect(res.json().warn).toContain('invariant-unmeasured')
     await app.close()
+  })
+})
+
+/**
+ * The orderbook stream stops for good on one log that always fails, and nothing
+ * else here notices: the cursor freezes, the reconcilers behind it never run,
+ * and the invariant monitor compares balances at the frozen block, which agree
+ * with themselves. The indexer publishes the failing log once it has failed
+ * several ticks in a row; its presence is the signal.
+ */
+describe('an indexer stuck on one log', () => {
+  const poison = JSON.stringify({
+    txHash: '0xbadc0ffee0ddf00d', logIndex: 7, market: '0x00000000000000000000000000000000000000aa',
+    event: 'OrderMatched', failures: 4, firstFailedAt: NOW - 3 * 60_000, lastFailedAt: NOW - 20_000,
+    error: 'numeric field overflow',
+  })
+
+  it('goes red on the public probe with a machine word and nothing else', async () => {
+    const app = await build({ 'watchdog:state': snapshot(), 'keeper:indexer:poison': poison })
+    const res = await app.inject({ url: '/health/deep' })
+
+    expect(res.statusCode).toBe(503)
+    expect(res.json()).toEqual({ status: 'down', reason: 'indexer-stalled' })
+    // World-readable: no transaction, no market, no error text.
+    expect(res.body).not.toContain('0xbadc0ffee0ddf00d')
+    expect(res.body).not.toContain('0x00000000000000000000000000000000000000aa')
+    expect(res.body).not.toContain('overflow')
+    await app.close()
+  })
+
+  it('names the failing log to whoever is debugging it on the operator route', async () => {
+    const app = await build({ 'watchdog:state': snapshot(), 'keeper:indexer:poison': poison })
+    const res = await app.inject({ url: '/api/keeper/health' })
+
+    expect(res.statusCode).toBe(503)
+    const body = res.json()
+    expect(body.reason).toContain('indexer stalled')
+    expect(body.reason).toContain('0xbadc0ffee0ddf00d#7')
+    expect(body.reason).toContain('OrderMatched')
+    expect(body.reason).toContain('failed 4 times')
+    expect(body.indexer).toMatchObject({ failures: 4, error: 'numeric field overflow' })
+    await app.close()
+  })
+
+  it('counts a record it cannot parse: the key existing is what says the stream is stuck', async () => {
+    const app = await build({ 'watchdog:state': snapshot(), 'keeper:indexer:poison': '{not json' })
+    const res = await app.inject({ url: '/health/deep' })
+
+    expect(res.statusCode).toBe(503)
+    expect(res.json().reason).toBe('indexer-stalled')
+    await app.close()
+  })
+
+  it('is green again as soon as the record is gone', async () => {
+    const app = await build({ 'watchdog:state': snapshot(), 'keeper:indexer:poison': null })
+    expect((await app.inject({ url: '/health/deep' })).statusCode).toBe(200)
+    await app.close()
+  })
+
+  it('does not hide real drift: that is still named first', async () => {
+    const app = await build({
+      'watchdog:state':       snapshot(),
+      'keeper:indexer:poison': poison,
+      'invariant:critical':   JSON.stringify({ drift: 12.5 }),
+    })
+    expect((await app.inject({ url: '/health/deep' })).json().reason).toBe('usdc-invariant-drift')
+    await app.close()
+  })
+})
+
+/**
+ * A pool that trades every second keeps about 300 seconds of price history, so
+ * a due match the keeper has not resolved within roughly two minutes is at risk
+ * of being refunded instead of settled. settlements-overdue (15 minutes) and
+ * settlements-stalled (an hour) are far too late for that.
+ */
+describe('a due match waiting for the keeper', () => {
+  it('warns once the oldest due match has waited longer than the threshold', async () => {
+    const app = await build({ 'watchdog:state': snapshot({ readyMatchLagSecs: 120 }) }, { readyMatchWarnSec: 90 })
+    const res = await app.inject({ url: '/health/deep' })
+
+    // A warning, not an outage: the probe stays green.
+    expect(res.statusCode).toBe(200)
+    expect(res.json().warn).toEqual(['ready-match-lag'])
+    await app.close()
+  })
+
+  it('shows on the operator route too', async () => {
+    const app = await build({ 'watchdog:state': snapshot({ readyMatchLagSecs: 200 }) }, { readyMatchWarnSec: 90 })
+    const res = await app.inject({ url: '/api/keeper/health' })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json().warn).toContain('ready-match-lag')
+    await app.close()
+  })
+
+  it('stays quiet below the threshold, and at exactly no lag', async () => {
+    for (const lag of [0, 30, 89]) {
+      const app = await build({ 'watchdog:state': snapshot({ readyMatchLagSecs: lag }) }, { readyMatchWarnSec: 90 })
+      expect((await app.inject({ url: '/health/deep' })).json()).toEqual({ status: 'ok' })
+      await app.close()
+    }
+  })
+
+  it('warns at the threshold itself', async () => {
+    const app = await build({ 'watchdog:state': snapshot({ readyMatchLagSecs: 90 }) }, { readyMatchWarnSec: 90 })
+    expect((await app.inject({ url: '/health/deep' })).json().warn).toContain('ready-match-lag')
+    await app.close()
+  })
+
+  it('is off when the threshold is 0, whatever the lag', async () => {
+    const app = await build({ 'watchdog:state': snapshot({ readyMatchLagSecs: 5000 }) }, { readyMatchWarnSec: 0 })
+    expect((await app.inject({ url: '/health/deep' })).json()).toEqual({ status: 'ok' })
+    await app.close()
+  })
+
+  it('does not go red on a snapshot published before the field existed', async () => {
+    const app = await build({ 'watchdog:state': snapshot() }, { readyMatchWarnSec: 90 })
+    const res = await app.inject({ url: '/health/deep' })
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toEqual({ status: 'ok' })
+    await app.close()
+  })
+
+  it('leaves the existing verdicts alone when both lines are crossed', async () => {
+    const app = await build(
+      { 'watchdog:state': snapshot({ readyMatchLagSecs: 20 * 60, settlementsOverdueSecs: 20 * 60 }) },
+      { readyMatchWarnSec: 90 },
+    )
+    const res = await app.inject({ url: '/health/deep' })
+    expect(res.statusCode).toBe(200)
+    expect(res.json().warn).toEqual(['settlements-overdue', 'ready-match-lag'])
+    await app.close()
+  })
+
+  it('defaults to off on the base profile, which is what the tests run as', async () => {
+    delete process.env.READY_MATCH_WARN_SEC
+    const app = await build({ 'watchdog:state': snapshot({ readyMatchLagSecs: 5000 }) })
+    expect((await app.inject({ url: '/health/deep' })).json()).toEqual({ status: 'ok' })
+    await app.close()
+  })
+
+  it('takes its threshold from READY_MATCH_WARN_SEC when it is set', async () => {
+    process.env.READY_MATCH_WARN_SEC = '45'
+    try {
+      const app = await build({ 'watchdog:state': snapshot({ readyMatchLagSecs: 50 }) })
+      expect((await app.inject({ url: '/health/deep' })).json().warn).toContain('ready-match-lag')
+      await app.close()
+    } finally {
+      delete process.env.READY_MATCH_WARN_SEC
+    }
   })
 })

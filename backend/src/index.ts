@@ -24,6 +24,7 @@ import { referralRoutes }    from './routes/referral.js'
 import poolRoutes            from './routes/pool.js'
 import { poolsRoutes }        from './routes/pools.js'
 import { keeperHealthRoutes } from './routes/keeperHealth.js'
+import { deploymentRoutes }   from './routes/deployment.js'
 import { oracleRoutes }      from './routes/oracle.js'
 import { pg }                from './db/pg.js'
 import { runMigrations }     from './db/migrate.js'
@@ -56,6 +57,9 @@ await app.register(referralRoutes,    { prefix: '/api/referral' })
 await app.register(poolsRoutes,       { prefix: '/api/pools' })
 await app.register(poolRoutes)        // mounts /api/pool/*
 await app.register(keeperHealthRoutes)// mounts /api/keeper/health
+// Which deployment this is, for the frontend to check itself against. Behind the
+// same edge proof and rate limit as everything else under /api.
+await app.register(deploymentRoutes)  // mounts /api/deployment
 
 // RedStone prices for the frontend. No credential is involved - the gateway
 // is public - but the browser would otherwise have to bundle

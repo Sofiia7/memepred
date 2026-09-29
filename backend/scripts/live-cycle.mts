@@ -81,7 +81,8 @@ const MARKET_ABI = parseAbi([
   'function nextOrderId() view returns (uint256)',
   'function placeBet(uint8 dir, uint256 amount, address referrer, uint256 expectedPrice, uint256 slippageBps) returns (uint256)',
   'function claim(uint256 orderId)',
-  'function getOrder(uint256 orderId) view returns ((address trader,uint8 direction,uint256 amount,uint256 filledAmount,address referrer,uint8 status,uint256 placedAt,uint256 matchId,uint256 pendingSettlements,uint256 payout,bool unmatchedRefunded))',
+  // The full 13-field Order: expectedPrice and slippageBps were appended (audit L01) and a stale copy decodes wrongly.
+  'function getOrder(uint256 orderId) view returns ((address trader,uint8 direction,uint256 amount,uint256 filledAmount,address referrer,uint8 status,uint256 placedAt,uint256 matchId,uint256 pendingSettlements,uint256 payout,bool unmatchedRefunded,uint256 expectedPrice,uint256 slippageBps))',
 ])
 
 const pub = createPublicClient({ chain: CHAIN, transport: http(RPC) })

@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { pg } from '../db/pg.js'
 import { CHAIN_PROFILE } from '../chainProfile.js'
+import { andFactory } from '../lib/marketScope.js'
 import { parse } from '../lib/validate.js'
 
 /**
@@ -47,7 +48,7 @@ export async function poolsRoutes(app: FastifyInstance) {
           SELECT array_agg(mk.duration_secs ORDER BY mk.duration_secs) AS durations
             FROM markets mk
            WHERE mk.feed_id = '0x' || lpad(substr(c.pool_address, 3), 64, '0')
-             AND mk.chain_id = c.chain_id
+             AND mk.chain_id = c.chain_id${andFactory('mk.factory_address')}
         ) m ON TRUE
        WHERE c.chain_id = $1`
 
