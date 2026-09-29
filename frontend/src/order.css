@@ -61,3 +61,13 @@
 .bet-outcome-tie{color:var(--text)}
 .bet-outcome-open{color:var(--base-blue-2)}
 .row-action{min-height:36px}
+
+/* ── Net result receipt (components/PnlReceipt) ──────────── */
+.osc .osc-pnl{margin-top:10px;padding:9px 11px;border-radius:9px;border:1px solid var(--line-2);background:var(--surface);font-size:12px;line-height:1.5}
+.osc .osc-pnl-row{display:flex;justify-content:space-between;gap:12px;color:var(--text-dim)}
+.osc .osc-pnl-row span:last-child{font-family:var(--mono);color:#fff;text-align:right;white-space:nowrap}
+.osc .osc-pnl-sub span:last-child{color:var(--text-dim)}
+.osc .osc-pnl-net{margin-top:5px;padding-top:6px;border-top:1px solid var(--line);font-weight:700;color:#fff}
+.osc .osc-pnl-gain span:last-child{color:var(--up)}
+.osc .osc-pnl-loss span:last-child{color:var(--down)}
+.osc .osc-pnl-even span:last-child{color:var(--text-dim)}

@@ -9,8 +9,10 @@
  *               matched part, cancel for the rest, and why Claim is not open yet.
  *   running   - fully matched (or the tail came back). Countdown to the result,
  *               then "waiting for the keeper", then Recover after 24 hours.
- *   settled   - win / loss / tie / mixed, with Claim for the trader.
- *   claimed   - the amount actually paid, also after a reload.
+ *   settled   - win / loss / tie / mixed, with Claim for the trader and the
+ *               net result (stake, payout, fees, profit or loss).
+ *   claimed   - the amount actually paid, also after a reload, and the same
+ *               net result.
  *   refunded  - stake returned, and why.
  *
  * Reads order state via useOrderStatus (getOrder / getMatch / the backend's
@@ -47,7 +49,9 @@ import {
 import { shortAddr } from '../lib/symbols'
 import { useOrderStatus } from '../hooks/useOrderStatus'
 import { useNow } from '../hooks/useNow'
+import { buildReceipt, type ReceiptMatch } from '../lib/orderReceipt'
 import { ShareCard } from './ShareCard'
+import { PnlReceipt } from './PnlReceipt'
 import '../order.css'
 
 // Kept as exports: the audit A04 tests and older callers import them from here.
@@ -201,6 +205,25 @@ export function OrderStatusCard({
   const chainOutcome: ClosedOutcome = isTied ? 'tie' : (knownPayout ?? 0n) > 0n ? 'win' : 'loss'
   const apiOutcome = matches.length > 0 ? aggregateOutcome(matches.map((m) => m.outcome)) : undefined
   const outcome: ClosedOutcome = apiOutcome && apiOutcome !== 'open' ? apiOutcome : chainOutcome
+
+  // The net result, once there is one. The per-match list is the exact source.
+  // Without it (API down or behind) an order whose matches all ended the same
+  // way can still be read from the chain: everything filled won, lost or tied.
+  const receiptMatches: ReceiptMatch[] =
+    matches.length > 0
+      ? matches.map((m) => ({ amount: m.amount, outcome: m.outcome }))
+      : filled > 0n && (outcome === 'win' || outcome === 'loss' || outcome === 'tie')
+        ? [{ amount: Number(fmt(filled)), outcome: outcome === 'win' ? 'won' : outcome === 'loss' ? 'lost' : 'tied' }]
+        : []
+  // Settled and refunded orders read order.payout live, so an unknown payout is
+  // simply nothing won. A CLAIMED order's payout was zeroed by claim(): unknown
+  // there means unknown, and no receipt is better than one that says "0".
+  const receiptPayout = payoutStr !== undefined ? Number(payoutStr) : phase === 'claimed' ? null : 0
+  const pnl =
+    phase === 'settled' || phase === 'claimed' || phase === 'refunded'
+      ? buildReceipt({ amount: Number(amountStr), filled: Number(filledStr), payout: receiptPayout, matches: receiptMatches })
+      : null
+  const pnlBlock = pnl ? <PnlReceipt receipt={pnl} /> : null
 
   // ── Reusable pieces ───────────────────────────────────────
   const breakdown = <MatchBreakdown matches={matches} />
@@ -380,6 +403,7 @@ export function OrderStatusCard({
             : `${dir} · ${filledStr} ${CURRENCY_SYMBOL} at risk · payout ${payoutStr ?? '0'} ${CURRENCY_SYMBOL}`}
         </div>
         {outcome === 'refunded' && <div className="osc-sub">{REFUND_EXPLANATION}</div>}
+        {pnlBlock}
         {claimButton}
         {claimNotice}
         {receipt}
@@ -408,6 +432,7 @@ export function OrderStatusCard({
             just now. It is in the claim transaction on the explorer.
           </div>
         )}
+        {pnlBlock}
         {receipt}
         {breakdown}
         {isTrader && payoutStr !== undefined && (
@@ -441,6 +466,7 @@ export function OrderStatusCard({
           A different match on this order won {fmt(order.payout)} {CURRENCY_SYMBOL} - that is still yours to claim.
         </div>
       )}
+      {pnlBlock}
       {claimButton}
       {claimNotice}
       {receipt}

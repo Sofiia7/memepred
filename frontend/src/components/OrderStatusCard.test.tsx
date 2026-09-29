@@ -702,3 +702,115 @@ describe('MatchBreakdown (audit A04, 2026-09-28)', () => {
     expect(screen.queryByText(/emergency/i)).toBeNull()
   })
 })
+
+describe('OrderStatusCard, the net result receipt', () => {
+  /**
+   * A payout is not a profit. The card said "payout 19.8" and left the trader
+   * to subtract the stake and guess the fee. The receipt is that sum, for every
+   * shape an order can end in - and says nothing when it cannot be sure.
+   * (Six-decimal build: 10_000_000n is "10".)
+   */
+  const settled = (payout: bigint) => ({ ...baseOrder, status: 2, pendingSettlements: 0n, payout })
+  const m = (matchId: string, outcome: string, amount = 10) => ({
+    matchId, isLpMatch: false, amount, settled: true, settleAt: NOW - 100, outcome,
+  })
+
+  it('a win: what was staked, what was paid, the fee already taken off, and the profit', async () => {
+    order = settled(19_800_000n)
+    chainMatches['7'] = chainMatch({ settled: true, exitPrice: 2n })
+    apiRecord = { matches: [m('7', 'won')], payout: null }
+
+    await renderCard()
+
+    expect(screen.getByRole('group', { name: /net result/i })).toBeDefined()
+    expect(screen.getByText('Staked and settled')).toBeDefined()
+    expect(screen.getByText('Fees, already taken off')).toBeDefined()
+    expect(screen.getByText('0.2 USDC')).toBeDefined()
+    expect(screen.getByText('+9.8 USDC (+98%)')).toBeDefined()
+  })
+
+  it('a loss is the whole stake', async () => {
+    order = settled(0n)
+    chainMatches['7'] = chainMatch({ settled: true, exitPrice: 2n })
+    apiRecord = { matches: [m('7', 'lost')], payout: null }
+
+    await renderCard()
+
+    expect(screen.getByText('-10 USDC (-100%)')).toBeDefined()
+    expect(screen.queryByText('Fees, already taken off')).toBeNull()
+  })
+
+  it('reads the same result from the chain alone when the backend is down', async () => {
+    order = settled(19_800_000n)
+    chainMatches['7'] = chainMatch({ settled: true, exitPrice: 2n })
+    apiMode = '500'
+
+    await renderCard()
+
+    expect(screen.getByText('+9.8 USDC (+98%)')).toBeDefined()
+  })
+
+  it('a win and a loss on one order net against each other, and a tied match comes back', async () => {
+    // Won 10 (paid 19.8), lost 10, tied 5: at risk 20, returned 5, net -0.2.
+    order = { ...settled(19_800_000n), amount: 25_000_000n, filledAmount: 25_000_000n }
+    chainMatches['7'] = chainMatch({ settled: true, exitPrice: 2n })
+    apiRecord = { matches: [m('7', 'won'), m('8', 'lost'), m('9', 'tied', 5)], payout: null }
+
+    await renderCard()
+
+    expect(screen.getByText('Mixed result')).toBeDefined()
+    expect(screen.getByText('Also returned to you in full')).toBeDefined()
+    expect(screen.getByText('-0.2 USDC (-1%)')).toBeDefined()
+  })
+
+  it('a claimed order shows it too, from the amount the backend remembers', async () => {
+    order = { ...baseOrder, status: 3, pendingSettlements: 0n, payout: 0n }
+    chainMatches['7'] = chainMatch({ settled: true, exitPrice: 2n })
+    apiRecord = { matches: [m('7', 'won')], payout: 19.8 }
+
+    await renderCard()
+
+    expect(screen.getByText(/received 19.8 USDC/)).toBeDefined()
+    expect(screen.getByText('+9.8 USDC (+98%)')).toBeDefined()
+  })
+
+  it('says nothing for a claimed order whose paid amount cannot be found', async () => {
+    order = { ...baseOrder, status: 3, pendingSettlements: 0n, payout: 0n }
+    chainMatches['7'] = chainMatch({ settled: true, exitPrice: 2n })
+    apiMode = '404'
+
+    await renderCard()
+
+    expect(screen.getByText(/payout amount unavailable/i)).toBeDefined()
+    expect(screen.queryByText('Net result')).toBeNull()
+  })
+
+  it('says nothing for a tie: the headline already says the stake came back', async () => {
+    order = settled(0n)
+    chainMatches['7'] = chainMatch({ settled: true, entryPrice: 5n, exitPrice: 5n })
+    apiRecord = { matches: [m('7', 'tied')], payout: null }
+
+    await renderCard()
+
+    expect(screen.queryByText('Net result')).toBeNull()
+  })
+
+  it('says nothing while the backend list is behind the chain (a match missing from it)', async () => {
+    order = { ...settled(19_800_000n), amount: 20_000_000n, filledAmount: 20_000_000n }
+    chainMatches['7'] = chainMatch({ settled: true, exitPrice: 2n })
+    apiRecord = { matches: [m('7', 'won')], payout: null } // 10 of the 20 filled
+
+    await renderCard()
+
+    expect(screen.queryByText('Net result')).toBeNull()
+  })
+
+  it('is not shown on an order that is still running', async () => {
+    order = { ...baseOrder }
+    apiRecord = { matches: [m('7', 'pending')], payout: null }
+
+    await renderCard()
+
+    expect(screen.queryByText('Net result')).toBeNull()
+  })
+})
