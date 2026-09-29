@@ -257,13 +257,18 @@ async function notify(env: Env, subject: string, body: string): Promise<string[]
 
   if (env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_CHAT_ID) {
     try {
-      await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      const res = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
         method:  'POST',
         headers: { 'content-type': 'application/json' },
         body:    JSON.stringify({ chat_id: env.TELEGRAM_CHAT_ID, text, disable_web_page_preview: true }),
         signal:  AbortSignal.timeout(TIMEOUT_MS),
       })
-      sent.push('telegram')
+      // Telegram answers 200 only when it accepted the message. A wrong token (401) or a chat the
+      // bot cannot reach (400, 403) is an ordinary response, not a thrown error, so it used to be
+      // counted as sent: /test-alert then claimed a delivery that never happened, which is exactly
+      // the false comfort that route exists to remove. Its description carries no secret.
+      if (res.ok) sent.push('telegram')
+      else console.error('telegram rejected the alert', res.status, (await res.text().catch(() => '')).slice(0, 160))
     } catch (err) { console.error('telegram failed', err) }
   }
 
@@ -271,13 +276,15 @@ async function notify(env: Env, subject: string, body: string): Promise<string[]
     try {
       // `content` is Discord's field, `text` is Slack's; a generic receiver
       // gets both, plus the structured pair. One shape fits all three.
-      await fetch(env.ALERT_WEBHOOK_URL, {
+      const res = await fetch(env.ALERT_WEBHOOK_URL, {
         method:  'POST',
         headers: { 'content-type': 'application/json' },
         body:    JSON.stringify({ content: text, text, subject, body }),
         signal:  AbortSignal.timeout(TIMEOUT_MS),
       })
-      sent.push('webhook')
+      // Same rule as Telegram: only a 2xx counts as delivered.
+      if (res.ok) sent.push('webhook')
+      else console.error('webhook rejected the alert', res.status)
     } catch (err) { console.error('webhook failed', err) }
   }
 
