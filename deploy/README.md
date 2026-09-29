@@ -185,3 +185,74 @@ X-Worker-Secret: <WORKER_SECRET from .env>
 
 `/api/geo` rejects requests without this secret, so direct origin hits can't
 spoof a country.
+
+## 11. Robinhood Chain testnet stack (rhc-backend, rhc-keeper)
+
+Two extra services in the SAME compose project as Base (`docker-compose.rhc.yml`), sharing its Postgres
+and Redis: their own database `memepred_rhc` and Redis database 1. Naming only these two services in
+every command keeps Base's containers exactly as they are.
+
+**Where it lives on the VPS.** The compose project directory is `/home/openclaw/memepred/deploy`. The
+image is built from a separate, minimal source tree at `/home/openclaw/memepred-rhc` (not a git
+checkout): the workspace manifests (root `package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`,
+`frontend/package.json`, `workers/package.json`), `backend/` (src, scripts, package.json,
+tsconfig.json) and `deploy/backend.Dockerfile`. `.env.rhc` sits next to it. pnpm reconciles
+`--frozen-lockfile` against EVERY workspace manifest, so all of them have to be in sync, not just
+`backend/`.
+
+**Syncing the tree** (from the repo root, on a machine that has the repo):
+
+```bash
+tar czf rhc-src.tgz pnpm-workspace.yaml package.json pnpm-lock.yaml frontend/package.json \
+  workers/package.json backend/package.json backend/tsconfig.json backend/src backend/scripts \
+  deploy/backend.Dockerfile
+# copy it over, then on the VPS:
+cd /home/openclaw/memepred-rhc && mv backend/src backend/src.bak-$(date +%Y%m%d%H%M) \
+  && tar xzf /tmp/rhc-src.tgz
+```
+
+**Build and start** (on the VPS):
+
+```bash
+cd /home/openclaw/memepred/deploy
+docker compose -f docker-compose.yml -f docker-compose.rhc.yml build rhc-backend rhc-keeper
+docker compose -f docker-compose.yml -f docker-compose.rhc.yml up -d rhc-backend rhc-keeper
+```
+
+Migrations run by themselves when either container starts (`runMigrations()`, under an advisory lock).
+
+**After a contract redeploy.** Put the new addresses and `INDEXER_START_BLOCK` (a block just before the
+deployment) into `.env.rhc`, then clear the indexer cursors so the new deployment's first events are not
+skipped, then restart:
+
+```bash
+docker exec deploy-postgres-1 psql -U memepred -d memepred_rhc -c "DELETE FROM _indexer_cursor"
+docker compose -f docker-compose.yml -f docker-compose.rhc.yml up -d --force-recreate rhc-backend rhc-keeper
+```
+
+Markets, orders and matches of the previous deployment stay in the database. From migration 008 every
+market row carries the factory that created it and the API and keeper only serve and act on the current
+factory's markets, so nothing has to be deleted.
+
+**Environment (`.env.rhc`, all read through `env_file`).**
+
+| Variable | Meaning |
+|---|---|
+| `CHAIN_PROFILE=rhc`, `CHAIN_ID=46630`, `RHC_RPC_URL` | chain profile and RPC |
+| `MARKET_FACTORY`, `ORACLE_RESOLVER`, `FEE_DISTRIBUTOR`, `REFERRAL_REGISTRY`, `GENESIS_NFT`, `LIQUIDITY_POOL`, `BADGE_NFT`, `USDC_ADDRESS` | the deployment (`USDC_ADDRESS` is the stake token, WETH, named that way because `config.ts` reads it) |
+| `INDEXER_START_BLOCK` | first block the indexer scans when it has no cursor |
+| `KEEPER_PRIVATE_KEY`, `KEEPER_ADDRESS` | the settlement wallet, needs testnet ETH (see `/health/deep`) |
+| `WORKER_SECRET` | must equal the secret of the Cloudflare Worker `flipthememe-edge-rhc`; without it the origin accepts direct requests and every visitor shares one rate-limit bucket |
+| `ALLOWED_ORIGINS` | CORS origins of the RHC site, for example `https://rhc.flipthememe.com` (the built-in default is the Base site only) |
+| `RHC_AUTO_CREATE_MARKETS=false` | markets are created by hand after review |
+| `READY_MATCH_WARN_SEC` | `/health/deep` warns when a due match has waited longer than this (default 90) |
+| `GIT_COMMIT` | shown by `GET /api/deployment` so a reviewer can tie the running code to a commit |
+
+**Making it public.** Three things have to exist together: a proxied DNS record `api-rhc` in the
+`flipthememe.com` zone, the Caddy site block for `api-rhc.flipthememe.com` (reverse proxy to
+`rhc-backend:3002`), and the Worker `flipthememe-edge-rhc` with the same `WORKER_SECRET`. Check with
+`curl https://api-rhc.flipthememe.com/health`, `/health/deep`, `/health/edge` and `/api/deployment`.
+
+**Caddyfile warning.** The live Caddyfile on the VPS also serves a site that belongs to another project.
+This repo's `deploy/Caddyfile` does NOT contain it, so never copy the repo file over the live one; edit the
+live file in place, run `caddy validate` and only then reload.
