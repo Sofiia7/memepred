@@ -85,7 +85,12 @@ contract PoolOrderbookMarket is OrderbookMarket {
      * p90 rather than the maximum on purpose: the spikes are short - the one
      * caught in the sample lasted four minutes - and a settlement is not
      * urgent, because its exit price is anchored to the match's own settleAt
-     * rather than to whenever the keeper ran. The keeper waits the spike out.
+     * rather than to whenever the keeper ran. It is not unbounded either: the
+     * pool's observation ring must still cover the exit window when the keeper
+     * gets there (about 240 seconds after settleAt for a 5-minute market on a
+     * pool that trades every second), and past that the match is refunded
+     * rather than settled - see PoolOracleResolver._settleOne. A spike of a
+     * few minutes is survivable, a keeper that sits out a long one is not.
      * Pricing for the maximum instead would put the floor at 0.025 ETH against
      * a 0.04 ETH ceiling, which is not a product.
      *

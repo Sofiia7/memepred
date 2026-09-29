@@ -7,6 +7,7 @@ import "../src/PoolMarketFactory.sol";
 import "../src/PoolOracleResolver.sol";
 import "../src/RhcFeeDistributor.sol";
 import "../src/LiquidityPool.sol";
+import "../src/PoolLiquidityPool.sol";
 import "../src/GenesisNFT.sol";
 import "../src/ReferralRegistry.sol";
 import "./mocks/MockUniswapV3Pool.sol";
@@ -50,7 +51,7 @@ contract L04FeeEconomicsTest is Test {
         v3Factory = new MockUniswapV3Factory();
         resolver = new PoolOracleResolver(address(weth));
         GenesisNFT genesisNFT = new GenesisNFT("ipfs://test/");
-        lp = new LiquidityPool(IERC20(address(weth)), address(genesisNFT));
+        lp = new PoolLiquidityPool(IERC20(address(weth)), address(genesisNFT));
         genesisNFT.setLiquidityPool(address(lp));
         feeDistributor = new RhcFeeDistributor(address(weth), treasury, address(lp), multisig);
         ReferralRegistry referralRegistry = new ReferralRegistry();

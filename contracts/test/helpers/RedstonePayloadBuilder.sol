@@ -45,6 +45,7 @@ library RedstonePayloadBuilder {
      * arrays, and a test helper that needs a constructor would infect every
      * test that uses it.
      */
+    // These five are Anvil's public default test keys (accounts 0-4), not secrets.
     function signerKey(uint256 index) internal pure returns (uint256) {
         if (index == 0) return 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80;
         if (index == 1) return 0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d;

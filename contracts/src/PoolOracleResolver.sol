@@ -39,10 +39,11 @@ import "./lib/TickMath.sol";
  *
  *         **What that costs.** The pool's observation ring is finite, so a
  *         match can age out of it. observe() reverting 'OLD' is a supported
- *         outcome: it becomes MatchUnpriceable, exactly as an outage longer
- *         than HISTORY_RETENTION does on Base, and then SETTLE_GRACE and
- *         emergencyRefundMatch take over. PoolMarketFactory's cardinality gate
- *         is what keeps that rare.
+ *         outcome: history the ring no longer holds can never come back, so
+ *         the match is refunded at once through the market's
+ *         refundUnpriceableMatch (both stakes, no fee) rather than left
+ *         locked for SETTLE_GRACE. PoolMarketFactory's cardinality gate is
+ *         what keeps that rare.
  */
 contract PoolOracleResolver is AccessControl {
     bytes32 public constant KEEPER_ROLE = keccak256("KEEPER_ROLE");
@@ -100,10 +101,10 @@ contract PoolOracleResolver is AccessControl {
      * A one-second anchor is fixed history the instant it passes: once a
      * match's exit window has closed, that one second's tick can never
      * change, so if a single cheap swap ever pushes it past MAX_SPREAD_BPS
-     * from the window average, the match is unsettleable FOREVER through this
-     * function - the only recovery is a 24-hour wait for
-     * emergencyRefundMatch, which pays the winner nothing but their own stake
-     * back. Averaging over a longer tail does not remove the guard, it raises
+     * from the window average, the match can never settle through this
+     * function and is refunded instead, which pays the winner nothing but
+     * their own stake back. Averaging over a longer tail does not remove the
+     * guard, it raises
      * the cost of tripping it: moving a 20-second average as far as a
      * 1-second spot costs roughly 20x the swap volume, and leaves roughly
      * 20 seconds - hundreds of blocks at this chain's ~82ms block time - for
@@ -114,10 +115,27 @@ contract PoolOracleResolver is AccessControl {
 
     uint256 public constant MAX_SPREAD_BPS = 200; // 2%, past that the match is refunded
 
+    // Why a due match was refunded instead of settled (audit L02, 2026-09-28).
+    // All three are permanent: the answer cannot change with another call.
+    uint8 public constant REASON_HISTORY = 1; // the observation ring no longer reaches the window
+    uint8 public constant REASON_SPREAD = 2; // window average vs its own tail beyond MAX_SPREAD_BPS
+    uint8 public constant REASON_GRACE = 3; // SETTLE_GRACE lapsed before anyone priced it
+
     event MarketResolved(address indexed market, bool upWon, uint256 entry, uint256 exit);
-    event MarketRefunded(address indexed market, string reason);
-    /// A match came due but the pool cannot price its settleAt window.
+    /// A due match was refunded, both stakes back and no fee, because its exit
+    /// price can never be computed. `reason` is one of the REASON_* constants.
+    event MatchUnpriceableRefunded(address indexed market, uint256 indexed matchId, uint8 reason);
+    /// A match came due but cannot be priced RIGHT NOW (no liquidity, or a pool
+    /// read that failed for a reason other than history). It may be later, so
+    /// nothing was changed.
     event MatchUnpriceable(address indexed market, uint256 indexed matchId, uint256 settleAt);
+
+    /// Outcome of trying to read a match's exit window from the pool.
+    enum TwapStatus {
+        OK,
+        HISTORY_GONE, // observe() reverted 'OLD': permanent
+        UNREADABLE // any other failure: may pass later
+    }
 
     error ZeroAddress();
     /// A pool reported a mean tick outside Uniswap's own tick range.
@@ -205,15 +223,15 @@ contract PoolOracleResolver is AccessControl {
         _resolveBatch(market, 0, 0);
     }
 
-    /// @notice Bounded batch-settle; returns how many matches actually
-    ///         settled. Callable by anyone.
+    /// @notice Bounded batch-settle; returns how many matches reached a final
+    ///         state, settled or refunded as unpriceable. Callable by anyone.
     function resolveOrderbookMarketBatch(address market, uint256 maxCount) external returns (uint256 settled) {
         return _resolveBatch(market, 0, maxCount);
     }
 
     /// @notice Settle a window starting `offset` past the queue head, so one
     ///         stuck match at the head cannot hide everything behind it.
-    ///         Callable by anyone.
+    ///         Returns how many matches reached a final state. Callable by anyone.
     function resolveOrderbookMarketBatchFrom(address market, uint256 offset, uint256 maxCount)
         external
         returns (uint256 settled)
@@ -251,14 +269,25 @@ contract PoolOracleResolver is AccessControl {
     }
 
     /**
-     * @dev Settle one match, priced at its OWN settleAt. Returns false when the
-     *      match was skipped rather than settled.
+     * @dev Settle one match, priced at its OWN settleAt. Returns true when the
+     *      match reached a final state (settled, or refunded because it can
+     *      never be priced) and false when it was left alone.
      *
      *      Anchoring at settleAt rather than at block.timestamp is the same
      *      rule OracleResolver enforces and for the same reason: a keeper that
      *      comes back late must not settle every overdue match against the
      *      price at the time it happened to wake up. On a pool that anchoring
      *      is free, because observe() takes the offsets we ask for.
+     *
+     *      Audit L02 (2026-09-28): two outcomes used to be treated as "try
+     *      again later" when they are not, and the match sat locked for 24
+     *      hours before emergencyRefundMatch returned the same stakes anyway.
+     *      Both exit windows end at settleAt, so once it has passed they are
+     *      history: a ring that no longer reaches back cannot grow the past
+     *      back, and a consistency guard that failed on fixed data fails
+     *      identically on every later call. Those now refund immediately. What
+     *      stays "later" is only what can really change: no liquidity right
+     *      now, and a pool read that failed for a reason other than 'OLD'.
      */
     function _settleOne(OrderbookMarket m, PoolView memory pv, uint256 window, uint256 matchId)
         internal
@@ -267,50 +296,73 @@ contract PoolOracleResolver is AccessControl {
         address market = address(m);
         uint256 settleAt = m.getMatch(matchId).settleAt;
 
+        // Not due: nothing to decide, and it MUST come before every refund
+        // branch below. A refund cannot be undone and resolveOrderbookMatch
+        // lets anyone name any matchId, so "the window is not readable yet"
+        // has to mean "wait", never "give up".
+        if (block.timestamp < settleAt) return false;
+
         if (block.timestamp >= settleAt + SETTLE_GRACE) {
             // OrderbookMarket.settleMatch itself would revert "settlement
             // window expired" past this point, taking the whole batch down
-            // with it - see SETTLE_GRACE's doc comment. Skip cleanly instead;
-            // emergencyRefundMatch is the only settlement left available, and
-            // it needs no help from this contract.
-            emit MatchUnpriceable(market, matchId, settleAt);
-            return false;
+            // with it - see SETTLE_GRACE's doc comment - and the ring cannot
+            // still hold a window this old on any pool that trades.
+            return _refundUnpriceable(m, matchId, REASON_GRACE);
         }
 
         if (!pv.hasLiquidity) {
             // The pool died under the position. Nothing here can be priced
             // honestly, and a drained pool quotes whatever the last swap left
-            // behind, so refuse rather than settle against it.
+            // behind, so refuse rather than settle against it. Left alone
+            // rather than refunded because liquidity can return; if it does
+            // not, the ring ages out and the HISTORY branch below refunds.
             emit MatchUnpriceable(market, matchId, settleAt);
             return false;
         }
 
-        (uint256 exitTwap, uint256 spotAtAnchor, bool ok) = _twapWadAt(pv, window, settleAt);
-        if (!ok) {
+        (TwapStatus status, uint256 exitTwap, uint256 spotAtAnchor) = _twapWadAt(pv, window, settleAt);
+        if (status == TwapStatus.HISTORY_GONE) {
             // The observation ring no longer reaches back to this match's
-            // deadline. Same outcome as a keeper outage on Base: skip it, and
-            // once SETTLE_GRACE lapses anyone can call emergencyRefundMatch.
+            // deadline. Same cause as a keeper outage on Base, and just as
+            // final: refund now instead of after SETTLE_GRACE.
+            return _refundUnpriceable(m, matchId, REASON_HISTORY);
+        }
+        if (status == TwapStatus.UNREADABLE) {
             emit MatchUnpriceable(market, matchId, settleAt);
             return false;
         }
 
         // Internal consistency: the window average versus the average over
         // its own last ANCHOR_FRACTION share, both fixed the instant
-        // block.timestamp passes settleAt + window - see ANCHOR_FRACTION's
-        // doc comment for why the anchor is no longer a single tick. There is
-        // deliberately no second guard comparing this to LIVE spot any more:
-        // it only ever applied within MAX_PRICE_AGE of settleAt, so it never
-        // stopped a patient manipulator, only every prompt settlement on a
-        // pool that had simply kept trading normally since - which on an
-        // active pool is the common case, not the exception.
+        // block.timestamp passes settleAt - see ANCHOR_FRACTION's doc comment
+        // for why the anchor is no longer a single tick. There is deliberately
+        // no second guard comparing this to LIVE spot any more: it only ever
+        // applied within MAX_PRICE_AGE of settleAt, so it never stopped a
+        // patient manipulator, only every prompt settlement on a pool that had
+        // simply kept trading normally since - which on an active pool is the
+        // common case, not the exception.
         if (_spread(exitTwap, spotAtAnchor) > MAX_SPREAD_BPS) {
-            emit MarketRefunded(market, "oracle spread too high");
-            return false;
+            return _refundUnpriceable(m, matchId, REASON_SPREAD);
         }
 
         m.settleMatch(matchId, exitTwap);
         emit MarketResolved(market, exitTwap > m.getMatch(matchId).entryPrice, m.getMatch(matchId).entryPrice, exitTwap);
         return true;
+    }
+
+    /// @dev Refund a match through the market. A failure here (an LP callback
+    ///      that cannot complete, say) is caught rather than propagated: one
+    ///      match that cannot be refunded yet must not take a whole batch down
+    ///      with it, and emergencyRefundMatch remains as the permissionless
+    ///      backstop once SETTLE_GRACE passes.
+    function _refundUnpriceable(OrderbookMarket m, uint256 matchId, uint8 reason) internal returns (bool) {
+        try m.refundUnpriceableMatch(matchId) {
+            emit MatchUnpriceableRefunded(address(m), matchId, reason);
+            return true;
+        } catch {
+            emit MatchUnpriceable(address(m), matchId, m.getMatch(matchId).settleAt);
+            return false;
+        }
     }
 
     // ── TWAP ───────────────────────────────────────────────
@@ -329,20 +381,23 @@ contract PoolOracleResolver is AccessControl {
      *      last `window / ANCHOR_FRACTION` seconds, both as WAD quotes of the
      *      token in WETH.
      *
-     *      Returns ok=false rather than reverting when the pool cannot reach
+     *      Returns a status rather than reverting when the pool cannot reach
      *      back that far, so one unpriceable match cannot block a whole batch -
-     *      the same contract OracleResolver._getTWAPAt offers.
+     *      the same contract OracleResolver._getTWAPAt offers. The status is
+     *      three-valued because the caller must tell "the ring lost this
+     *      window" (permanent, so refund) from "the read failed for some other
+     *      reason" (unknown, so leave it alone).
      */
     function _twapWadAt(PoolView memory pv, uint256 window, uint256 anchor)
         internal
         view
-        returns (uint256 twap, uint256 spotAtAnchor, bool ok)
+        returns (TwapStatus status, uint256 twap, uint256 spotAtAnchor)
     {
-        if (anchor > block.timestamp) return (0, 0, false);
+        if (anchor > block.timestamp) return (TwapStatus.UNREADABLE, 0, 0);
         uint256 age = block.timestamp - anchor;
         // uint32 is what observe takes; an age past that means a match older
         // than 136 years, which is not a case worth encoding for.
-        if (age + window > type(uint32).max) return (0, 0, false);
+        if (age + window > type(uint32).max) return (TwapStatus.HISTORY_GONE, 0, 0);
 
         uint256 anchorWindow = window / ANCHOR_FRACTION;
         if (anchorWindow == 0) anchorWindow = 1; // window itself is tiny; degrade to a spot read
@@ -363,15 +418,22 @@ contract PoolOracleResolver is AccessControl {
         int56[] memory cumulatives;
         try pv.pool.observe(secondsAgos) returns (int56[] memory c, uint160[] memory) {
             cumulatives = c;
+        } catch Error(string memory reason) {
+            // Uniswap's own 'OLD': the ring does not reach the start of the
+            // window, and never will again. Anything else that reverts with a
+            // reason is not proof of that.
+            if (keccak256(bytes(reason)) == keccak256("OLD")) return (TwapStatus.HISTORY_GONE, 0, 0);
+            return (TwapStatus.UNREADABLE, 0, 0);
         } catch {
-            // 'OLD': the ring does not reach the start of the window.
-            return (0, 0, false);
+            // No reason at all (a panic, a custom error, running out of gas
+            // inside the pool). Not proof of anything, so never a refund.
+            return (TwapStatus.UNREADABLE, 0, 0);
         }
 
         int24 meanTick = _meanFrom(cumulatives[2] - cumulatives[0], window);
         int24 anchorTick = _meanFrom(cumulatives[2] - cumulatives[1], anchorWindow);
 
-        return (_quoteWad(pv.token0, meanTick), _quoteWad(pv.token0, anchorTick), true);
+        return (TwapStatus.OK, _quoteWad(pv.token0, meanTick), _quoteWad(pv.token0, anchorTick));
     }
 
     /// @dev Mean tick over `window`, ending `secondsAgo` back. ok=false when

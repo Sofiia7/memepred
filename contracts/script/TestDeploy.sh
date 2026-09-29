@@ -6,6 +6,7 @@ anvil --port 8545 > anvil_out.log 2>&1 &
 ANVIL_PID=$!
 sleep 2
 
+# Anvil's well-known default account 0 test key: public, worthless, not a secret.
 export PRIVATE_KEY=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
 export MULTISIG_ADDRESS=0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266
 export TREASURY_ADDRESS=0x70997970C51812dc3A010C7d01b50e0d17dc79C8

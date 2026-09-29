@@ -6,6 +6,7 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "../src/PoolMarketFactory.sol";
 import "../src/PoolOracleResolver.sol";
 import "../src/LiquidityPool.sol";
+import "../src/PoolLiquidityPool.sol";
 import "../src/FeeDistributor.sol";
 import "../src/ReferralRegistry.sol";
 import "../src/GenesisNFT.sol";
@@ -47,7 +48,7 @@ contract PoolMarketFactoryTest is Test {
         resolver = new PoolOracleResolver(address(weth));
 
         GenesisNFT genesisNFT = new GenesisNFT("ipfs://test/");
-        lp = new LiquidityPool(IERC20(address(weth)), address(genesisNFT));
+        lp = new PoolLiquidityPool(IERC20(address(weth)), address(genesisNFT));
         genesisNFT.setLiquidityPool(address(lp));
         feeDistributor = new FeeDistributor(address(weth), multisig, address(lp), multisig);
         referralRegistry = new ReferralRegistry();
@@ -481,9 +482,10 @@ contract PoolMarketFactoryTest is Test {
      * writes one observation per second, so on a pump the ring holds exactly
      * `cardinality` seconds and the delay budget is `cardinality - window`.
      *
-     * That budget is what a market costs when it runs out: observe reverts OLD,
-     * the match is MatchUnpriceable, and the stake sits locked until
-     * emergencyRefundMatch opens a day later.
+     * That budget is what a market costs when it runs out: observe reverts OLD
+     * and the resolver refunds the match at once (audit L02, both stakes, no
+     * fee). Before that fix the stake sat locked until emergencyRefundMatch
+     * opened a day later; either way the winner is paid nothing.
      *
      * Measured over 148 real settlements on 46630: p50 33s, p90 56s, p95 61s,
      * p99 65s, bounded by the keeper's 60s tick. The one outlier at 16,983s was

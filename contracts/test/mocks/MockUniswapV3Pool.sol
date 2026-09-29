@@ -38,6 +38,12 @@ contract MockUniswapV3Pool is IUniswapV3Pool {
     /// window does, regardless of the recorded segments.
     bool public forceOld;
 
+    /// Set to make observe() fail for a reason that is NOT the ring running
+    /// out: 1 = a revert with some other reason string, 2 = a bare revert with
+    /// no data at all. The resolver must treat neither as proof that history
+    /// is gone.
+    uint8 public forceOtherRevert;
+
     constructor(address _token0, address _token1, uint24 _fee) {
         token0 = _token0;
         token1 = _token1;
@@ -65,6 +71,10 @@ contract MockUniswapV3Pool is IUniswapV3Pool {
 
     function setForceOld(bool v) external {
         forceOld = v;
+    }
+
+    function setForceOtherRevert(uint8 mode) external {
+        forceOtherRevert = mode;
     }
 
     function setTokens(address _token0, address _token1) external {
@@ -106,6 +116,8 @@ contract MockUniswapV3Pool is IUniswapV3Pool {
         returns (int56[] memory tickCumulatives, uint160[] memory secondsPerLiquidityCumulativeX128s)
     {
         require(!forceOld, "OLD");
+        if (forceOtherRevert == 1) revert("LOK");
+        if (forceOtherRevert == 2) revert();
         require(segments.length > 0, "OLD");
 
         tickCumulatives = new int56[](secondsAgos.length);

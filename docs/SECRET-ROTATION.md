@@ -28,15 +28,15 @@
 | `WORKER_SECRET` | `.env:66`, `deploy/.env:12`, `.testwallets/worker-secret.txt`, + Cloudflare secret воркера `flipthememe-edge` | HMAC-секрет geo-эндпоинта | Нет | **Ротировать** (см. C1) — он защищает живой `/api/geo`. |
 | `POSTGRES_PASSWORD` | `.env:72` | Пароль БД | Нет | Ротировать, если backend публично доступен (C2). |
 | `REDIS_PASSWORD` | `.env:73` | Пароль Redis | Нет | Ротировать, если Redis публично доступен (C2). |
-| Deployer `PRIVATE_KEY` `0x3ae5218b…` → `0x12f9B9De…48BD2` | `.env:13`, `deploy/.env:11/25/26` | Ключ EOA (тестнет) | Нет | Burn-метка (B). Владелец всех контрактов. |
-| Keeper `0x665aa9…` → `0xbFa008e5…eea4` | `.env:68`, `.testwallets/keeper.json` | Ключ EOA (тестнет) | Нет | Burn-метка (B). KEEPER_ROLE + marketCreator + emergencyPauser. |
-| Badge minter `0xce39d2…` → `0xb183b09f…875e6` | `.env:17/77`, `.testwallets/badge-minter.json` | Ключ EOA (тестнет) | Нет | Burn-метка (B). |
-| Multisig stand-in `0x0e2bd7…` → `0xAA1a14ad…9047F` | `.testwallets/multisig-standin.json` | Ключ EOA (тестнет) | Нет | На тестнете не используется. Burn-метка. |
+| Deployer `PRIVATE_KEY` → `0x12f9B9De…48BD2` | `.env:13`, `deploy/.env:11/25/26` | Ключ EOA (тестнет) | Нет | Burn-метка (B). Владелец всех контрактов. |
+| Keeper key → `0xbFa008e5…eea4` | `.env:68`, `.testwallets/keeper.json` | Ключ EOA (тестнет) | Нет | Burn-метка (B). KEEPER_ROLE + marketCreator + emergencyPauser. |
+| Badge minter key → `0xb183b09f…875e6` | `.env:17/77`, `.testwallets/badge-minter.json` | Ключ EOA (тестнет) | Нет | Burn-метка (B). |
+| Multisig stand-in key → `0xAA1a14ad…9047F` | `.testwallets/multisig-standin.json` | Ключ EOA (тестнет) | Нет | На тестнете не используется. Burn-метка. |
 | Бот-кошельки ×3 → `0x6E32…1895`, `0xfd43…dF48`, `0x5248…63F1` | `.testwallets/wallets.env` | Ключи EOA (тестнет) | Нет | Burn-метка. |
 | Vercel OIDC token | `frontend/.vercel/.env.production.local:20` | Эфемерный JWT | Нет | **Ничего не делать** — Vercel сам ротирует (срок уже истёк). Файл не шарить. |
 | `BASESCAN_API_KEY`, `DISCORD_BOT_TOKEN`, `TWITTER_BEARER_TOKEN` | `.env:21/43/44` | Внешние API | Нет | Сейчас плейсхолдеры (`...`), не заданы. |
 
-> ⚠️ **Нашлось попутно (не безопасность, но почини):** deployer-ключ `0x3ae5218b…` в
+> ⚠️ **Нашлось попутно (не безопасность, но почини):** deployer-ключ (адрес `0x12f9B9De…48BD2`) в
 > `deploy/.env` переиспользован как `KEEPER_PRIVATE_KEY` **и** `BADGE_MINTER_PRIVATE_KEY` —
 > один ключ = деплойер+кипер+минтер. На mainnet это недопустимо (single point of failure).
 > Плюс `deploy/.env` (docker-стек) и корневой `.env` указывают на **разные** keeper-ключи

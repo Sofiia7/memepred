@@ -30,6 +30,12 @@ contract MockSettleableMarket {
 
     Settlement[] public settlements;
 
+    /// matchIds passed to refundUnpriceableMatch, in call order.
+    uint256[] public refunds;
+    /// Make refundUnpriceableMatch revert, the way a market whose LP callback
+    /// cannot complete would.
+    bool public failRefunds;
+
     constructor(bytes32 _feedId, uint256 _duration) {
         feedId = _feedId;
         duration = _duration;
@@ -72,7 +78,25 @@ contract MockSettleableMarket {
         settlements.push(Settlement({matchId: matchId, exitPrice: exitPrice}));
     }
 
+    function refundUnpriceableMatch(uint256 matchId) external {
+        require(!failRefunds, "refund blocked");
+        OrderbookMarket.Match storage m = matches[matchId];
+        require(m.amount > 0, "match not found");
+        require(!m.settled, "already settled");
+        require(block.timestamp >= m.settleAt, "too early");
+        m.settled = true;
+        refunds.push(matchId);
+    }
+
+    function setFailRefunds(bool v) external {
+        failRefunds = v;
+    }
+
     function settlementCount() external view returns (uint256) {
         return settlements.length;
+    }
+
+    function refundCount() external view returns (uint256) {
+        return refunds.length;
     }
 }

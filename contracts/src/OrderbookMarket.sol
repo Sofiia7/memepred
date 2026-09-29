@@ -470,8 +470,8 @@ contract OrderbookMarket is ReentrancyGuard, Pausable, PrimaryProdDataServiceCon
             // order that has drifted outside its own tolerance is evicted
             // exactly like an expired one, never force-filled at a price it
             // never agreed to. It still resolves normally afterwards -
-            // refundExpired needs no help from this loop, and does not care
-            // whether the order is still in the queue.
+            // refundExpired and cancelOrder need no help from this loop, and
+            // do not care whether the order is still in the queue.
             if (
                 candidate.status != OrderStatus.PENDING || candidate.unmatchedRefunded
                     || block.timestamp > candidate.placedAt + MATCH_TIMEOUT
@@ -780,12 +780,49 @@ contract OrderbookMarket is ReentrancyGuard, Pausable, PrimaryProdDataServiceCon
 
     // ── EMERGENCY REFUND (matched-but-unsettled) ───────────
     /// @notice Refund a matched-but-unsettled match after SETTLE_GRACE.
+    /// @dev Permissionless. The backstop for everything refundUnpriceableMatch
+    ///      below does not reach: a resolver nobody called, or one whose
+    ///      decision was to keep waiting.
     function emergencyRefundMatch(uint256 matchId) external nonReentrant {
         Match storage m = matches[matchId];
         require(m.amount > 0, "match not found");
         require(!m.settled, "already settled");
         require(block.timestamp > m.settleAt + SETTLE_GRACE, "grace not over");
+        _refundMatch(matchId, m);
+    }
 
+    /**
+     * @notice Refund a due match the resolver has proven can never be priced,
+     *         without making both sides wait out SETTLE_GRACE. Resolver only.
+     * @dev    Audit L02 (2026-09-28). A match whose exit window fails the
+     *         resolver's consistency guard, or has aged out of the pool's
+     *         observation ring, is not "waiting for the price to calm down":
+     *         both windows are history the instant settleAt passes, so no
+     *         later call can ever produce a different answer. Before this,
+     *         such a match sat locked for 24 hours and was then refunded by
+     *         emergencyRefundMatch anyway - same outcome, a day later, and the
+     *         UI and the risk text both promised a retry that could not
+     *         happen.
+     *
+     *         Only the resolver may call it because only the resolver knows
+     *         the answer is permanent, and the market checks that it is due
+     *         and unsettled itself so a resolver bug cannot refund a match
+     *         that has not come due. Stakes come back in full, no fee, exactly
+     *         as in emergencyRefundMatch - this is the same refund, reached
+     *         sooner.
+     */
+    function refundUnpriceableMatch(uint256 matchId) external nonReentrant {
+        require(msg.sender == resolver, "only resolver");
+        Match storage m = matches[matchId];
+        require(m.amount > 0, "match not found");
+        require(!m.settled, "already settled");
+        require(block.timestamp >= m.settleAt, "too early");
+        _refundMatch(matchId, m);
+    }
+
+    /// @dev Shared body of emergencyRefundMatch and refundUnpriceableMatch.
+    ///      Callers own the eligibility checks.
+    function _refundMatch(uint256 matchId, Match storage m) internal {
         m.settled = true;
         _advancePendingSettlementsHead();
 
@@ -859,7 +896,30 @@ contract OrderbookMarket is ReentrancyGuard, Pausable, PrimaryProdDataServiceCon
         require(!o.unmatchedRefunded, "already refunded");
         require(o.status == OrderStatus.PENDING || o.status == OrderStatus.MATCHED, "wrong status");
         require(block.timestamp > o.placedAt + MATCH_TIMEOUT, "not expired");
+        _withdrawUnmatched(orderId, o);
+    }
 
+    /// @notice Withdraw the still-unmatched part of your own order right now,
+    ///         without waiting for MATCH_TIMEOUT. Trader only.
+    /// @dev    Audit L01 (2026-09-28) follow-up. A resting order that drifts out
+    ///         of its own price band is evicted from the queue and cannot come
+    ///         back, and claim() pays nothing while a tail is still open - so a
+    ///         partly filled order that already won had no way to collect for
+    ///         up to five minutes and no way to say "I do not want the rest".
+    ///         The matched part is untouched and keeps settling normally.
+    ///         Deliberately not whenNotPaused: leaving must always work.
+    function cancelOrder(uint256 orderId) external nonReentrant {
+        Order storage o = orders[orderId];
+        require(o.trader == msg.sender, "not your order");
+        require(!o.unmatchedRefunded, "already refunded");
+        require(o.status == OrderStatus.PENDING || o.status == OrderStatus.MATCHED, "wrong status");
+        _withdrawUnmatched(orderId, o);
+    }
+
+    /// @dev Return the unmatched part of an order and take it out of the queue.
+    ///      Shared by refundExpired (after MATCH_TIMEOUT, anyone) and
+    ///      cancelOrder (any time, the trader). Callers own eligibility.
+    function _withdrawUnmatched(uint256 orderId, Order storage o) internal {
         uint256 unmatched = o.amount - o.filledAmount;
         require(unmatched > 0, "nothing to refund");
 

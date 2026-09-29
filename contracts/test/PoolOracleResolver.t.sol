@@ -224,9 +224,10 @@ contract PoolOracleResolverTest is Test {
     }
 
     /// observe() reverting 'OLD' is the pool-oracle equivalent of a keeper
-    /// outage longer than HISTORY_RETENTION: skip, emit, let SETTLE_GRACE and
-    /// emergencyRefundMatch take it from there.
-    function test_ObservationRingTooShort_IsUnpriceable() public {
+    /// outage longer than HISTORY_RETENTION. The ring can never grow the past
+    /// back, so the match is refunded at once (audit L02) rather than left
+    /// locked for SETTLE_GRACE.
+    function test_ObservationRingTooShort_RefundsAtOnce() public {
         uint256 settleAt = block.timestamp + DURATION;
         pool.pushTick(T0 - 3600, 0);
         market.addMatch(1, 1e18, settleAt);
@@ -235,9 +236,83 @@ contract PoolOracleResolverTest is Test {
         pool.setForceOld(true);
 
         vm.expectEmit(true, true, false, true);
-        emit PoolOracleResolver.MatchUnpriceable(address(market), 1, settleAt);
+        emit PoolOracleResolver.MatchUnpriceableRefunded(address(market), 1, resolver.REASON_HISTORY());
         vm.prank(keeper);
-        assertEq(resolver.resolveOrderbookMarketBatch(address(market), 10), 0);
+        assertEq(resolver.resolveOrderbookMarketBatch(address(market), 10), 1, "a refund is a final state");
+        assertEq(market.refundCount(), 1);
+        assertEq(market.refunds(0), 1);
+        assertEq(market.settlementCount(), 0, "nothing was settled");
+    }
+
+    /// A pool read that fails for some reason OTHER than 'OLD' proves nothing
+    /// about history, so it must never turn into a refund - a refund cannot be
+    /// undone. Both failure shapes: a reason string, and no data at all (a
+    /// panic or running out of gas inside the pool).
+    function test_OtherObserveFailures_AreSkippedNeverRefunded() public {
+        uint256 settleAt = block.timestamp + DURATION;
+        pool.pushTick(T0 - 3600, 0);
+        market.addMatch(1, 1e18, settleAt);
+        vm.warp(settleAt + 1);
+
+        for (uint8 mode = 1; mode <= 2; mode++) {
+            pool.setForceOtherRevert(mode);
+            vm.expectEmit(true, true, false, true);
+            emit PoolOracleResolver.MatchUnpriceable(address(market), 1, settleAt);
+            vm.prank(keeper);
+            assertEq(resolver.resolveOrderbookMarketBatch(address(market), 10), 0, "left alone");
+            assertEq(market.refundCount(), 0, "no refund on an unproven failure");
+        }
+
+        // And once the pool answers again it settles normally.
+        pool.setForceOtherRevert(0);
+        vm.prank(keeper);
+        assertEq(resolver.resolveOrderbookMarketBatch(address(market), 10), 1);
+        assertEq(market.settlementCount(), 1);
+    }
+
+    /// resolveOrderbookMatch lets anyone name any matchId, and a refund is
+    /// permanent, so a match that has not come due must be left completely
+    /// alone - even though its window "cannot be read yet".
+    function test_NotDue_IsNeverRefunded() public {
+        uint256 settleAt = block.timestamp + DURATION;
+        pool.pushTick(T0 - 3600, 0);
+        market.addMatch(1, 1e18, settleAt);
+
+        // Make every refund condition true at once.
+        pool.setForceOld(true);
+        pool.setLiquidity(0);
+
+        vm.prank(other);
+        resolver.resolveOrderbookMatch(address(market), 1);
+
+        assertEq(market.refundCount(), 0, "not due, so no refund");
+        assertEq(market.settlementCount(), 0);
+    }
+
+    /// A refund that cannot complete (an LP callback failing, say) must not
+    /// take the batch down: the other matches still settle, and the stuck one
+    /// is reported as merely unpriceable for now.
+    function test_RefundFailure_DoesNotBlockTheBatch() public {
+        pool.pushTick(T0 - 7200, 0);
+        uint256 oldSettleAt = block.timestamp + 60;
+        vm.warp(block.timestamp + 3600);
+        uint256 freshSettleAt = block.timestamp + 60;
+
+        MockUniswapV3Pool shallow = new MockUniswapV3Pool(memecoin, weth, 10000);
+        shallow.pushTick(uint32(freshSettleAt - WINDOW), 0);
+        MockSettleableMarket m2 = new MockSettleableMarket(_feedId(address(shallow)), DURATION);
+        m2.addMatch(1, 1e18, oldSettleAt); // predates the ring: wants a refund
+        m2.addMatch(2, 1e18, freshSettleAt);
+        m2.setFailRefunds(true);
+
+        vm.warp(freshSettleAt + 1);
+        vm.expectEmit(true, true, false, true);
+        emit PoolOracleResolver.MatchUnpriceable(address(m2), 1, oldSettleAt);
+        vm.prank(keeper);
+        assertEq(resolver.resolveOrderbookMarketBatch(address(m2), 10), 1, "only the priceable one is final");
+        assertEq(m2.refundCount(), 0);
+        (uint256 matchId,) = m2.settlements(0);
+        assertEq(matchId, 2);
     }
 
     /// One unpriceable match must not take the batch down with it. This is the
@@ -262,9 +337,10 @@ contract PoolOracleResolverTest is Test {
         vm.prank(keeper);
         uint256 settled = resolver.resolveOrderbookMarketBatch(address(m2), 10);
 
-        assertEq(settled, 1, "the priceable match still settles");
+        assertEq(settled, 2, "the priceable match settles and the aged-out one is refunded");
         (uint256 matchId,) = m2.settlements(0);
-        assertEq(matchId, 2, "and it is the one inside the ring");
+        assertEq(matchId, 2, "the settled one is the one inside the ring");
+        assertEq(m2.refunds(0), 1, "the one older than the ring was refunded");
     }
 
     // ── SPREAD GUARDS ────────────────────────────────────────
@@ -283,10 +359,34 @@ contract PoolOracleResolverTest is Test {
         market.addMatch(1, 1e18, settleAt);
 
         vm.warp(settleAt + 1);
-        vm.expectEmit(true, false, false, true);
-        emit PoolOracleResolver.MarketRefunded(address(market), "oracle spread too high");
+        vm.expectEmit(true, true, false, true);
+        emit PoolOracleResolver.MatchUnpriceableRefunded(address(market), 1, resolver.REASON_SPREAD());
         vm.prank(keeper);
-        assertEq(resolver.resolveOrderbookMarketBatch(address(market), 10), 0);
+        assertEq(resolver.resolveOrderbookMarketBatch(address(market), 10), 1, "the refund is a final state");
+        assertEq(market.settlementCount(), 0, "nothing settles");
+        assertEq(market.refunds(0), 1, "the match is refunded now, not after SETTLE_GRACE");
+    }
+
+    /// Audit L02, the proof: the guard fails on FIXED history, so waiting can
+    /// never change the answer. Before the fix the match stayed skipped for
+    /// 24 hours, however calm the price got, and only then was refunded.
+    function test_SpreadGuardTrip_IsPermanentSoItRefundsInsteadOfWaiting() public {
+        uint256 settleAt = block.timestamp + DURATION;
+        pool.pushTick(T0 - 3600, 0);
+        // A sustained +3.5% step across the whole 60-second anchor: the anchor
+        // average sits about 2.3% away from the 180-second window average.
+        pool.pushTick(uint32(settleAt - 60), 350);
+        market.addMatch(1, 1e18, settleAt);
+        market.addMatch(2, 1e18, settleAt);
+
+        vm.warp(settleAt + 1);
+        // The price calms completely afterwards. It must make no difference.
+        pool.pushTick(uint32(block.timestamp), 0);
+
+        vm.prank(keeper);
+        uint256 handled = resolver.resolveOrderbookMarketBatch(address(market), 10);
+        assertEq(handled, 2, "both matches reached a final state on the first call");
+        assertEq(market.refundCount(), 2);
     }
 
     /**
@@ -349,19 +449,20 @@ contract PoolOracleResolverTest is Test {
      * down with it. The resolver must recognise this itself and skip, the
      * same way it already skips a match the pool cannot price.
      */
-    function test_PastGrace_IsSkippedNotSettled() public {
+    function test_PastGrace_IsRefundedNotSettled() public {
         uint256 settleAt = block.timestamp + DURATION;
         pool.pushTick(T0 - 3600, 0);
         market.addMatch(1, 1e18, settleAt);
 
         vm.warp(settleAt + resolver.SETTLE_GRACE() + 1);
         vm.expectEmit(true, true, false, true);
-        emit PoolOracleResolver.MatchUnpriceable(address(market), 1, settleAt);
+        emit PoolOracleResolver.MatchUnpriceableRefunded(address(market), 1, resolver.REASON_GRACE());
         vm.prank(keeper);
-        uint256 settled = resolver.resolveOrderbookMarketBatch(address(market), 10);
+        uint256 handled = resolver.resolveOrderbookMarketBatch(address(market), 10);
 
-        assertEq(settled, 0, "a match past grace must not count as settled");
+        assertEq(handled, 1, "refunded, which is a final state");
         assertEq(market.settlementCount(), 0, "settleMatch must never even be attempted past grace");
+        assertEq(market.refundCount(), 1);
     }
 
     // ── ROLES AND BATCHING ───────────────────────────────────

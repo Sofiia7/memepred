@@ -262,13 +262,17 @@ contract PoolOrderbookMarketTest is Test {
         OrderbookMarket.Match memory fresh = market.getMatch(2);
         assertEq(fresh.amount, 0.02 ether, "second match formed");
 
+        uint256 aliceBefore = weth.balanceOf(alice);
         vm.warp(fresh.settleAt + 1);
         vm.prank(keeper);
-        uint256 settled = resolver.resolveOrderbookMarketBatch(address(market), 10);
+        uint256 handled = resolver.resolveOrderbookMarketBatch(address(market), 10);
 
-        assertEq(settled, 1, "only the fresh match settles");
-        assertFalse(market.getMatch(1).settled, "the overdue match is left for emergencyRefundMatch");
+        // Audit L02: the overdue match is no longer left for emergencyRefundMatch,
+        // the resolver refunds it in the same call (a final state, so it counts).
+        assertEq(handled, 2, "the fresh match settles and the overdue one is refunded");
+        assertTrue(market.getMatch(1).settled, "the overdue match was refunded by the resolver");
         assertTrue(market.getMatch(2).settled, "the fresh match is not held hostage by the overdue one");
+        assertGe(weth.balanceOf(alice) - aliceBefore, 0.02 ether, "alice got her stake back from the overdue match");
     }
 
     /**

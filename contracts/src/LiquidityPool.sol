@@ -463,8 +463,11 @@ contract LiquidityPool is ERC4626, ReentrancyGuard, Pausable, Ownable {
         marketExposure[market] -= am.amount;
 
         if (lpWon) {
-            // Market has already transferred 2*amount back to this contract.
-            // Carve out 1% fee for direct LP claim; remainder benefits all shares.
+            // Market has already transferred the pot back to this contract:
+            // 2*amount minus the protocol fee it charges on an LP win (audit
+            // L04). The accounting here is balance-based, so it never assumed
+            // the full 2*amount arrived. Carve out 1% fee for direct LP claim;
+            // remainder benefits all shares.
             uint256 fee = (am.amount * FEE_BPS_ON_LP_WIN) / 10_000;
             _accrueFee(fee);
             emit FeeAccrued(market, fee);
