@@ -8,7 +8,7 @@
 | Условие | Как проверить | Если нет |
 |---|---|---|
 | DNS-записи `api-rhc` и `rhc` в зоне `flipthememe.com` (Proxied) | `https://api-rhc.flipthememe.com/health` отвечает `{"status":"ok"...}` | Пока записей нет, сайт показывает «Could not verify your region». Записи ставишь только ты (у токена wrangler нет прав на зону) |
-| Сайт выложен на `rhc.flipthememe.com` | открывается главная с плашкой «ROBINHOOD CHAIN TESTNET» | Сборка: `cd C:\Server\memepred\frontend`, скопировать `.env.rhc-testnet.example` в `.env.rhc-testnet`, подставить адреса из `DEPLOYMENTS.md`, `npx vite build --mode rhc-testnet`; выложить содержимое `dist` отдельным проектом Vercel и привязать домен `rhc` |
+| Сайт открывается на `rhc.flipthememe.com` | главная с плашкой «ROBINHOOD CHAIN TESTNET» | Сайт уже выложен (`https://flipthememe-rhc.vercel.app`, проект Vercel `flipthememe-rhc`); нужен CNAME `rhc` в Cloudflare, см. `DEPLOYMENTS.md`, раздел «Сайт». Повторная сборка и выкладка описаны там же |
 | Ты не в заблокированной стране | Сингапур, США, Великобритания и другие из списка увидят «REGION BLOCKED» и на фронтенде, и на API | Записывай из разрешённой страны или покажи сайт по видео. Список стран не менялся |
 | Кипер жив и с газом | `https://api-rhc.flipthememe.com/health/deep` возвращает `"status":"ok"` без `warn` | Пополнить `0xbFa008e5A8d46d2014b83551ce6209108416eea4` тестовым ETH; порог предупреждения 0.0006 ETH |
 | Цена двигается | см. п. 1 | Без движения все ставки кончаются ничьей и возвратом |

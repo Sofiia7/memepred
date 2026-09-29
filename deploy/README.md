@@ -1,4 +1,4 @@
-# FlipTheMeme — single-VPS deployment
+# FlipTheMeme - single-VPS deployment
 
 Everything (Postgres + Redis + API + keeper + HTTPS reverse proxy) runs in one
 `docker compose` stack on a single VPS. Tested on Ubuntu 22.04 / 24.04, 2 vCPU
@@ -12,7 +12,7 @@ sudo apt update && sudo apt -y upgrade
 sudo apt -y install docker.io docker-compose-v2 git ufw
 sudo usermod -aG docker $USER && newgrp docker
 
-# basic firewall — only SSH/HTTP/HTTPS
+# basic firewall - only SSH/HTTP/HTTPS
 sudo ufw default deny incoming
 sudo ufw default allow outgoing
 sudo ufw allow 22/tcp
@@ -27,7 +27,7 @@ sudo ufw enable
 git clone https://github.com/YOU/flipthememe.git ~/flipthememe
 cd ~/flipthememe/deploy
 cp .env.example .env
-# Edit .env — fill contract addresses (after forge deploy), passwords, keys.
+# Edit .env - fill contract addresses (after forge deploy), passwords, keys.
 ```
 
 Generate random secrets:
@@ -67,7 +67,7 @@ curl https://api.flipthememe.com/health
 
 ## 5. Backups
 
-Hourly Postgres dumps via cron — drops the gzipped SQL into
+Hourly Postgres dumps via cron - drops the gzipped SQL into
 `/var/backups/flipthememe`, keeps last 30 days.
 
 ```bash
@@ -94,11 +94,11 @@ docker compose up -d
 The keeper hot wallet (`KEEPER_PRIVATE_KEY`) needs ETH on Base to pay gas for
 on-chain price updates and resolver calls. Top up via Coinbase / Base bridge:
 
-- Initial: **0.05 ETH** (≈ $130 worth, lasts ~2–3 months under light load).
+- Initial: **0.05 ETH** (≈ $130 worth, lasts ~2-3 months under light load).
 - Monitor via the Basescan link in `~/flipthememe/deploy/MONITORING.md`.
 
 The `OracleResolver` contract has a `receive() payable` and pays Pyth update fees
-out of its own ETH balance — top it up directly (send ETH to its address):
+out of its own ETH balance - top it up directly (send ETH to its address):
 
 - Initial: **0.02 ETH** is fine for months at the default 30s recording interval.
 
