@@ -7,7 +7,7 @@
 
 | Условие | Как проверить | Если нет |
 |---|---|---|
-| DNS-записи `api-rhc` и `rhc` в зоне `flipthememe.com` (Proxied) | `https://api-rhc.flipthememe.com/health` отвечает `{"status":"ok"...}` | Пока записей нет, сайт показывает «Could not verify your region». Записи ставишь только ты (у токена wrangler нет прав на зону) |
+| DNS и сертификат API | `https://api-rhc.flipthememe.com/health` отвечает `{"status":"ok"...}` | Сделано 29.09. Если вдруг 525: у Caddy нет сертификата (см. `DEPLOYMENTS.md`, про 451). Если ответа нет совсем: проверь записи `api-rhc` и `rhc` в Cloudflare |
 | Сайт открывается на `rhc.flipthememe.com` | главная с плашкой «ROBINHOOD CHAIN TESTNET» | Сайт уже выложен (`https://flipthememe-rhc.vercel.app`, проект Vercel `flipthememe-rhc`); нужен CNAME `rhc` в Cloudflare, см. `DEPLOYMENTS.md`, раздел «Сайт». Повторная сборка и выкладка описаны там же |
 | Ты не в заблокированной стране | США, Великобритания и другие из списка увидят «REGION BLOCKED» и на фронтенде, и на API. Сингапур на RHC открыт (с 29.09) | Записывай из разрешённой страны или покажи сайт по видео |
 | Кипер жив и с газом | `https://api-rhc.flipthememe.com/health/deep` возвращает `"status":"ok"` без `warn` | Пополнить `0xbFa008e5A8d46d2014b83551ce6209108416eea4` тестовым ETH; порог предупреждения 0.0006 ETH |
@@ -81,7 +81,7 @@ scripts\node_modules\.bin\tsx scripts\rhc\e2e-verify.mts
 
 | Симптом | Причина | Что делать |
 |---|---|---|
-| «Could not verify your region» | API `api-rhc` не отвечает или нет DNS | проверь `/health`; поставь DNS-запись |
+| «Could not verify your region» | API `api-rhc` не отвечает | проверь `/health`: 525 значит у Caddy нет сертификата, а нет ответа - запись `api-rhc` |
 | «REGION BLOCKED» | твоя страна в списке | записывай из другой; список не трогать |
 | «entry price too volatile right now» | спот ушёл от 60-секундного среднего больше чем на 2% | подожди минуту, цена сойдётся |
 | Ордер не рассчитывается больше 2-3 минут | кипер без газа или остановился | `/health/deep`; логи `deploy-rhc-keeper-1`; пополнить кипера |

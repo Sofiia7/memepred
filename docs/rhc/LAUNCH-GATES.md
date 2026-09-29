@@ -134,10 +134,10 @@ mainnet" сам по себе - только вместе с разделом "�
    (`workers/wrangler.geo-block.rhc.toml`). Сделано к 29.09: `rhc-backend`/`rhc-keeper` работают на
    VPS (порт 3002 только на `127.0.0.1`), в живом Caddy есть блок `api-rhc.flipthememe.com`, задеплоен
    Worker `flipthememe-edge-rhc` со своим `WORKER_SECRET`, равным значению в `.env.rhc`, и вотчдог
-   `flipthememe-watchdog-rhc`. **Осталось одно: DNS-запись `api-rhc` (проксированная) в зоне
-   `flipthememe.com`** (у токена wrangler нет прав на зону) и запись `rhc` для сайта. Пока их нет, ни
-   соответствия для США/OFAC (проверять нечего, публично ничего не отдаётся), ни внешнего мониторинга,
-   ни публичного демо.
+   `flipthememe-watchdog-rhc`. DNS-записи `api-rhc` и `rhc` созданы 29.09 вечером,
+   сертификат `api-rhc` получен после исправления воркера (проверочный путь Let's Encrypt отвечал 451,
+   `DEPLOYMENTS.md`). Публичный API и сайт работают; внешний мониторинг ждёт секретов Telegram у
+   `flipthememe-watchdog-rhc`.
 
 ## Не добавлять в MVP
 

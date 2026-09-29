@@ -46,7 +46,9 @@
 # Copied here on 2026-09-29 from the block that has been live on the VPS since
 # 2026-09-28, so the repo describes what runs. It needs a proxied DNS record for
 # the hostname (Cloudflare, `api-rhc`) and the Worker `flipthememe-edge-rhc` in
-# front of it; without the record Caddy cannot obtain a certificate.
+# front of it; without the record Caddy cannot obtain a certificate, and the Worker must
+# let /.well-known/acme-challenge/ through its geo-block (isGeoExempt in
+# workers/geo-block.ts) or the validators get 451 (found 2026-09-29).
 #
 # WARNING: the live Caddyfile on the VPS also serves a site that belongs to
 # another project. This file does NOT contain it, so never copy this file over

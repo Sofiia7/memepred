@@ -5,11 +5,14 @@
 #
 #   wrangler deploy -c wrangler.geo-block.rhc.toml
 #
-# Status (2026-09-29). Steps 2 and 3 are DONE; only step 1 is missing:
-#   1. DNS record for api-rhc.flipthememe.com in the flipthememe.com zone
-#      (Proxied/orange-cloud), same as api.flipthememe.com already has -
-#      the route below cannot attach until this exists. NOT DONE: the wrangler
-#      token available so far has no zone/DNS scope.
+# Status (2026-09-29, evening). All three steps are DONE:
+#   1. DONE. DNS record for api-rhc.flipthememe.com in the flipthememe.com zone
+#      (A, Proxied/orange-cloud), same as api.flipthememe.com has. Created by
+#      hand: the wrangler token has no zone/DNS scope. With the record in
+#      place Caddy still could not get its certificate until this Worker
+#      stopped answering the certificate authority's validators (they sit in
+#      the U.S.) with 451 - see isGeoExempt in geo-block.ts. If a certificate
+#      ever fails to issue or renew, look for "451" in Caddy's log first.
 #   2. DONE. Caddy on the VPS reverse-proxies that hostname to rhc-backend:3002
 #      (site block lives in the live Caddyfile on the VPS, see deploy/README.md
 #      section 11 for why it is not simply the repo file).
