@@ -415,11 +415,16 @@ const ORDER_VIEW_ABI = [
       { name: 'pendingSettlements', type: 'uint256' },
       { name: 'payout', type: 'uint256' },
       { name: 'unmatchedRefunded', type: 'bool' },
-      // Audit L01 (2026-09-28): trailing fields added to the Order struct.
-      // Positional reads here (o[9], o[10]) are unaffected, but the ABI
-      // should still describe the real shape.
-      { name: 'expectedPrice', type: 'uint256' },
-      { name: 'slippageBps', type: 'uint256' },
+      // DELIBERATELY the first eleven fields only. Audit L01 (2026-09-28) added
+      // `expectedPrice` and `slippageBps` to the end of the Order struct, but this
+      // indexer still reads markets from EARLIER deployments (they hold real
+      // balances and their ledger must stay consistent), and those return only
+      // eleven words: decoding them with the thirteen-field ABI throws "Position
+      // 383 is out of bounds" and, because reconcilePayouts re-selects the same
+      // rows every tick, logs that forever (seen on the VPS on 2026-09-29).
+      // Decoding a longer return with this shorter ABI is fine - viem ignores the
+      // trailing words - and only positions 5, 9 and 10 are read, so this shape
+      // serves every deployment.
     ],
   },
 ] as const
