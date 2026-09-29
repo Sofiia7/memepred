@@ -1,0 +1,16 @@
+time 2026-09-29T14:38:24.480Z
+testnet 46630 eth_gasPrice 0.01 perArbGasTotal 0.01 perL1CalldataByte 0.256508192 gwei
+mainnet 4663 eth_gasPrice 0.020398 perArbGasTotal 0.020888 perL1CalldataByte 0 gwei
+settle PvP (FROGGO)                gasUsed 293038 gasUsedForL1 13021 effectiveGasPrice 0.01 signed bytes 177 brotli q0/q1/q11 181 181 166
+settle vault, user wins (MOONCAT)  gasUsed 287871 gasUsedForL1 10255 effectiveGasPrice 0.01 signed bytes 177 brotli q0/q1/q11 181 181 169
+resolver refund, vault (MOONCAT)   gasUsed 215909 gasUsedForL1 10255 effectiveGasPrice 0.01 signed bytes 177 brotli q0/q1/q11 181 181 178
+cancelOrder                        gasUsed 87678 gasUsedForL1 8385 effectiveGasPrice 0.01 signed bytes 144 brotli q0/q1/q11 148 148 148
+pushTick                           gasUsed 62308 gasUsedForL1 10255 effectiveGasPrice 0.01 signed bytes 177 brotli q0/q1/q11 181 181 158
+placeBet matched by the vault      gasUsed 705031 gasUsedForL1 13088 effectiveGasPrice 0.01 signed bytes 274 brotli q0/q1/q11 272 231 162
+MOONCAT records 37 eth_estimateGas observe([180,60,0]) 344525
+PEPE records 21 eth_estimateGas observe([180,60,0]) 211402
+FROGGO records 25 eth_estimateGas observe([180,60,0]) 245062
+keeper balance 0.01126977 ETH
+deployer balance 0.00583440 ETH
+badge minter balance 0.01029110 ETH
+vault totalAssets 1.830150 WETH

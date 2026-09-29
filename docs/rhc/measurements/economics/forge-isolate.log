@@ -1,0 +1,129 @@
+Compiling 94 files with Solc 0.8.24
+Solc 0.8.24 finished in 9.39s
+Compiler run successful!
+
+Ran 1 test for test/RefundSemantics.t.sol:RefundSemanticsTest
+[PASS] test_GasTotalUsedIsNetOfRefund() (gas: 318921)
+Logs:
+  setAndClear gasTotalUsed: 23422
+  setAndClear gasRefunded: 0
+  setOnly gasTotalUsed: 43300
+  setOnly gasRefunded: 0
+
+Suite result: ok. 1 passed; 0 failed; 0 skipped; finished in 1.05ms (573.70µs CPU time)
+
+Ran 15 tests for test/EconGas.t.sol:EconGasTest
+[PASS] test_EmergencyRefund_PvP_and_Vault() (gas: 2961210)
+Logs:
+  emergencyRefund PvP gasleft-delta: 143095
+  emergencyRefund vault gasleft-delta: 128344
+
+[PASS] test_PvP_Batch5() (gas: 7939699)
+Logs:
+  PvP batch5 resolved: 5
+  PvP batch5 gasleft-delta: 970601
+  PvP batch5 lastCallGas.total: 965507
+  PvP batch5 lastCallGas.refunded: 175500
+
+[PASS] test_PvP_DownWins() (gas: 1896219)
+Logs:
+  PvP win resolved: 1
+  PvP win gasleft-delta: 283155
+  PvP win lastCallGas.total: 278061
+  PvP win lastCallGas.refunded: 35100
+
+[PASS] test_PvP_DownWins_WinnerHasReferrer() (gas: 2056382)
+Logs:
+  PvP win+ref resolved: 1
+  PvP win+ref gasleft-delta: 349159
+  PvP win+ref lastCallGas.total: 344065
+  PvP win+ref lastCallGas.refunded: 15200
+
+[PASS] test_PvP_SpreadRefund() (gas: 1884304)
+Logs:
+  PvP refund resolved: 1
+  PvP refund gasleft-delta: 280429
+  PvP refund lastCallGas.total: 275335
+  PvP refund lastCallGas.refunded: 35100
+
+[PASS] test_PvP_Tie() (gas: 1875565)
+Logs:
+  PvP tie resolved: 1
+  PvP tie gasleft-delta: 244579
+  PvP tie lastCallGas.total: 239485
+  PvP tie lastCallGas.refunded: 17200
+
+[PASS] test_Referral_NewReferrer_SteadyState() (gas: 5645691)
+Logs:
+  PvP win, first credit of a new referrer resolved: 1
+  PvP win, first credit of a new referrer gasleft-delta: 314956
+  PvP win, first credit of a new referrer lastCallGas.total: 309865
+  PvP win, first credit of a new referrer lastCallGas.refunded: 15200
+
+[PASS] test_Referral_NoReferrer_SteadyState() (gas: 5535860)
+Logs:
+  PvP win, no referrer, distributor holds balance resolved: 1
+  PvP win, no referrer, distributor holds balance gasleft-delta: 283152
+  PvP win, no referrer, distributor holds balance lastCallGas.total: 278061
+  PvP win, no referrer, distributor holds balance lastCallGas.refunded: 18000
+
+[PASS] test_Referral_Repeat_SameReferrer() (gas: 5403052)
+Logs:
+  PvP win, repeat credit resolved: 1
+  PvP win, repeat credit gasleft-delta: 297856
+  PvP win, repeat credit lastCallGas.total: 292765
+  PvP win, repeat credit lastCallGas.refunded: 15200
+
+[PASS] test_RefundExpired_And_Cancel() (gas: 1452108)
+Logs:
+  refundExpired gasleft-delta: 117282
+  cancelOrder gasleft-delta: 93024
+
+[PASS] test_VaultEdge_OneWinOneLoss() (gas: 2655401)
+Logs:
+  vault after user win (wei): -9800000000000000
+  vault after user win + user loss (wei): 0
+  treasury got (wei): 400000000000000
+
+[PASS] test_Vault_SpreadRefund() (gas: 1613241)
+Logs:
+  Vault refund resolved: 1
+  Vault refund gasleft-delta: 235935
+  Vault refund lastCallGas.total: 230841
+  Vault refund lastCallGas.refunded: 34400
+
+[PASS] test_Vault_Tie() (gas: 1499139)
+Logs:
+  Vault tie resolved: 1
+  Vault tie gasleft-delta: 247359
+  Vault tie lastCallGas.total: 242265
+  Vault tie lastCallGas.refunded: 34400
+
+[PASS] test_Vault_UserLoses() (gas: 1545484)
+Logs:
+  Vault user loses resolved: 1
+  Vault user loses gasleft-delta: 315390
+  Vault user loses lastCallGas.total: 310296
+  Vault user loses lastCallGas.refunded: 57100
+
+[PASS] test_Vault_UserWins() (gas: 1534286)
+Logs:
+  Vault user wins resolved: 1
+  Vault user wins gasleft-delta: 299793
+  Vault user wins lastCallGas.total: 294699
+  Vault user wins lastCallGas.refunded: 52300
+
+Suite result: ok. 15 passed; 0 failed; 0 skipped; finished in 28.48ms (176.16ms CPU time)
+
+Ran 1 test for test/MockGrowth.t.sol:MockGrowthTest
+[PASS] test_ObserveGasGrowsPerRecord() (gas: 163976659)
+Logs:
+  observe(3 pts) gas at records=4: 39802
+  observe(3 pts) gas at records=16: 138682
+  observe(3 pts) gas at records=100: 830842
+  observe(3 pts) gas at records=500: 4126842
+  observe(3 pts) gas at records=2000: 16486842
+
+Suite result: ok. 1 passed; 0 failed; 0 skipped; finished in 261.17ms (260.71ms CPU time)
+
+Ran 3 test suites in 263.42ms (290.70ms CPU time): 17 tests passed, 0 failed, 0 skipped (17 total tests)

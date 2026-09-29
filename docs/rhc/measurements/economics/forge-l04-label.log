@@ -1,0 +1,14 @@
+Compiling 2 files with Solc 0.8.24
+Solc 0.8.24 finished in 7.75s
+Compiler run successful!
+
+Ran 1 test for test/L04LabelCheck.t.sol:L04LabelCheck
+[PASS] test_WhatThePvPTestActuallyMatches() (gas: 1212921)
+Logs:
+  match 1 lpMatch (1 = vault): 1
+  match 2 lpMatch (1 = vault): 1
+  matches created: 2
+
+Suite result: ok. 1 passed; 0 failed; 0 skipped; finished in 10.29ms (1.57ms CPU time)
+
+Ran 1 test suite in 18.01ms (10.29ms CPU time): 1 tests passed, 0 failed, 0 skipped (1 total tests)

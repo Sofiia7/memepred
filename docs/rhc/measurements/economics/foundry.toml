@@ -1,0 +1,18 @@
+# Scratch project for the gas measurements of docs/rhc/ECONOMICS.md (see README.md next to this file).
+# Copied into a temporary folder together with contracts/src and contracts/test/mocks; the libraries are
+# read from the repository in place, so the paths below assume the checkout lives at C:\Server\memepred.
+[profile.default]
+src = "src"
+test = "test"
+out = "out"
+cache_path = "cache"
+libs = ["C:/Server/memepred/contracts/lib"]
+solc = "0.8.24"
+optimizer = true
+optimizer_runs = 200
+allow_paths = ["C:/Server/memepred/contracts"]
+remappings = [
+    "@openzeppelin/contracts/=C:/Server/memepred/contracts/lib/openzeppelin-contracts/contracts/",
+    "@redstone-finance/evm-connector/=C:/Server/memepred/contracts/node_modules/@redstone-finance/evm-connector/",
+    "forge-std/=C:/Server/memepred/contracts/lib/forge-std/src/",
+]

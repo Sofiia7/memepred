@@ -1,0 +1,15 @@
+# node docs/rhc/measurements/economics/explorer-txs.mjs <address> <since ISO>, run 2026-09-29T14:38Z
+address 0xbFa008e5A8d46d2014b83551ce6209108416eea4 since 2026-09-29T00:00:00Z txs sent 65 first 2026-09-29T06:25:52.000000Z last 2026-09-29T14:30:12.000000Z
+resolveOrderbookMarketBatchFrom          n 34 gas avg 509092 min 249855 max 881776 fee ETH 0.00017309
+resolveOrderbookMarketBatchFrom [error]  n 20 gas avg 353992 min 353958 max 354020 fee ETH 0.00007080
+placeBet                                 n 3 gas avg 592359 min 577479 max 604367 fee ETH 0.00001777
+approve                                  n 6 gas avg 38731 min 28425 max 48325 fee ETH 0.00000232
+claim                                    n 2 gas avg 63805 min 62666 max 64943 fee ETH 0.00000128
+total fee ETH 0.00026526
+address 0x12f9B9De75ccEa7be573F643A99AAA63b9448BD2 since 2026-09-29T11:00:00Z txs sent 53 first 2026-09-29T11:23:28.000000Z last 2026-09-29T11:37:47.000000Z
+pushTick                                 n 50 gas avg 59504 min 56036 max 61082 fee ETH 0.00002975
+call                                     n 3 gas avg 23855 min 23855 max 23855 fee ETH 0.00000072
+total fee ETH 0.00003047
+address 0xb183b09f0D41314EA597598B741b41bcddd875e6 since 2026-09-29T00:00:00Z txs sent 13 first 2026-09-29T07:28:47.000000Z last 2026-09-29T11:55:28.000000Z
+mintBadge                                n 13 gas avg 68431 min 65401 max 70449 fee ETH 0.00000890
+total fee ETH 0.00000890

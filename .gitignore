@@ -91,3 +91,7 @@ workers/.wrangler/
 # Замеры §7 для Robinhood Chain: сырые данные - доказательство под числами
 # в docs/rhc/measurements/README.md, без них цифры нечем перепроверить.
 !docs/rhc/measurements/*.json
+
+# Raw measurements behind docs/rhc/ECONOMICS.md (logs and json): the point of keeping them is that anyone can re-check the estimates
+!docs/rhc/measurements/economics/*.json
+!docs/rhc/measurements/economics/*.log
