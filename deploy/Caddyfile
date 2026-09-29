@@ -39,3 +39,44 @@
         }
     }
 }
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Robinhood Chain testnet API at api-rhc.flipthememe.com.
+#
+# Copied here on 2026-09-29 from the block that has been live on the VPS since
+# 2026-09-28, so the repo describes what runs. It needs a proxied DNS record for
+# the hostname (Cloudflare, `api-rhc`) and the Worker `flipthememe-edge-rhc` in
+# front of it; without the record Caddy cannot obtain a certificate.
+#
+# WARNING: the live Caddyfile on the VPS also serves a site that belongs to
+# another project. This file does NOT contain it, so never copy this file over
+# the live one - add or change a block in place, run `caddy validate`, then
+# reload (deploy/README.md section 11).
+# ─────────────────────────────────────────────────────────────────────────────
+api-rhc.flipthememe.com {
+    encode gzip zstd
+
+    header {
+        Strict-Transport-Security    "max-age=31536000; includeSubDomains; preload"
+        X-Content-Type-Options       "nosniff"
+        X-Frame-Options              "DENY"
+        Referrer-Policy              "strict-origin-when-cross-origin"
+        Permissions-Policy           "interest-cohort=()"
+        Content-Security-Policy      "default-src 'none'; frame-ancestors 'none'"
+        Cross-Origin-Resource-Policy "same-site"
+        -Server
+    }
+
+    reverse_proxy rhc-backend:3002 {
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+    }
+
+    log {
+        output stdout
+        format filter {
+            wrap json
+            request>headers>X-Worker-Secret delete
+        }
+    }
+}

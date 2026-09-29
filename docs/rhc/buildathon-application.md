@@ -26,16 +26,20 @@
 
 - *Do you already have an idea…* (274 знака):
   `Yes. FlipTheMeme on Robinhood Chain: short up/down bets on graduated memecoins, staked in ETH and settled from each token's own Uniswap v3 TWAP. Contracts are deployed and soak-tested on RHC testnet; the buildathon is for a fixed redeploy, the public web flow, and the demo.`
-- *Do you already have a project…* (234 знака):
-  `Yes, FlipTheMeme. The Robinhood Chain prototype is deployed on RHC testnet (46630); one of its markets, with the soak test's settled bets: https://explorer.testnet.chain.robinhood.com/address/0x9afAFFAFC3c01BAEF489E9bFE8BB09C455f21BB8`
+- *Do you already have a project…* (текст обновлён 2026-09-29 под текущий деплой; было: рынок `0x9afA…` из деплоя 5 сентября, он устарел):
+  `Yes, FlipTheMeme. It is deployed on Robinhood Chain testnet (46630) with every contract source-verified; a market with settled, refunded and cancelled bets from an on-chain end-to-end run: https://explorer.testnet.chain.robinhood.com/address/0x2C179142844093BaEece809aE6F7Efb9c6a959C1`
 
-**Что нужно от тебя:**
+**Что нужно от тебя (обновлено 2026-09-29):**
 
+0. **DNS-записи `api-rhc` и `rhc` в Cloudflare.** Без них у судьи нет ни сайта, ни API, а фронтенд показывает
+   «не удалось проверить регион». Всё остальное для этого готово (см. `DEPLOYMENTS.md`, `DECISIONS.md`).
+   Отдельно реши, что видит судья из Сингапура: он в списке блокировки, режима «только чтение» нет.
 1. Регистрация - **сделана 11.09**. Дальше - создать проект на hackquest (кнопка Create Project
    уже доступна) и сдать его до 4 октября 17:59.
 2. Репозиторий приватный. Контракты жюри увидит в обозревателе тестнета **с исходным кодом** -
-   они верифицированы 11.09; бэкенд и фронтенд - только если откроешь репозиторий или дашь
-   доступ по запросу.
+   **все восемь контрактов текущего деплоя от 29.09 верифицированы** (адреса ниже и в `DEPLOYMENTS.md`);
+   бэкенд и фронтенд - только если откроешь репозиторий или дашь доступ по запросу. Перед открытием:
+   `memory.md` в корне репозитория содержит IP сервера и почту (секретов нет), решай, оставлять ли его.
 3. Кошелёк Arbitrum One для призов - твой собственный, не адрес депозита на бирже.
 4. Демо-видео - к сдаче 4 октября.
 5. Команда: ниже написано «solo founder, AI-assisted engineering». Поменяй, если хочешь иначе.
@@ -110,10 +114,10 @@ cannot be raised, and any change for future markets goes through a 48-hour timel
 keeps the fee it was created with. We ran that timelock end to end on the deployed testnet
 factory: proposed on 5 September, applied on 11 September, `feeBps` moved 0 to 100. To be
 complete about what a user pays: a trader who wins against the LP vault pays a further 1%, and
-every transaction pays gas. One gap the timelock run exposed and we have since closed in code,
-not yet redeployed: new markets started at 0% until governance completed its first change, so a
-permissionless caller could occupy a slot at zero fee before that ever happened - fixed by
-snapshotting the fee cap itself at creation instead.
+every transaction pays gas. One gap the timelock run exposed is closed and now
+deployed (29 September): new markets used to start at 0% until governance completed its first change,
+so a permissionless caller could occupy a slot at zero fee before that ever happened. The factory now
+snapshots the fee cap itself at creation, and the current markets all read `feeBps = 100`.
 
 ## Why Robinhood Chain
 
@@ -130,18 +134,25 @@ snapshotting the fee cap itself at creation instead.
 
 ## What exists today on Robinhood Chain
 
-Deployed on Robinhood Chain testnet (46630) on 5 September. The testnet has no canonical Uniswap
-v3 or WETH, so there the markets run against stand-in pools that integrate the price over time
-and refuse out-of-range windows the way real ones do. Against the real pools on mainnet 4663 we
-use fork tests.
+Deployed on Robinhood Chain testnet (46630); the current stack was redeployed on 29 September from
+commit `271946a`, with all eight contracts source-verified on the testnet explorer. The testnet has no
+canonical Uniswap v3 or WETH, so there the markets run against stand-in pools (named tokens MOONCAT,
+PEPE and FROGGO) that integrate the price over time and refuse out-of-range windows the way real ones do;
+their price is whatever their owner records, which is why the demo price is driven by a script and
+why we say so. Against the real pools on mainnet 4663 we use fork tests.
 
 - **Contracts:** `PoolOracleResolver` (v3 TWAP), `PoolMarketFactory` (permissionless creation
-  behind on-chain gates), `PoolOrderbookMarket` (EIP-1167 clones, partial fills, WETH stakes), an
-  LP vault with exposure caps, a fee distributor and a referral registry, all source-verified on the testnet explorer.
-  **357 Foundry tests** at
-  commit `837dfb4` on 11 September: 276 are the original engine's suite and pass unchanged, and 9
-  exercise live Robinhood Chain mainnet pools - they need an RPC, and without one they return
-  early, so an offline run counts them as passing.
+  behind on-chain gates), `PoolOrderbookMarket` (EIP-1167 clones, partial fills, `cancelOrder`, WETH
+  stakes), an LP vault with exposure caps, a fee distributor and a referral registry, all source-verified
+  on the testnet explorer. **433 Foundry tests** at commit `dd4df60`: the original engine's suite
+  passes unchanged, and 11 tests exercise live Robinhood Chain mainnet pools - they need an RPC, and
+  without one they return early, so an offline run counts them as passing.
+- **Checked on chain after the redeploy (29 September):** a script drives the deployment with two
+  wallets: a peer-to-peer match with a partial fill and `cancelOrder` returning the unmatched half at
+  once, a win against the vault paying exactly 0.0196 WETH on a 0.02 pot, and the resolver's consistency
+  guard tripping so that both sides are refunded on the first call after `settleAt`. Every hash and the
+  measured gas are in `docs/rhc/DEPLOYMENTS.md`. Separately, the keeper on the server settled and
+  refunded matches with nobody else calling the resolver.
 - **Against real mainnet pools:** on a fork of chain 4663 the resolver prices live pools
   correctly, and `createMarket` creates a real market on a live pool (RMHT) through every gate.
   Our vendored `TickMath` is checked against 224 `(tick, sqrtPriceX96)` pairs read off live pools.
@@ -155,15 +166,22 @@ use fork tests.
   that timed out and were counted as zero - a monitor bug, since fixed. The final snapshot matched
   the chain to the wei.
 - **Backend and keeper:** event indexer, a pool watcher that onboards new pools unaided, a
-  settlement keeper with nonce escalation and a gas budget, a watchdog. **272 unit tests.**
+  settlement keeper with nonce escalation and a gas budget, a watchdog. **439 unit tests.**
 
-The web betting flow now reads the same PoolOracleResolver TWAP as the contract, submits an
-ordinary RHC call without a RedStone payload, uses WETH bounds, shows market-specific fees and
-states that queue counts are not odds. It still needs an end-to-end wallet test on RHC testnet.
+The web betting flow reads the same PoolOracleResolver TWAP as the contract, submits an ordinary RHC
+call without a RedStone payload, uses WETH bounds, shows market-specific fees and states that queue counts
+are not odds; before signing it lists what the user is agreeing to (matching timeout, partial fills, the
+price band, when both stakes are refunded). The chain-level path is checked as above; a browser wallet
+run through the public site still has to be done once the DNS records exist.
 
 ## What testing found
 
-Running the system found defects no unit test had, every one of them in code written for the
+Running the system found defects no unit test had. The latest: a keeper limit sized off gas USED
+instead of the peak (a transaction's limit must cover the peak, before the storage-clearing refund),
+which made a one-match, vault-backed settlement run out of gas twenty times in a row and wait five
+minutes on the first live keeper check (fixed, with escalation and a pause on repeated reverts); and a
+consistency guard that treated a permanent condition as temporary and locked a match for 24 hours
+(the resolver now refunds it on the first call). The earlier ones, every one in code written for the
 original single-chain version: amounts divided by the wrong currency's decimals in the indexer
 and the monitor, a partially filled order that never left `PENDING`, payouts that were never
 recorded, and a watchdog that paused every market on the chain. The subtlest was a constant:
@@ -179,7 +197,7 @@ calls use the RHC path, amounts use the 0.005-0.04 WETH range, and the preview i
 market fee plus the LP fee. The acceptance check remains a fresh-wallet bet and claim on RHC
 testnet.
 
-**Week 2 - settlement rules and economics.** Done in code, pending a testnet redeploy: a tie
+**Week 2 - settlement rules and economics.** Done and redeployed on 29 September: a tie
 refunds both sides, every settled match has a minimum lot, and PvP creation no longer
 authorizes LP capital by default - the vault owner opts each reviewed market in separately. The
 same pass fixed two ways the settlement queue could jam behind one unpriceable match (a batch's
@@ -207,11 +225,16 @@ contracts, tests and operations above are the output of that setup since March 2
 
 ## Links
 
-- A five-minute market with the soak's settled bets, on the Robinhood Chain testnet explorer (an
-  EIP-1167 clone of the source-verified `PoolOrderbookMarket`):
-  https://explorer.testnet.chain.robinhood.com/address/0x9afAFFAFC3c01BAEF489E9bFE8BB09C455f21BB8
+- A one-minute vault-enabled market with settled, refunded and cancelled bets from the on-chain run, on the
+  Robinhood Chain testnet explorer (an EIP-1167 clone of the source-verified `PoolOrderbookMarket`):
+  https://explorer.testnet.chain.robinhood.com/address/0x2C179142844093BaEece809aE6F7Efb9c6a959C1
 - The market factory (source verified):
-  https://explorer.testnet.chain.robinhood.com/address/0xE5802e3e9aB5dEFE7F133543Bc90b5893aD75a42
+  https://explorer.testnet.chain.robinhood.com/address/0x86230738bC6193B9233013462E60Ee19308FAcBC
+- The oracle and settlement contract (source verified):
+  https://explorer.testnet.chain.robinhood.com/address/0x8AC440A14610c685B2a59fBA4A2B3C62f8375E28
+- The 47-hour soak of 5-7 September ran on the PREVIOUS deployment (`0xE5802e...75a42`); its numbers
+  above are a history of the engine, not of the current stack, which has run an end-to-end check and a
+  keeper check but no long soak yet.
 - Repository: private today, access on request.
 - Decisions, measurements and deployed addresses: `docs/rhc/` (`DECISIONS.md`, `measurements/`,
   `DEPLOYMENTS.md`).
@@ -230,8 +253,13 @@ stakes are capped at 0.04 ETH per bet; prizes paid against development milestone
   entry, the live price is known while the average lags, which can give a trader an edge against
   the vault's fixed-payout side. We will measure this on active pools before real money.
 - Both spread checks read the same pool, so they are not independent sources, and an ordinary
-  memecoin move can trip them. We will measure the refund rate rather than raise the threshold
-  blind.
+  memecoin move can trip them. When the exit-window guard trips, both stakes are refunded at once with no
+  fee, which is safe but means a large late move produces a refund instead of a result. We will measure
+  the refund rate on real pools rather than raise the threshold blind.
+- Settlement gas measured on the live chain is 288-293 thousand per match with the real fee transfers,
+  about a third more than we had assumed; at the median gas of early September a minimum-size match costs
+  the treasury more than the 1% fee brings in. That is a product decision (minimum bet, fee, a gas
+  reserve) that we have not taken, and it is why stakes are capped and the pilot is testnet.
 - Tokens that trade only on Uniswap v4 are out of reach of the v3 oracle.
 - Settlement gas is paid per match, and gas moved eightfold within a single day in early
   September.
