@@ -151,6 +151,23 @@ const GEO_EXEMPT_PATHS = new Set([
   '/health/edge',
 ])
 
+// Certificate authorities prove control of a hostname by fetching
+// /.well-known/acme-challenge/<token> over plain HTTP, and their validators sit
+// in the U.S. and other blocked countries. 2026-09-29: the RHC API could not get
+// its certificate because every challenge came back 451 from this very Worker
+// (Caddy's log: "Invalid response ... 451"), and the Base API's certificate,
+// which expires on 2026-10-05, was queued for a renewal that would have hit the
+// same wall. The path carries a one-time token and nothing else - no market
+// data, no user data, no action - so exempting it discloses nothing the block
+// exists to withhold. Like the paths above it is still forwarded to the origin,
+// which answers only a challenge it has issued.
+const ACME_CHALLENGE_PREFIX = '/.well-known/acme-challenge/'
+
+/** Whether a path may be reached from a blocked country. Exported for the tests. */
+export function isGeoExempt(pathname: string): boolean {
+  return GEO_EXEMPT_PATHS.has(pathname) || pathname.startsWith(ACME_CHALLENGE_PREFIX)
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const country = ((request as any).cf?.country as string | undefined) || 'XX'
@@ -166,7 +183,7 @@ export default {
     }
 
     const BLOCKED = blockedFor(env)
-    if (BLOCKED.has(country) && !GEO_EXEMPT_PATHS.has(inUrl.pathname)) {
+    if (BLOCKED.has(country) && !isGeoExempt(inUrl.pathname)) {
       return new Response(
         JSON.stringify({
           error:   'region_blocked',

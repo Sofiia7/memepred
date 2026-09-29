@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, it, expect } from 'vitest'
-import { blockedFor } from '../../../workers/geo-block'
+import { blockedFor, isGeoExempt } from '../../../workers/geo-block'
 import {
   OFAC_CODES,
   OPENABLE_CODES,
@@ -139,5 +139,28 @@ describe('the words the page shows', () => {
     expect(joinList(['a', 'b'], 'and')).toBe('a and b')
     expect(joinList(['a', 'b', 'c'], 'and')).toBe('a, b and c')
     expect(joinList(['a', 'b', 'c'], 'or', true)).toBe('a, b, or c')
+  })
+})
+
+describe('what a blocked country can still reach at the edge', () => {
+  it('the liveness probes and the certificate challenge path', () => {
+    for (const p of ['/health', '/health/deep', '/health/edge']) expect(isGeoExempt(p)).toBe(true)
+    // The CA's validators are in blocked countries; a 451 here means no certificate.
+    expect(isGeoExempt('/.well-known/acme-challenge/kZap8YVPgSYwYjhzj8pyuvSos9aH-IZIMEOuragY9Jw')).toBe(true)
+  })
+
+  it('nothing else, not even its neighbours', () => {
+    for (const p of [
+      '/',
+      '/api/markets',
+      '/api/geo',
+      '/api/geo/config',
+      '/.well-known/security.txt',
+      '/.well-known/acme-challenge', // no token: not a challenge
+      '/x/.well-known/acme-challenge/token', // not at the root
+      '/health/deeper',
+    ]) {
+      expect(isGeoExempt(p), p).toBe(false)
+    }
   })
 })
