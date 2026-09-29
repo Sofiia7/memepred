@@ -28,17 +28,31 @@ export interface SettlementGasParams {
   bufferBps: bigint
 }
 
+/**
+ * Re-measured on the deployed testnet stack on 2026-09-29 (docs/rhc/DEPLOYMENTS.md,
+ * transactions from scripts/rhc/e2e-verify.mts). Gas USED by a one-match batch:
+ *
+ *   vault-backed settle 287,871   PvP settle 293,038   resolver refund 216,000
+ *
+ * The earlier constants (100k + 200k per match, plus 20%) attached 360,000 to a
+ * one-match batch. That looks like headroom over 288k and is not: a
+ * transaction's limit has to cover its PEAK gas, which is before the refund for
+ * the storage slots a settlement clears, and gas USED is reported after that
+ * refund (capped at a fifth). The live keeper sent a one-match vault-backed
+ * batch 20 times in a row, each reverted out of gas, and the match waited five
+ * minutes until a second match became due and the pair, with its larger limit,
+ * fitted. So the limit is sized for the peak of the dearest single match, and
+ * the send path raises it on a revert instead of resending the same number.
+ */
 export const RHC_SETTLEMENT_GAS: SettlementGasParams = {
-  // Measured fixed part of a settlement tx (84,935), rounded up.
-  fixedGas: 100_000n,
-  // Measured marginal cost per match against a live mainnet pool (162,029),
-  // rounded up. That figure predates the 1% protocol fee path (a transfer
-  // plus a distributeFee call on each winning match), which has not been
-  // separately remeasured - the extra headroom below is what covers it
-  // until it has.
-  perMatchGas: 200_000n,
-  // 20% on top of the above, for the fee path and ordinary chain variance.
-  bufferBps: 2000n,
+  // Fixed part of a settlement transaction (84,935 measured), rounded up.
+  fixedGas: 120_000n,
+  // The dearest single match seen (293,038 used) is about 365k at its peak, and
+  // a later match in the same batch is cheaper (warm storage), so 260k per
+  // match on top of the fixed part gives a one-match limit near 475k.
+  perMatchGas: 260_000n,
+  // 25% on top, for the fee path and ordinary chain variance.
+  bufferBps: 2500n,
 }
 
 /**
@@ -53,4 +67,25 @@ export function settlementGasLimit(matchCount: number, params: SettlementGasPara
   }
   const base = params.fixedGas + params.perMatchGas * BigInt(matchCount)
   return base + (base * params.bufferBps) / 10_000n
+}
+
+/** Reverts in a row after which a market is paused instead of resent every tick. */
+export const REVERT_PAUSE_AFTER = 3
+
+/** 30 s after the third revert in a row, doubling, never more than five minutes. */
+export function revertPauseMs(streak: number): number {
+  if (streak < REVERT_PAUSE_AFTER) return 0
+  return Math.min(300_000, 30_000 * 2 ** (streak - REVERT_PAUSE_AFTER))
+}
+
+/**
+ * The gas limit for a send after `streak` consecutive reverts: 1.5x per revert,
+ * capped at three times the base. An identical resend of a transaction that ran
+ * out of gas runs out of gas again, so each retry has to ask for more.
+ */
+export function escalatedGas(base: bigint, streak: number): bigint {
+  let g = base
+  for (let i = 0; i < streak; i++) g = (g * 15n) / 10n
+  const cap = base * 3n
+  return g > cap ? cap : g
 }

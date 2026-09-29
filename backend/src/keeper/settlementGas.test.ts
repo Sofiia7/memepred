@@ -1,11 +1,20 @@
 import { describe, it, expect } from 'vitest'
-import { settlementGasLimit, RHC_SETTLEMENT_GAS } from './settlementGas.js'
+import { settlementGasLimit, RHC_SETTLEMENT_GAS, escalatedGas, revertPauseMs, REVERT_PAUSE_AFTER } from './settlementGas.js'
 
 describe('settlementGasLimit', () => {
   it('scales with match count instead of a flat ceiling', () => {
     const one = settlementGasLimit(1, RHC_SETTLEMENT_GAS)
     const ten = settlementGasLimit(10, RHC_SETTLEMENT_GAS)
     expect(ten).toBeGreaterThan(one)
+  })
+
+  it('a one-match batch clears the dearest live settlement at its PEAK, not just its gas used', () => {
+    // 2026-09-29, live testnet: 293,038 gas used for a PvP settle. Gas used is
+    // after the storage refund (up to a fifth), so the peak is about used / 0.8.
+    // The keeper used to attach 360,000 here and reverted out of gas 20 times.
+    const peak = (293_038n * 10n) / 8n
+    expect(settlementGasLimit(1, RHC_SETTLEMENT_GAS)).toBeGreaterThan(peak)
+    expect(settlementGasLimit(1, RHC_SETTLEMENT_GAS)).toBeGreaterThan(360_000n)
   })
 
   it('covers the measured mainnet figures with headroom, not just the forge bench', () => {
@@ -42,5 +51,34 @@ describe('settlementGasLimit', () => {
   it('rejects a non-positive match count - callers already skip empty batches before reaching here', () => {
     expect(() => settlementGasLimit(0, RHC_SETTLEMENT_GAS)).toThrow()
     expect(() => settlementGasLimit(-1, RHC_SETTLEMENT_GAS)).toThrow()
+  })
+})
+
+describe('escalatedGas (a reverted settle is not resent with the same limit)', () => {
+  it('keeps the base when nothing has reverted', () => {
+    expect(escalatedGas(500_000n, 0)).toBe(500_000n)
+  })
+
+  it('asks for half as much again after each consecutive revert', () => {
+    expect(escalatedGas(500_000n, 1)).toBe(750_000n)
+    expect(escalatedGas(500_000n, 2)).toBe(1_125_000n)
+  })
+
+  it('never asks for more than three times the base', () => {
+    expect(escalatedGas(500_000n, 3)).toBe(1_500_000n)
+    expect(escalatedGas(500_000n, 10)).toBe(1_500_000n)
+  })
+})
+
+describe('revertPauseMs (a market that keeps reverting is left alone, not paid for every tick)', () => {
+  it('does not pause before the third revert in a row', () => {
+    for (let s = 0; s < REVERT_PAUSE_AFTER; s++) expect(revertPauseMs(s)).toBe(0)
+  })
+
+  it('pauses 30 s at the third, doubling, capped at five minutes', () => {
+    expect(revertPauseMs(REVERT_PAUSE_AFTER)).toBe(30_000)
+    expect(revertPauseMs(REVERT_PAUSE_AFTER + 1)).toBe(60_000)
+    expect(revertPauseMs(REVERT_PAUSE_AFTER + 2)).toBe(120_000)
+    expect(revertPauseMs(REVERT_PAUSE_AFTER + 20)).toBe(300_000)
   })
 })

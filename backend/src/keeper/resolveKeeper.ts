@@ -25,7 +25,7 @@ import { andMarketInFactory } from '../lib/marketScope.js'
 import { getKeeperWalletClient, sendKeeperTx } from './keeperWallet.js'
 import { gasGuard, recordReceipt } from './gasGuardInstance.js'
 import { BATCH_FROM_SELECTOR, codeHasSelector } from './resolverAbi.js'
-import { settlementGasLimit, RHC_SETTLEMENT_GAS } from './settlementGas.js'
+import { settlementGasLimit, RHC_SETTLEMENT_GAS, escalatedGas, revertPauseMs, REVERT_PAUSE_AFTER } from './settlementGas.js'
 import { scanMarketQueue, nextStuckOffset, type ScanIo } from './settleScan.js'
 import { AttemptTracker, notParkedSql } from './attemptTracker.js'
 
@@ -240,8 +240,9 @@ function buildScanIo(args: {
   let firstWindow: readonly bigint[] | null = args.firstWindow
   // The calldata a dry run was made with, kept for the send that follows it.
   // With a RedStone payload that is signed price data with its own timestamp,
-  // so a send must carry the payload that was simulated, not a fresh one.
-  let prepared: { offset: bigint; data: Hex } | null = null
+  // so a send must carry the payload that was simulated, not a fresh one. The
+  // gas the node says the call needs travels with it, for the limit.
+  let prepared: { offset: bigint; data: Hex; estimated: bigint | null } | null = null
 
   async function calldataFor(offset: bigint): Promise<Hex> {
     const encoded = canPaginate
@@ -342,7 +343,18 @@ function buildScanIo(args: {
           functionName: canPaginate ? 'resolveOrderbookMarketBatchFrom' : 'resolveOrderbookMarketBatch',
           data:         sim.data ?? '0x',
         }) as bigint
-        prepared = { offset, data }
+        // What the transaction really needs, from the node, so the limit follows
+        // the batch instead of a guessed per-match figure (see settlementGas.ts
+        // for what the guess cost). Best effort: without it the sized limit is used.
+        let estimated: bigint | null = null
+        try {
+          estimated = await publicClient.estimateGas({
+            account: wallet.account,
+            to:      CONTRACTS.ORACLE_RESOLVER as Address,
+            data,
+          })
+        } catch { /* fall back to the sized limit below */ }
+        prepared = { offset, data, estimated }
         return would
       } catch (simErr: any) {
         console.warn(
@@ -367,9 +379,17 @@ function buildScanIo(args: {
       // this session); RHC's measured per-match cost means a batch of
       // 13+ matches - which one busy order can approach on its own -
       // needs more than 1.8M, and a smaller batch does not need that much.
-      const gasLimit = CHAIN_PROFILE.name === 'rhc'
+      const sized = CHAIN_PROFILE.name === 'rhc'
         ? settlementGasLimit(ready.length, RHC_SETTLEMENT_GAS)
         : 1_800_000n
+      const estimated = prepared !== null && prepared.offset === offset ? prepared.estimated : null
+      // Never below the sized figure, and never below 130% of what the node
+      // estimated for exactly this call. Then raised for every consecutive
+      // revert this market has had: an identical resend of a transaction that
+      // ran out of gas runs out of gas again, and the keeper used to do that
+      // every 15 seconds without end.
+      const wanted = estimated !== null && (estimated * 13n) / 10n > sized ? (estimated * 13n) / 10n : sized
+      const gasLimit = escalatedGas(wanted, revertStreak.get(market) ?? 0)
 
       const hash = await sendKeeperTx(fees => wallet.sendTransaction({
         to:   CONTRACTS.ORACLE_RESOLVER as Address,
@@ -385,9 +405,18 @@ function buildScanIo(args: {
       // logged "resolved N" for a transaction that resolved nothing, then
       // retried it every window.
       if (receipt.status !== 'success') {
-        console.error(`[resolver] ${market}: settle tx reverted on-chain, tx=${hash}`)
+        const streak = (revertStreak.get(market) ?? 0) + 1
+        revertStreak.set(market, streak)
+        console.error(
+          `[resolver] ${market}: settle tx reverted on-chain (${streak} in a row, gas limit ${gasLimit}, ` +
+          `used ${receipt.gasUsed}), tx=${hash}` +
+          (streak >= REVERT_PAUSE_AFTER ? ` - pausing this market for ${revertPauseMs(streak) / 1000}s` : ''),
+        )
+        if (streak >= REVERT_PAUSE_AFTER) pausedUntil.set(market, Date.now() + revertPauseMs(streak))
         return false
       }
+      revertStreak.delete(market)
+      pausedUntil.delete(market)
       // The count the resolver reported, not the number that looked ready.
       console.log(`[resolver] ${market} resolved ${expected} (settled or refunded) tx=${hash}`)
       return true
@@ -397,6 +426,19 @@ function buildScanIo(args: {
 
 const warnedNoQueueGetters = new Set<string>()
 
+// ── repeated on-chain reverts ─────────────────────────────────
+/** Consecutive reverted settle transactions per market, in this process. */
+const revertStreak = new Map<Address, number>()
+/** A market whose transactions keep reverting is left alone until then. */
+const pausedUntil = new Map<Address, number>()
+
+/** Forget everything the keeper remembers between ticks. For tests. */
+export function resetResolveKeeperState() {
+  revertStreak.clear()
+  pausedUntil.clear()
+  stuckPrefixEnd.clear()
+}
+
 export async function settlePendingMarkets() {
   const wallet = getKeeperWalletClient()
   if (!wallet) return
@@ -404,6 +446,9 @@ export async function settlePendingMarkets() {
 
   const markets = await pendingMarkets()
   for (const market of markets) {
+    // Its last transactions reverted over and over: wait out the pause rather
+    // than paying for the same failure every 15 seconds.
+    if (Date.now() < (pausedUntil.get(market) ?? 0)) continue
     try {
       // Skim once before doing any tx work - avoid paying RPC for nothing.
       const initialReady = await publicClient.readContract({
@@ -552,9 +597,15 @@ export async function refundOverdueMatches() {
       // stake indefinitely.
       await gasGuard.check('critical')
 
-      // Measured on-chain (DEPLOYMENTS.md): 143,875 gas. Margin above that.
+      // Measured on-chain (DEPLOYMENTS.md): 143,875 gas USED for a peer match
+      // in the old deployment, 216k for a vault-backed refund on 2026-09-29. A
+      // limit has to cover the PEAK, which is before the storage-clearing
+      // refund that "used" is reported after (see settlementGas.ts, where a
+      // limit sized off gas used reverted 20 times), so 220k here was too low
+      // for the vault-backed case. Costs nothing to be generous: unused gas is
+      // returned.
       const hash = await sendKeeperTx(fees => wallet.sendTransaction({
-        to: market, data, gas: 220_000n, ...fees,
+        to: market, data, gas: 450_000n, ...fees,
       }), 'emergencyRefund')
       const receipt = await publicClient.waitForTransactionReceipt({ hash })
       await recordReceipt(receipt, 'critical')

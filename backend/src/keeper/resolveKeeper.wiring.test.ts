@@ -25,6 +25,7 @@ vi.mock('viem', async (importOriginal) => {
     createPublicClient: () => ({
       readContract: (a: unknown) => h.chain.readContract(a),
       call: (a: unknown) => h.chain.call(a),
+      estimateGas: (a: unknown) => h.chain.estimateGas(a),
       getCode: (a: unknown) => h.chain.getCode(a),
       waitForTransactionReceipt: (a: unknown) => h.chain.waitForTransactionReceipt(a),
     }),
@@ -54,7 +55,7 @@ vi.mock('../lib/redstone.js', () => ({
   bytes32ToFeedId: () => '',
 }))
 
-const { settlePendingMarkets, refundOverdueMatches } = await import('./resolveKeeper.js')
+const { settlePendingMarkets, refundOverdueMatches, resetResolveKeeperState } = await import('./resolveKeeper.js')
 const { BATCH_FROM_SELECTOR } = await import('./resolverAbi.js')
 
 const BATCH_ABI = parseAbi([
@@ -127,7 +128,7 @@ class FakeChain {
   sendTransaction({ to, data, gas }: { to: string; data: `0x${string}`; gas: bigint }) {
     this.txs++
     this.lastGas = gas
-    if (to.toLowerCase() === h.RESOLVER.toLowerCase()) {
+    if (to.toLowerCase() === h.RESOLVER.toLowerCase() && this.revertsLeft === 0) {
       const { args } = decodeFunctionData({ abi: BATCH_ABI, data })
       for (const i of this.takes(Number(args[1]), Number(args[2]))) this.matches[i].settled = true
       this.advance()
@@ -135,10 +136,22 @@ class FakeChain {
     return '0xhash'
   }
   lastGas = 0n
-  waitForTransactionReceipt() { return { status: 'success' } }
+  /** What eth_estimateGas answers; null makes it fail, like a node that cannot estimate. */
+  estimate: bigint | null = null
+  estimateGas() {
+    if (this.estimate === null) throw new Error('cannot estimate')
+    return this.estimate
+  }
+  /** Receipts come back reverted (out of gas) while this is positive; it counts down. */
+  revertsLeft = 0
+  waitForTransactionReceipt() {
+    if (this.revertsLeft > 0) { this.revertsLeft--; return { status: 'reverted', gasUsed: this.lastGas } }
+    return { status: 'success', gasUsed: 1n }
+  }
 }
 
 beforeEach(() => {
+  resetResolveKeeperState()
   h.chain = new FakeChain()
   h.pgQuery.mockReset()
   vi.spyOn(console, 'log').mockImplementation(() => {})
@@ -218,8 +231,33 @@ describe('settlePendingMarkets (audit A08 regression, end to end)', () => {
     pendingIs(h.MARKET)
     for (let i = 0; i < 5; i++) chain.add()
     await settlePendingMarkets()
-    // (100k + 5 * 200k) * 1.2
-    expect(chain.lastGas).toBe(1_320_000n)
+    // (120k + 5 * 260k) * 1.25
+    expect(chain.lastGas).toBe(1_775_000n)
+  })
+
+  it('attaches at least 130% of what the node estimates for exactly this call', async () => {
+    const chain: FakeChain = h.chain
+    pendingIs(h.MARKET)
+    chain.add()
+    chain.estimate = 900_000n // far more than the sized limit for one match (475k)
+    await settlePendingMarkets()
+    expect(chain.lastGas).toBe(1_170_000n)
+  })
+
+  it('does not resend a reverted settle with the same gas limit, and pauses the market after three in a row', async () => {
+    const chain: FakeChain = h.chain
+    pendingIs(h.MARKET)
+    chain.add()
+    chain.revertsLeft = 5
+    const limits: bigint[] = []
+    for (let tick = 0; tick < 6; tick++) {
+      await settlePendingMarkets()
+      if (chain.txs > limits.length) limits.push(chain.lastGas)
+    }
+    // one-match sized limit is (120k + 260k) * 1.25 = 475,000, then 1.5x per revert
+    expect(limits.slice(0, 3)).toEqual([475_000n, 712_500n, 1_068_750n])
+    // three reverts in a row: the market is paused, so the following ticks send nothing
+    expect(limits.length).toBe(3)
   })
 
   it('does not dry-run or send anything when the database was a tick behind and nothing is due', async () => {
