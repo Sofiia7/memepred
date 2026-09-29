@@ -1,0 +1,133 @@
+{
+  "schema": 1,
+  "date": "2026-09-29",
+  "implementedOnChain": false,
+  "statement": "Outcome-independent positive contribution for activated externally funded books, conditional on the enforced total lifecycle cost allowance; no demand/volume claim.",
+  "calibration": "No fitted win probabilities and no historical parameter search.",
+  "assumptions": {
+    "normalFeeBps": 200,
+    "activatedVoidFeeBps": 100,
+    "maximumReferralShareOfFeeBps": 1000,
+    "maximumSideRatio": 4,
+    "gasBudgetMeasured": false,
+    "totalLifecycleGasAllowance": 1000000,
+    "minimumRetainedVoidFeeCostMultiple": 2,
+    "ethUsdFrozen": 2713.8,
+    "userPaysPlacementAndClaimGas": true,
+    "operatorSuppliesDirectionalStake": false,
+    "fixedCostsIncludedInUnitContribution": false
+  },
+  "tests": {
+    "generatedBooks": 10000,
+    "outcomeChecks": 40000,
+    "activated": 7704,
+    "cancelled": 2296,
+    "note": "Random books are invariant tests, NOT a forecast of customer demand or fill rate."
+  },
+  "gasScenarios": [
+    {
+      "gasGwei": 0.020142,
+      "totalGasBudget": 1000000,
+      "costEth": 0.000020142,
+      "minimumBankEth": 0.01,
+      "normalNetEth": 0.000159858,
+      "voidNetEth": 0.000069858,
+      "normalNetUsd": 0.4338226404,
+      "voidNetUsd": 0.1895806404
+    },
+    {
+      "gasGwei": 0.069692,
+      "totalGasBudget": 1000000,
+      "costEth": 0.000069692,
+      "minimumBankEth": 0.02,
+      "normalNetEth": 0.000290308,
+      "voidNetEth": 0.000110308,
+      "normalNetUsd": 0.7878378504000001,
+      "voidNetUsd": 0.2993538504
+    },
+    {
+      "gasGwei": 0.398,
+      "totalGasBudget": 1000000,
+      "costEth": 0.000398,
+      "minimumBankEth": 0.09,
+      "normalNetEth": 0.001222,
+      "voidNetEth": 0.000412,
+      "normalNetUsd": 3.3162636,
+      "voidNetUsd": 1.1180856000000001
+    },
+    {
+      "gasGwei": 1.039,
+      "totalGasBudget": 1000000,
+      "costEth": 0.001039,
+      "minimumBankEth": 0.235,
+      "normalNetEth": 0.003191,
+      "voidNetEth": 0.001076,
+      "normalNetUsd": 8.6597358,
+      "voidNetUsd": 2.9200488
+    }
+  ],
+  "monthlyScenarios": [
+    {
+      "bankEth": 0.01,
+      "assumedVoidPct": 3,
+      "fundedRoundsPerDay": 100,
+      "monthlyDepositedEth": 30,
+      "netPerRoundEth": 0.000157158,
+      "monthlyContributionUsd": 1279.4861412,
+      "illustrativeFixedUsd": 100,
+      "afterIllustrativeFixedUsd": 1179.4861412
+    },
+    {
+      "bankEth": 0.026,
+      "assumedVoidPct": 3,
+      "fundedRoundsPerDay": 100,
+      "monthlyDepositedEth": 78,
+      "netPerRoundEth": 0.000440838,
+      "monthlyContributionUsd": 3589.0384932,
+      "illustrativeFixedUsd": 100,
+      "afterIllustrativeFixedUsd": 3489.0384932
+    },
+    {
+      "bankEth": 0.1,
+      "assumedVoidPct": 3,
+      "fundedRoundsPerDay": 100,
+      "monthlyDepositedEth": 300,
+      "netPerRoundEth": 0.001752858,
+      "monthlyContributionUsd": 14270.718121200001,
+      "illustrativeFixedUsd": 100,
+      "afterIllustrativeFixedUsd": 14170.718121200001
+    }
+  ],
+  "botComparison": [
+    {
+      "botWinProbability": 0.5,
+      "currentDirectionalLpPctOfStake": 0,
+      "fundedRoundNetEth": 0.001402,
+      "note": "Different denominators: LP row per one user stake; funded round row per 0.1 ETH total bank."
+    },
+    {
+      "botWinProbability": 0.6,
+      "currentDirectionalLpPctOfStake": -19.599999999999994,
+      "fundedRoundNetEth": 0.001402,
+      "note": "Different denominators: LP row per one user stake; funded round row per 0.1 ETH total bank."
+    },
+    {
+      "botWinProbability": 0.75,
+      "currentDirectionalLpPctOfStake": -49,
+      "fundedRoundNetEth": 0.001402,
+      "note": "Different denominators: LP row per one user stake; funded round row per 0.1 ETH total bank."
+    },
+    {
+      "botWinProbability": 0.9,
+      "currentDirectionalLpPctOfStake": -78.4,
+      "fundedRoundNetEth": 0.001402,
+      "note": "Different denominators: LP row per one user stake; funded round row per 0.1 ETH total bank."
+    },
+    {
+      "botWinProbability": 1,
+      "currentDirectionalLpPctOfStake": -98,
+      "fundedRoundNetEth": 0.001402,
+      "note": "Different denominators: LP row per one user stake; funded round row per 0.1 ETH total bank."
+    }
+  ]
+}
