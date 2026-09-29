@@ -434,6 +434,11 @@ const clN = new Int32Array(NCFG * NCL) // decided per (cfg, pool-hour)
 const cfgIdx = (di, ri, dj, s) => ((di * NR + ri) * ND + dj) * NS + s
 const poolInfo = []
 const dirs = new Int8Array(NS)
+// stage 2 (section 8+ of the document): per-event record for the main delay
+const DUR2 = [60, 300, 900, 1800, 3600] // 1800 and 3600 are research only: the factory allows 60/300/900
+const NR2 = 3 // E0, E1, E2
+const REFUND2 = 1 << 30, OOR2 = (1 << 30) + 1
+const st2 = { pool: [], hour: [], dir: [], rnd: [], gap: [], devBot: [], devC: [], rej: [], delta: Array.from({ length: NR2 }, () => DUR2.map(() => [])) }
 const tStart = Date.now()
 for (let pi = 0; pi < NP; pi++) {
   const m = metas[pi]
@@ -499,6 +504,29 @@ for (let pi = 0; pi < NP; pi++) {
       const rejected = !pr.spreadOk(twapE, spotM)
       const hr = Math.floor((T0 + mt) / 3600) - HOUR0
       const cl = pi * NH + hr
+      if (di === MAIN_DI) {
+        // stage 2 keeps every event of the main delay: who, when, both deviations, and for each entry rule
+        // and duration the oriented tick move exit - entry (token price up > 0), so that dead zones, payout
+        // tables and re-optimised bots can all be replayed without recomputing the series
+        st2.pool.push(pi); st2.hour.push(hr); st2.dir.push(evDir[i]); st2.rnd.push(evRand[i]); st2.gap.push(i + 1 < evU.length ? evU[i + 1] - u : 1e9)
+        st2.devBot.push(inGuard ? devT : NaN); st2.devC.push(orient * (spotM - twapE)); st2.rej.push(rejected ? 1 : 0)
+        for (let r2 = 0; r2 < NR2; r2++) {
+          const lag = r2 === 0 ? 0 : r2 === 1 ? 30 : 60
+          const entryT = r2 === 0 ? twapE : mt + lag <= LAST ? Math.floor((cum[mt + lag] - cum[mt]) / lag) : null
+          for (let q = 0; q < DUR2.length; q++) {
+            const settle = mt + lag + DUR2[q]
+            let v = OOR2
+            if (entryT !== null && settle <= LAST) {
+              const W = twapWindowFor(DUR2[q]), A = Math.max(1, Math.floor(W / ANCHOR_FRACTION))
+              const exitT = Math.floor((cum[settle] - cum[settle - W]) / W)
+              const ancT = Math.floor((cum[settle] - cum[settle - A]) / A)
+              if (!pr.spreadOk(exitT, ancT)) v = REFUND2
+              else { const c = pr.cmp(exitT, entryT); v = c === 0 ? 0 : c * Math.max(1, Math.abs(exitT - entryT)) }
+            }
+            st2.delta[r2][q].push(v)
+          }
+        }
+      }
       for (let ri = 0; ri < NR; ri++) {
         let entryT, start
         if (ri === 0) { entryT = twapE; start = mt }
@@ -760,5 +788,372 @@ for (let di = 0; di < NDL; di++) for (let ri = 0; ri < NR; ri++) for (let dj = 0
   const cfg = cfgIdx(di, ri, dj, s), st = stats(cfg), c = counts(cfg)
   summary.table.push({ delay: DELAYS[di], rule: ri, duration: DURATIONS[dj], strategy: STRATS[s], ...c, p: st.p, se1h: st.se, se6h: stats(cfg, { block: 6 }).se, pTrain: stats(cfg, { half: 'train' }).p, pTest: stats(cfg, { half: 'test' }).p })
 }
+// ════════════════════════════════════════════════════════════════════════════
+// STAGE 2 (document sections 8-13): which RULE makes the fast bot harmless.
+// Everything that is chosen - zone, payout table, the bot's own strategy - is chosen on the first half and
+// scored on the second, and every rule is scored against bots that re-optimise themselves for that rule.
+// ════════════════════════════════════════════════════════════════════════════
+const t2 = Date.now()
+const E2N = st2.pool.length
+const P2 = Uint8Array.from(st2.pool), H2 = Int16Array.from(st2.hour), DIR2 = Int8Array.from(st2.dir), RND2 = Int8Array.from(st2.rnd)
+const DB2 = Float64Array.from(st2.devBot), DC2 = Int32Array.from(st2.devC), RJ2 = Uint8Array.from(st2.rej)
+const DL2 = st2.delta.map((rr) => rr.map((a) => Int32Array.from(a)))
+const TR2 = new Uint8Array(E2N)
+for (let i = 0; i < E2N; i++) TR2[i] = H2[i] < MID_HOUR ? 1 : 0
+const RULES2 = ['E0', 'E1', 'E2']
+const ZONES = [0, 10, 25, 50, 100, 200]
+// Dead zone: decided only if |exit/entry - 1| >= d bps; otherwise both stakes back, no fee (like a tie).
+const zoneUp = (d) => (d === 0 ? 1 : Math.ceil(Math.log(1 + d / 1e4) / Math.log(1.0001) - 1e-9))
+const zoneDn = (d) => (d === 0 ? 1 : Math.ceil(-Math.log(1 - d / 1e4) / Math.log(1.0001) - 1e-9))
+// The bot's features: the band of its expected deviation, and whether the last swap agrees with it.
+const BOT_EDGES = [5, 10, 25, 50, 100, 150, 202] // ticks, ~bps; band 0 = exactly zero, band 8 = outside the guard
+const NB2 = BOT_EDGES.length + 2
+const bandOf = (dev, edges) => {
+  if (Number.isNaN(dev)) return edges.length + 1
+  const a = Math.abs(dev)
+  if (a === 0) return 0
+  for (let k = 0; k < edges.length; k++) if (a < edges[k]) return k + 1
+  return edges.length + 1
+}
+const BB2 = new Uint8Array(E2N), REF2 = new Int8Array(E2N), S3A2 = new Uint8Array(E2N)
+for (let i = 0; i < E2N; i++) {
+  BB2[i] = bandOf(DB2[i], BOT_EDGES)
+  const sg = Number.isFinite(DB2[i]) && DB2[i] !== 0 ? Math.sign(DB2[i]) : 0
+  REF2[i] = sg !== 0 ? sg : DIR2[i] || 1 // "with" = along the deviation, or along the last swap when there is none
+  S3A2[i] = sg === 0 ? 2 : DIR2[i] === sg ? 0 : 1
+}
+// outcome of an UP bet: +1 token up (decided), -1 down (decided), 0 tie or inside the zone, 2 refund, 3 not placed
+function upOutcomes(r, q, d) {
+  const up = zoneUp(d), dn = zoneDn(d), a = DL2[r][q], o = new Int8Array(E2N)
+  for (let i = 0; i < E2N; i++) {
+    const v = a[i]
+    o[i] = RJ2[i] || v === OOR2 ? 3 : v === REFUND2 ? 2 : v >= up ? 1 : v <= -dn ? -1 : 0
+  }
+  return o
+}
+// ── fixed payouts: counts per (half, pool, bot band, swap agreement, option) ──
+// options: 0 bet along REF2, 1 against it, 2 random; counts: won, lost, other (tie, zone, refund)
+const NCELL2 = NP * NB2 * 3
+const cellIdx = (i) => (P2[i] * NB2 + BB2[i]) * 3 + S3A2[i]
+function cellCounts(o) {
+  const c = new Float64Array(2 * NCELL2 * 9)
+  for (let i = 0; i < E2N; i++) {
+    const oc = o[i]
+    if (oc === 3) continue
+    const base = ((TR2[i] ? 0 : 1) * NCELL2 + cellIdx(i)) * 9
+    for (let opt = 0; opt < 3; opt++) {
+      const dir = opt === 0 ? REF2[i] : opt === 1 ? -REF2[i] : RND2[i]
+      c[base + opt * 3 + (oc === 0 || oc === 2 ? 2 : oc === dir ? 0 : 1)]++
+    }
+  }
+  return c
+}
+const cellPool = (cell) => Math.floor(cell / (NB2 * 3)), cellBand = (cell) => Math.floor(cell / 3) % NB2, cellS3 = (cell) => cell % 3
+// A strategy on cells: (cell) => option 0/1/2 or -1 for no bet. Returns summed counts on a half.
+function sumStrat(c, half, pick) {
+  const t = [0, 0, 0]
+  for (let cell = 0; cell < NCELL2; cell++) {
+    const opt = pick(cell)
+    if (opt < 0) continue
+    const b = (half * NCELL2 + cell) * 9 + opt * 3
+    t[0] += c[b]; t[1] += c[b + 1]; t[2] += c[b + 2]
+  }
+  return t
+}
+const fixedPay = (flp) => ({ pw: 1 - 2 * F_PR - 2 * flp, vw: -(1 - 2 * flp), vl: 1 - 2 * F_PR }) // player win, vault if player wins / loses
+const evPlayer = (t, fp) => (t[0] * fp.pw - t[1]) / (t[0] + t[1] + t[2])
+const evVault = (t, fp) => (t[0] * fp.vw + t[1] * fp.vl) / (t[0] + t[1] + t[2])
+const KBAND = [1, 3, 4, 5, 6, 7] // first band of S1(k) for k = 0, 0.1, 0.25, 0.5, 1, 1.5%
+const FIXED2 = [
+  ['S0', (cell) => 2],
+  ...KBAND.map((b0, k) => [`S1 k=${fmtK(KS[k])}`, (cell) => (cellBand(cell) >= b0 && cellBand(cell) <= 7 ? 0 : -1)]),
+  ...KBAND.map((b0, k) => [`S2 k=${fmtK(KS[k])}`, (cell) => (cellBand(cell) >= b0 && cellBand(cell) <= 7 ? 1 : -1)]),
+  ['S3', (cell) => (cellS3(cell) === 1 ? 1 : 0)],
+  ['S4', (cell) => (cellS3(cell) === 1 ? 0 : 1)],
+]
+// The re-optimising bot: per cell group (band / band+swap / pool+band+swap) the option with the best
+// first-half EV, if that EV beats 1% on at least 100 bets. `evOf(t)` is the bot's EV from counts.
+function optimise(c, gran, evOf) {
+  const key = (cell) => (gran === 'band' ? cellBand(cell) : gran === 'band+s3' ? cellBand(cell) * 3 + cellS3(cell) : cell)
+  const agg = new Map()
+  for (let cell = 0; cell < NCELL2; cell++) {
+    const k = key(cell)
+    let a = agg.get(k)
+    if (!a) agg.set(k, (a = [[0, 0, 0], [0, 0, 0]]))
+    for (let opt = 0; opt < 2; opt++) { const b = cell * 9 + opt * 3; a[opt][0] += c[b]; a[opt][1] += c[b + 1]; a[opt][2] += c[b + 2] }
+  }
+  const choice = new Map()
+  for (const [k, a] of agg) {
+    let best = -1, bestEv = 0.01
+    for (let opt = 0; opt < 2; opt++) { const n = a[opt][0] + a[opt][1] + a[opt][2]; if (n < 100) continue; const ev = evOf(a[opt]); if (ev > bestEv) { bestEv = ev; best = opt } }
+    choice.set(k, best)
+  }
+  return (cell) => choice.get(key(cell)) ?? -1
+}
+const FEES2 = [0.01, 0.03, 0.05, 0.08, 0.1, 0.12, 0.15, 0.2, 0.3, 0.45]
+// For one (rule, duration, zone): every bot re-selected per fee; returns the worst case for the vault.
+function sweepFixed(r, q, d) {
+  const o = upOutcomes(r, q, d)
+  const c = cellCounts(o)
+  const s0 = sumStrat(c, 1, () => 2)
+  const res = { rule: RULES2[r], duration: DUR2[q], zone: d, tieShare: s0[2] / (s0[0] + s0[1] + s0[2]), s0p: s0[0] / (s0[0] + s0[1]), byFee: [] }
+  for (const flp of FEES2) {
+    const fp = fixedPay(flp)
+    const ev = (t) => evPlayer(t, fp)
+    const bots = []
+    let bestFixed = null
+    for (const [name, pick] of FIXED2) {
+      const tr = sumStrat(c, 0, pick)
+      if (tr[0] + tr[1] < 2000) continue
+      if (!bestFixed || ev(tr) > bestFixed.trEv) bestFixed = { name, pick, trEv: ev(tr) }
+    }
+    if (bestFixed) bots.push({ name: 'лучшая простая: ' + bestFixed.name, pick: bestFixed.pick })
+    for (const g of ['band', 'band+s3', 'pool+band+s3']) {
+      const pick = optimise(c.subarray(0, NCELL2 * 9), g, ev)
+      bots.push({ name: g === 'band' ? 'S5 полосы' : g === 'band+s3' ? 'S6 полоса+своп' : 'S6 пул+полоса+своп', pick })
+    }
+    let worst = null
+    for (const b of bots) {
+      const te = sumStrat(c, 1, b.pick)
+      const n = te[0] + te[1] + te[2]
+      if (n < 500) continue
+      const row = { name: b.name, n, p: te[0] / (te[0] + te[1]), evVault: evVault(te, fp), evBot: evPlayer(te, fp) }
+      if (!worst || row.evVault < worst.evVault) worst = row
+    }
+    res.byFee.push({ flp, honest: evPlayer(s0, fp), worst })
+  }
+  return res
+}
+const sweep = []
+for (let r = 0; r < NR2; r++) for (let q = 0; q < DUR2.length; q++) for (const d of ZONES) sweep.push(sweepFixed(r, q, d))
+const feeRow = (s, flp) => s.byFee.find((x) => Math.abs(x.flp - flp) < 1e-9)
+const neededFee = (s) => { for (const f of s.byFee) if (!f.worst || f.worst.evVault >= 0) return f.flp; return null }
+say('# ЭТАП 2: какое правило делает быстрого бота безвредным')
+say()
+say(`## Мёртвая зона и окно входа, фиксированные выплаты: худший для хранилища бот, подобранный на 1-й половине заново для каждого правила и каждой f_lp (вторая половина)`)
+say(`Боты: лучшая простая из S0-S4 (k), S5 по полосам, S6 по полосе и направлению свопа, S6 по пулу, полосе и свопу. Ничьи - доля ставок S0 без исхода (ничья, зона, возврат).`)
+say(`${padE('правило', 7)} ${pad('длит.', 5)} ${pad('зона', 5)} ${pad('ничьи', 6)} ${pad('p бота 5%', 9)} ${pad('EV хр 5%', 8)} ${pad('EV хр 8%', 8)} ${pad('честн 5%', 8)} ${pad('честн 8%', 8)} ${pad('нужна f_lp', 10)} ${padE(' худший бот при 5%', 26)}`)
+for (const s of sweep) {
+  const f5 = feeRow(s, 0.05), f8 = feeRow(s, 0.08), need = neededFee(s)
+  say(`${padE(s.rule, 7)} ${pad(s.duration, 5)} ${pad(s.zone, 5)} ${pad(pct(s.tieShare), 6)} ${pad(f5.worst ? pct(f5.worst.p) : '-', 9)} ${pad(f5.worst ? pct(f5.worst.evVault, 1) : 'нет', 8)} ${pad(f8.worst ? pct(f8.worst.evVault, 1) : 'нет', 8)} ${pad(pct(f5.honest, 1), 8)} ${pad(pct(f8.honest, 1), 8)} ${pad(need === null ? '> 45%' : pct(need, 0), 10)}  ${f5.worst ? f5.worst.name : 'бот не ставит'}`)
+}
+say()
+
+// ── dynamic payouts: m(band, side) = (1 - margin) / p_hat, clipped to [1.1, 6] ──
+const C_EDGES = { 6: [10, 25, 50, 100, 202], 10: [3, 6, 10, 20, 40, 70, 110, 150, 202] } // contract bands, ticks
+const oCache = new Map(), bcCache = new Map()
+function dynTable(r, q, nb, perPool, margin, mode) {
+  const edges = C_EDGES[nb], NBC = edges.length + 2
+  if (!oCache.has(r * 10 + q)) oCache.set(r * 10 + q, upOutcomes(r, q, 0))
+  const o = oCache.get(r * 10 + q)
+  if (!bcCache.has(nb)) { const a = new Uint8Array(E2N); for (let i = 0; i < E2N; i++) a[i] = bandOf(DC2[i], edges); bcCache.set(nb, a) }
+  const bc = bcCache.get(nb)
+  // first-half calibration of the "with the deviation" side; "against" is its complement; zero band is 50%
+  const w = new Float64Array(NP * NBC), n = new Float64Array(NP * NBC), wA = new Float64Array(NBC), nA = new Float64Array(NBC)
+  for (let i = 0; i < E2N; i++) {
+    if (!TR2[i] || (o[i] !== 1 && o[i] !== -1) || DC2[i] === 0) continue
+    const win = o[i] === Math.sign(DC2[i]) ? 1 : 0
+    w[P2[i] * NBC + bc[i]] += win; n[P2[i] * NBC + bc[i]]++; wA[bc[i]] += win; nA[bc[i]]++
+  }
+  const pWith = (pool, b) => {
+    if (b === 0) return 0.5
+    const pooled = nA[b] > 0 ? wA[b] / nA[b] : 0.5
+    if (!perPool) return pooled
+    const k = pool * NBC + b
+    return (w[k] + 50 * pooled) / (n[k] + 50) // shrunk towards the pooled band with a weight of 50 bets
+  }
+  const mOf = (p) => { const raw = (1 - margin) / p; if (raw < 1.1) return mode === 'close' ? 0 : 1.1; return Math.min(6, raw) }
+  // payout multiple for event i and direction dir; 0 = the vault refuses the bet
+  const pay = (i, dir) => { const b = bc[i]; const pw = pWith(P2[i], b); const side = b === 0 || DC2[i] === 0 ? 0.5 : Math.sign(DC2[i]) === dir ? pw : 1 - pw; return b === 0 ? mOf(0.5) : mOf(side) }
+  const pooled = (b) => (b === 0 ? 0.5 : nA[b] > 0 ? wA[b] / nA[b] : 0.5)
+  return { o, pay, pWith, mOf, edges, NBC, pooled }
+}
+function evalDyn(t, dirOf, half) {
+  let n = 0, dec = 0, win = 0, house = 0, player = 0
+  const cH = new Float64Array(NP * NH), cN = new Float64Array(NP * NH)
+  for (let i = 0; i < E2N; i++) {
+    if ((half === 'test') === !!TR2[i]) continue
+    const dir = dirOf(i)
+    if (!dir || t.o[i] === 3) continue
+    const m = t.pay(i, dir)
+    if (m === 0) continue
+    n++
+    const c = P2[i] * NH + H2[i]
+    cN[c]++
+    const oc = t.o[i]
+    if (oc === 0 || oc === 2) continue
+    dec++
+    const h = oc === dir ? -(m - 1) : 1
+    if (oc === dir) win++
+    house += h; player -= h; cH[c] += h
+  }
+  // cluster-robust error of the house EV per bet, blocks of pool x hour
+  const ev = house / n
+  let s2 = 0, C = 0
+  for (let c = 0; c < cN.length; c++) if (cN[c] > 0) { const x = cH[c] - ev * cN[c]; s2 += x * x; C++ }
+  return { n, p: win / dec, house: ev, player: player / n, tie: 1 - dec / n, se: C > 1 ? Math.sqrt((s2 * C) / (C - 1)) / n : NaN }
+}
+function optimiseDyn(t, gran) {
+  const key = (i) => (gran === 'band' ? BB2[i] : cellIdx(i))
+  const s = new Map()
+  for (let i = 0; i < E2N; i++) {
+    if (!TR2[i] || t.o[i] === 3) continue
+    const k = key(i)
+    let a = s.get(k)
+    if (!a) s.set(k, (a = [0, 0, 0, 0]))
+    for (let opt = 0; opt < 2; opt++) {
+      const dir = opt === 0 ? REF2[i] : -REF2[i]
+      const m = t.pay(i, dir)
+      if (m === 0) continue
+      a[opt * 2 + 1]++
+      const oc = t.o[i]
+      if (oc === 1 || oc === -1) a[opt * 2] += oc === dir ? m - 1 : -1
+    }
+  }
+  const choice = new Map()
+  for (const [k, a] of s) {
+    let best = 0, bestEv = 0.01
+    for (let opt = 0; opt < 2; opt++) { if (a[opt * 2 + 1] < 100) continue; const ev = a[opt * 2] / a[opt * 2 + 1]; if (ev > bestEv) { bestEv = ev; best = opt === 0 ? 1 : -1 } }
+    choice.set(k, best)
+  }
+  return (i) => { const c = choice.get(key(i)) ?? 0; return c === 0 ? 0 : c * REF2[i] }
+}
+const dynRows = []
+const S1dir = (i) => (BB2[i] >= 1 && BB2[i] <= 7 ? REF2[i] : 0)
+say('## Динамические выплаты: m(полоса, сторона) = (1 - маржа) / p_hat, p_hat по 1-й половине, m в [1.1x, 6x]; EV дома на единицу ставки, 2-я половина')
+say('Дом = хранилище, маржа включает комиссию протокола. S0 - это и потеря честного игрока. Ошибка S6 - по блокам пул x час.')
+say(`${padE('правило', 7)} ${pad('длит.', 5)} ${pad('полос', 5)} ${padE(' таблица', 10)} ${pad('маржа', 5)} ${pad('S0', 7)} ${pad('S1', 7)} ${pad('S3', 7)} ${pad('S5', 7)} ${pad('S6', 7)} ${pad('+-S6', 5)} ${pad('p S6', 6)} ${pad('ставок S6', 9)}`)
+for (const r of [0, 2]) for (let q = 0; q < DUR2.length; q++) for (const nb of [6, 10]) for (const perPool of [false, true]) for (const margin of [0.03, 0.05, 0.06, 0.07, 0.08]) {
+  const t = dynTable(r, q, nb, perPool, margin, 'clip')
+  const s0 = evalDyn(t, (i) => RND2[i], 'test'), s1 = evalDyn(t, S1dir, 'test'), s3 = evalDyn(t, (i) => DIR2[i], 'test')
+  const s5 = evalDyn(t, optimiseDyn(t, 'band'), 'test'), s6 = evalDyn(t, optimiseDyn(t, 'cell'), 'test')
+  const worst = Math.min(...[s0, s1, s3, s5, s6].filter((y) => y.n >= 300).map((y) => y.house))
+  const row = { rule: RULES2[r], duration: DUR2[q], bands: nb, perPool, margin, s0, s1, s3, s5, s6, worst }
+  dynRows.push(row)
+  const f = (x) => (x.n >= 300 ? pct(x.house, 1) : 'нет')
+  say(`${padE(RULES2[r], 7)} ${pad(DUR2[q], 5)} ${pad(nb, 5)} ${padE(perPool ? ' по пулам' : ' общая', 10)} ${pad(pct(margin, 0), 5)} ${pad(f(s0), 7)} ${pad(f(s1), 7)} ${pad(f(s3), 7)} ${pad(f(s5), 7)} ${pad(f(s6), 7)} ${pad((100 * s6.se).toFixed(1), 5)} ${pad(s6.n ? pct(s6.p) : '-', 6)} ${pad(s6.n, 9)}`)
+}
+say()
+// E0 at 60 s with "close" instead of paying 1.1x where the formula gives less (checked because E0 60 s has cells above 90%)
+say('E0, 60 с, режим «закрыть» (ставка не принимается, если расчётный m < 1.1), 10 полос по пулам:')
+for (const margin of [0.05, 0.08]) {
+  const t = dynTable(0, 0, 10, true, margin, 'close')
+  const s0 = evalDyn(t, (i) => RND2[i], 'test'), s6 = evalDyn(t, optimiseDyn(t, 'cell'), 'test')
+  say(`  маржа ${pct(margin, 0)}: честный ${pct(-s0.house, 1)}, S6 ${pct(s6.house, 1)} ± ${(100 * s6.se).toFixed(1)} (${s6.n} ставок, p ${pct(s6.p)})`)
+}
+say()
+
+// ── what satisfies (a) vault EV >= 0 against the worst bot at f_lp or margin <= 8% and (b) honest loss <= 8% ──
+say('## Наборы правил, прошедшие оба условия: (а) хранилище не в минусе против худшего бота при f_lp или марже до 8%, (б) честный игрок теряет не больше 8%')
+const passFixed = []
+for (const s of sweep) for (const f of s.byFee) {
+  if (f.flp > 0.08) continue
+  if ((!f.worst || f.worst.evVault >= 0) && f.honest >= -0.08) { passFixed.push({ s, f }); break }
+}
+for (const { s, f } of passFixed) say(`фикс.: ${s.rule} ${s.duration} с, зона ${s.zone} bps, f_lp ${pct(f.flp, 0)}: ничьи ${pct(s.tieShare)}, худший бот ${f.worst ? `${f.worst.name}, p ${pct(f.worst.p)}, EV хранилища ${pct(f.worst.evVault, 2)}` : 'не ставит'}, честный ${pct(f.honest, 1)}`)
+if (!passFixed.length) say('фикс.: ни одна комбинация правило / длительность / зона не прошла при f_lp до 8%')
+const passDyn = dynRows.filter((x) => x.worst >= 0 && x.s0.house <= 0.08)
+for (const x of passDyn) say(`динам.: ${x.rule} ${x.duration} с, ${x.bands} полос, ${x.perPool ? 'по пулам' : 'общая'}, маржа ${pct(x.margin, 0)}: честный теряет ${pct(x.s0.house, 1)}, худший бот ${pct(x.worst, 1)}; S6 ${pct(x.s6.house, 1)} ± ${(100 * x.s6.se).toFixed(1)} (p ${pct(x.s6.p)}, ${x.s6.n} ставок), ничьи S0 ${pct(x.s0.tie)}`)
+if (!passDyn.length) say('динам.: ни одна таблица не прошла')
+// the closest misses, so the recommendation can say what would be needed
+const bestFixed2 = [...sweep].map((s) => ({ s, need: neededFee(s) ?? 1, f8: feeRow(s, 0.08) })).sort((a, b) => a.need - b.need || b.f8.worst.evVault - a.f8.worst.evVault)
+const bestDyn2 = dynRows.filter((x) => x.s0.house <= 0.08).sort((a, b) => b.worst - a.worst)
+say('Ближе всего (фикс.): ' + bestFixed2.slice(0, 5).map(({ s, need, f8 }) => `${s.rule} ${s.duration} с зона ${s.zone}: нужна f_lp ${pct(need, 0)}, при 8% хранилище ${pct(f8.worst.evVault, 1)}, ничьи ${pct(s.tieShare)}`).join('; '))
+say('Ближе всего (динам., честный теряет не больше 8%): ' + bestDyn2.slice(0, 5).map((x) => `${x.rule} ${x.duration} с, ${x.bands} полос ${x.perPool ? 'по пулам' : 'общая'}, маржа ${pct(x.margin, 0)}: худший бот ${pct(x.worst, 1)}, S6 ${pct(x.s6.house, 1)} ± ${(100 * x.s6.se).toFixed(1)}, честный ${pct(x.s0.house, 1)}`).join('; '))
+say()
+
+// ── the payout table of the candidate configuration, as it would be stored ──
+for (const [r, q, nb, margin] of [[2, 4, 6, 0.05], [2, 2, 10, 0.06]]) {
+  const t = dynTable(r, q, nb, true, margin, 'clip')
+  const lo = [0, ...t.edges.slice(0, -1)]
+  say(`## Таблица множителей: ${RULES2[r]}, ${DUR2[q]} с, ${nb} полос, маржа ${pct(margin, 0)} (общая p_hat и m; по пулам - разброс m)`)
+  say(`${padE('полоса, тиков', 14)} ${pad('p по ходу', 9)} ${pad('m по ходу', 9)} ${pad('m против', 9)} ${pad('по пулам: по ходу', 18)} ${pad('против', 12)}`)
+  for (let b = 0; b < t.NBC - 1; b++) {
+    const pw = t.pooled(b)
+    const mw = [], ma = []
+    for (let p = 0; p < NP; p++) { mw.push(t.mOf(t.pWith(p, b))); ma.push(t.mOf(b === 0 ? 0.5 : 1 - t.pWith(p, b))) }
+    const label = b === 0 ? '0' : `${Math.max(1, lo[b - 1])}-${t.edges[b - 1] - 1}`
+    const rng = (a) => `${Math.min(...a).toFixed(2)}-${Math.max(...a).toFixed(2)}x`
+    say(`${padE(label, 14)} ${pad(pct(pw), 9)} ${pad(t.mOf(pw).toFixed(2) + 'x', 9)} ${pad((b === 0 ? t.mOf(0.5) : t.mOf(1 - pw)).toFixed(2) + 'x', 9)} ${pad(rng(mw), 18)} ${pad(rng(ma), 12)}`)
+  }
+  say()
+}
+
+// ── why tiny deviations won: after the swap the price simply stays where it is ──
+{
+  let nNo = 0, wNo = 0, nYes = 0, wYes = 0
+  const up = zoneUp(0), dn = zoneDn(0), a = DL2[0][0]
+  for (let i = 0; i < E2N; i++) {
+    if (BB2[i] < 1 || BB2[i] > 2 || RJ2[i] || a[i] === OOR2 || a[i] === REFUND2) continue // S1 bets with |dev| < 10 ticks
+    const v = a[i]
+    if (v < up && v > -dn) continue
+    const won = Math.sign(v) === REF2[i] ? 1 : 0
+    if (st2.gap[i] > DELAY + 60) { nNo++; wNo += won } else { nYes++; wYes += won }
+  }
+  say(`## Почему мелкие отклонения выигрывали (E0, 60 с, S1, отклонение меньше 10 тиков, решённые ставки)`)
+  say(`без единого свопа от ставки до расчёта: ${pct(nNo / (nNo + nYes))} ставок, p ${pct(wNo / nNo)}; со свопами: p ${pct(wYes / nYes)}`)
+  say()
+}
+
+// ── flow mix and PvP for the current rule and the best candidates ──
+function mixLine(label, honestEv, botEv) {
+  return `${padE(label, 64)} ${[0, 0.1, 0.3, 1].map((b) => pad(pct((1 - b) * honestEv + b * botEv, 2), 8)).join(' ')}`
+}
+say('## Смесь потока: EV хранилища (дома) на единицу оборота при доле бот-потока 0 / 10 / 30 / 100%, остальное - случайные игроки')
+const mixRows = []
+say(`${padE('правило', 64)} ${['0%', '10%', '30%', '100%'].map((x) => pad(x, 8)).join(' ')}`)
+const honestVault = (s, flp) => evVault(sumStrat(cellCounts(upOutcomes(RULES2.indexOf(s.rule), DUR2.indexOf(s.duration), s.zone)), 1, () => 2), fixedPay(flp))
+const mixFixed = [
+  [sweep.find((x) => x.rule === 'E0' && x.duration === 60 && x.zone === 0), 0.05],
+  [sweep.find((x) => x.rule === 'E0' && x.duration === 900 && x.zone === 0), 0.05],
+  [bestFixed2[0].s, 0.05],
+  [bestFixed2[0].s, 0.08],
+]
+for (const [s, flp] of mixFixed) {
+  const f = feeRow(s, flp)
+  const hv = honestVault(s, flp)
+  const label = `фикс. ${s.rule}, ${s.duration} с, зона ${s.zone}, f_lp ${pct(flp, 0)}`
+  say(mixLine(label, hv, f.worst ? f.worst.evVault : 0))
+  mixRows.push({ label, honestVault: hv, botVault: f.worst ? f.worst.evVault : 0 })
+}
+const recDyn = dynRows.find((y) => y.rule === 'E2' && y.duration === 3600 && y.bands === 6 && y.perPool && Math.abs(y.margin - 0.05) < 1e-9)
+for (const x of [recDyn, bestDyn2.find((y) => Math.abs(y.margin - 0.05) < 1e-9), bestDyn2[0]].filter(Boolean)) {
+  const label = `динам. ${x.rule}, ${x.duration} с, ${x.bands} полос ${x.perPool ? 'по пулам' : 'общая'}, маржа ${pct(x.margin, 0)}`
+  say(mixLine(label, x.s0.house, x.worst))
+  mixRows.push({ label, honestVault: x.s0.house, botVault: x.worst })
+}
+say()
+say('## PvP: живой игрок держит заявку, бот встаёт против неё сразу после свопа (выплата 1:1, комиссия 1% банка)')
+say(`${padE('правило', 34)} ${pad('p бота', 7)} ${pad('живой теряет, % ставки', 22)} ${pad('ничьи', 6)} ${padE(' бот', 24)}`)
+const pvpRows = []
+const pvpSet = [[0, 0, 0], [0, 1, 0], [0, 2, 0], [0, 4, 0], [2, 2, 0], [2, 2, 100], [2, 4, 0], [2, 4, 50]]
+const bf = bestFixed2[0].s
+if (!pvpSet.some(([r, q, d]) => RULES2[r] === bf.rule && DUR2[q] === bf.duration && d === bf.zone)) pvpSet.push([RULES2.indexOf(bf.rule), DUR2.indexOf(bf.duration), bf.zone])
+for (const [r, q, d] of pvpSet) {
+  const c = cellCounts(upOutcomes(r, q, d))
+  const fp = fixedPay(0) // PvP: the winner gets 2X minus 1% of the bank, no vault fee
+  const ev = (t) => evPlayer(t, fp)
+  let worst = null
+  for (const g of ['band', 'band+s3', 'pool+band+s3']) {
+    const te = sumStrat(c, 1, optimise(c.subarray(0, NCELL2 * 9), g, ev))
+    const n = te[0] + te[1] + te[2]
+    if (n < 500) continue
+    const live = (te[1] * fp.pw - te[0]) / n // the live player wins what the bot loses
+    if (!worst || live < worst.live) worst = { g, p: te[0] / (te[0] + te[1]), live, tie: te[2] / n, n }
+  }
+  pvpRows.push({ rule: RULES2[r], duration: DUR2[q], zone: d, ...worst })
+  say(`${padE(`${RULES2[r]}, ${DUR2[q]} с, зона ${d}`, 34)} ${pad(worst ? pct(worst.p) : '-', 7)} ${pad(worst ? pct(-worst.live, 1) : '-', 22)} ${pad(worst ? pct(worst.tie) : '-', 6)}  ${worst ? worst.g : 'бот не ставит'}`)
+}
+say()
+console.error(`[stage2] ${((Date.now() - t2) / 1000).toFixed(1)} s, ${E2N} events`)
+summary.stage2 = {
+  sweep: sweep.map((s) => ({ ...s, byFee: s.byFee.map((f) => ({ flp: f.flp, honest: f.honest, worst: f.worst })) })),
+  dynamic: dynRows,
+  passFixed: passFixed.map(({ s, f }) => ({ rule: s.rule, duration: s.duration, zone: s.zone, flp: f.flp, tieShare: s.tieShare, honest: f.honest, worst: f.worst })),
+  passDynamic: passDyn.map((x) => ({ rule: x.rule, duration: x.duration, bands: x.bands, perPool: x.perPool, margin: x.margin, worst: x.worst, s0: x.s0, s6: x.s6 })),
+  mix: mixRows,
+  pvp: pvpRows,
+}
+
 console.error(`[done] ${reqCount} RPC requests this run, ${((Date.now() - t0Run) / 1000).toFixed(0)} s total; cache ${CACHE}`)
 if (JSON_OUT) { writeJson(JSON_OUT, summary); console.error(`[json] ${JSON_OUT}`) }
