@@ -1,0 +1,1128 @@
+Compiling 11 files with Solc 0.8.24
+Solc 0.8.24 finished in 15.32s
+Compiler run successful!
+
+Ran 21 tests for test/LaunchBlockers.t.sol:LaunchBlockersTest
+[PASS] test_Factory_KnowsWhichMarketsItMade() (gas: 378993)
+[PASS] test_Fee_CannotApplyEarly() (gas: 58794)
+[PASS] test_Fee_DoesNotChangeUnderAnAlreadyOpenMarket() (gas: 423731)
+[PASS] test_Fee_OnlyOwnerCanPropose() (gas: 13143)
+[PASS] test_Fee_ReachesMarketsCreatedAfterIt() (gas: 443765)
+[PASS] test_Fee_StillCappedAtOnePercent() (gas: 11600)
+[PASS] test_Fee_TimelockLivesLongEnoughToApply() (gas: 62646)
+[PASS] test_Multisig_CanMoveToASafe() (gas: 20919)
+[PASS] test_Multisig_CannotBeZeroed() (gas: 10768)
+[PASS] test_Multisig_NewMarketsAnswerToTheNewAdmin() (gas: 406051)
+[PASS] test_Multisig_NewMarketsIgnoreTheOldAdmin() (gas: 384289)
+[PASS] test_Multisig_OnlyOwnerCanMoveIt() (gas: 13350)
+[PASS] test_Pause_IsScopedToTheBadFeed() (gas: 399274)
+[PASS] test_Pause_OwnerCanResumeTheFeed() (gas: 377822)
+[PASS] test_Pause_StopsTheKeeperFromRollingAFreshMarket() (gas: 44748)
+[PASS] test_Pause_SurvivesTheNextKeeperTick() (gas: 423089)
+[PASS] test_Pause_TheKeeperCanTripItButNotClearIt() (gas: 43809)
+[PASS] test_Pool_RefusesAMarketTheFactoryDidNotMake() (gas: 4546269)
+[PASS] test_Pool_RefusesEvenWhenTheOwnerAsks() (gas: 19918)
+[PASS] test_Pool_RefusesToAuthorizeAnEOA() (gas: 21021)
+[PASS] test_Pool_StillAuthorizesRealMarkets() (gas: 375680)
+Suite result: ok. 21 passed; 0 failed; 0 skipped; finished in 6.94ms (3.16ms CPU time)
+
+Ran 19 tests for test/FeeDistributor.t.sol:FeeDistributorTest
+[PASS] test_AuthorizeMarket_OnlyFactoryOrOwner() (gas: 74856)
+[PASS] test_AuthorizeMarket_RejectsAnAddressTheFactoryNeverCreated() (gas: 20281)
+[PASS] test_ClaimReferralRewards() (gas: 208276)
+[PASS] test_ClaimReferralRewards_Reverts_Nothing() (gas: 17903)
+[PASS] test_Constructor_Reverts_ZeroAddress() (gas: 89593)
+[PASS] test_Deauthorize_OnlyOwner() (gas: 20772)
+[PASS] test_DistributeFee_NoReferrer_FullSplit() (gas: 151576)
+[PASS] test_DistributeFee_OddAmount_NoLeak() (gas: 148656)
+[PASS] test_DistributeFee_Reverts_Unauthorized() (gas: 77953)
+[PASS] test_DistributeFee_Reverts_ZeroFee() (gas: 20698)
+[PASS] test_DistributeFee_WithReferrer() (gas: 218019)
+[PASS] test_SetLiquidityPool_OnlyOwner() (gas: 19850)
+[PASS] test_SetMarketFactory_OnceOnly() (gas: 974024)
+[PASS] test_SetNftRewardsPool_OnlyOwner() (gas: 19825)
+[PASS] test_SetTreasury_OnlyOwner() (gas: 27015)
+[PASS] test_SweepDust_ExcludesReferralOwed() (gas: 213263)
+[PASS] test_SweepDust_OnlyOwner() (gas: 12702)
+[PASS] test_SweepDust_ReturnsZero_WhenNoDust() (gas: 15340)
+[PASS] test_SweepDust_SweepsOnlyExcessBeyondReferralOwed() (gas: 224293)
+Suite result: ok. 19 passed; 0 failed; 0 skipped; finished in 8.44ms (5.89ms CPU time)
+
+Ran 13 tests for test/GenesisNFT.t.sol:GenesisNFTTest
+[PASS] test_Mint_NotifiesPoolHook() (gas: 156523)
+[PASS] test_Mint_OnlyPool() (gas: 14946)
+[PASS] test_Mint_Reverts_AfterMaxSupply() (gas: 1607799)
+[PASS] test_Mint_Success() (gas: 156730)
+[PASS] test_SetBaseURI_OnlyOwner() (gas: 13057)
+[PASS] test_SetBaseURI_UpdatesTokenURI() (gas: 166208)
+[PASS] test_SetLiquidityPool_IsOneShot() (gas: 19935)
+[PASS] test_SetLiquidityPool_OnlyOwner() (gas: 14775)
+[PASS] test_SetLiquidityPool_RejectsZero() (gas: 1242285)
+[PASS] test_TokenURI_ConcatenatesBaseURIAndId() (gas: 159393)
+[PASS] test_TokenURI_Reverts_NonexistentToken() (gas: 12677)
+[PASS] test_Transfer_NotifiesPoolHook() (gas: 170554)
+[PASS] test_Transfer_SucceedsEvenIfPoolHookReverts() (gas: 169015)
+Suite result: ok. 13 passed; 0 failed; 0 skipped; finished in 8.66ms (7.23ms CPU time)
+
+Ran 16 tests for test/AuditRegressions.t.sol:AuditRegressions
+[PASS] test_AboveMaxBetIsRejected() (gas: 18830)
+[PASS] test_Audit_MakerSlippageIsPreservedAtFill() (gas: 701199)
+[PASS] test_Audit_RefundedOrderCanStillHaveClaimableWinnings() (gas: 1383130)
+[PASS] test_BelowMinBetIsRejected() (gas: 29303)
+[PASS] test_DeadPoolLeavesTheMatchRefundable() (gas: 872158)
+[PASS] test_EntryRevertsWhenThePoolCannotPrice() (gas: 36140)
+[PASS] test_PastGraceMatch_DoesNotBlockAFreshMatchInTheSameBatch() (gas: 1596448)
+[PASS] test_PlaceBetIsAnOrdinaryCall() (gas: 358660)
+[PASS] test_RoundTrip_DownWins() (gas: 950566)
+[PASS] test_RoundTrip_TieRefundsBothSides() (gas: 912030)
+[PASS] test_RoundTrip_UpWins() (gas: 950969)
+[PASS] test_StakeBoundsAreStatedInWeth() (gas: 7296)
+[PASS] test_StrikeComesFromThePoolTwap() (gas: 9364558)
+[PASS] test_TraderLpExposure_ReleasesOnEmergencyRefund() (gas: 902401)
+[PASS] test_TraderLpExposure_ReleasesOnSettle_NotLifetimeLocked() (gas: 2725888)
+[PASS] test_TraderLpExposure_ReleasesOnTie() (gas: 963813)
+Suite result: ok. 16 passed; 0 failed; 0 skipped; finished in 18.88ms (14.82ms CPU time)
+
+Ran 14 tests for test/PoolOrderbookMarket.t.sol:PoolOrderbookMarketTest
+[PASS] test_AboveMaxBetIsRejected() (gas: 18852)
+[PASS] test_BelowMinBetIsRejected() (gas: 29281)
+[PASS] test_DeadPoolLeavesTheMatchRefundable() (gas: 872158)
+[PASS] test_EntryRevertsWhenThePoolCannotPrice() (gas: 36118)
+[PASS] test_PastGraceMatch_DoesNotBlockAFreshMatchInTheSameBatch() (gas: 1596426)
+[PASS] test_PlaceBetIsAnOrdinaryCall() (gas: 358660)
+[PASS] test_RoundTrip_DownWins() (gas: 950544)
+[PASS] test_RoundTrip_TieRefundsBothSides() (gas: 912007)
+[PASS] test_RoundTrip_UpWins() (gas: 951013)
+[PASS] test_StakeBoundsAreStatedInWeth() (gas: 7362)
+[PASS] test_StrikeComesFromThePoolTwap() (gas: 9364536)
+[PASS] test_TraderLpExposure_ReleasesOnEmergencyRefund() (gas: 902378)
+[PASS] test_TraderLpExposure_ReleasesOnSettle_NotLifetimeLocked() (gas: 2725933)
+[PASS] test_TraderLpExposure_ReleasesOnTie() (gas: 963813)
+Suite result: ok. 14 passed; 0 failed; 0 skipped; finished in 16.00ms (11.72ms CPU time)
+
+Ran 3 tests for test/PoolRingCostFork.t.sol:PoolRingCostForkTest
+[PASS] test_180CoversTheLongestWindowTheProtocolAsksFor() (gas: 1213)
+[PASS] test_DroppingThe900sMarketWouldCutTheWindowTo60() (gas: 784)
+[PASS] test_WhatTheRingCostsAtEachSize() (gas: 2322)
+Suite result: ok. 3 passed; 0 failed; 0 skipped; finished in 375.80µs (84.00µs CPU time)
+
+Ran 33 tests for test/PoolMarketFactory.t.sol:PoolMarketFactoryTest
+[PASS] test_AcceptsExactlyAtTheDepthThreshold() (gas: 1383805)
+[PASS] test_AnyoneMayCreateAMarket() (gas: 1389905)
+[PASS] test_ConstructorRejectsZeroAddresses() (gas: 81772)
+[PASS] test_CreateMarketGas() (gas: 1385219)
+[PASS] test_DepthFollowsPriceNotRawLiquidity() (gas: 1990236)
+[PASS] test_DepthHandlesEitherTokenOrder() (gas: 1952546)
+[PASS] test_FeeIsCappedAtOnePercentAndTimelocked() (gas: 50208)
+[PASS] test_FeeTierIsOwnerOnly() (gas: 13397)
+[PASS] test_ImplementationIsAlreadyInitialised() (gas: 14203)
+[PASS] test_ItIsThe900sMarketThatForcesTheWindowTo180() (gas: 7817)
+[PASS] test_MarketDoesNotAutomaticallyReceiveLpCapital() (gas: 1426103)
+[PASS] test_MarketSnapshotsTheFeeAtCreation() (gas: 1749157)
+[PASS] test_MinCardinalityIsTheLongestWindowPlusARealDelayBudget() (gas: 20578)
+[PASS] test_OneMarketPerDuration() (gas: 2038283)
+[PASS] test_OwnerMayOpenAFeeTier() (gas: 1407644)
+[PASS] test_PauseStopsCreationAndFreezesLiveMarkets() (gas: 1467640)
+[PASS] test_Rejects_CardinalityBelowThreshold() (gas: 1044713)
+[PASS] test_Rejects_DisallowedDuration() (gas: 1025260)
+[PASS] test_Rejects_DisallowedFeeTier() (gas: 1033989)
+[PASS] test_Rejects_DuplicateForever() (gas: 1392919)
+[PASS] test_Rejects_FreshPoolWithCardinalityOne() (gas: 1044775)
+[PASS] test_Rejects_FullRingWithNoHistoryInIt() (gas: 1046621)
+[PASS] test_Rejects_PoolRegisteredUnderAnotherTier() (gas: 1033051)
+[PASS] test_Rejects_PoolTheCanonicalFactoryDoesNotKnow() (gas: 1004411)
+[PASS] test_Rejects_PoolWithoutWeth() (gas: 1030686)
+[PASS] test_Rejects_ThinPool() (gas: 1040662)
+[PASS] test_Rejects_WhenOnlyCardinalityNextWasRaised() (gas: 1045843)
+[PASS] test_SetMultisig_DoesNotByItselfChangeAnExistingMarket() (gas: 1397970)
+[PASS] test_ShortMarketIsAvailableBeforeTheLongOne() (gas: 1413478)
+[PASS] test_SyncMultisigForFeed_UpdatesEveryDurationForThatPool() (gas: 1732170)
+[PASS] test_SyncMultisig_IsANoOpWhenAlreadyCurrent() (gas: 1385738)
+[PASS] test_SyncMultisig_PullsTheCurrentValue_CallableByAnyone() (gas: 1427105)
+[PASS] test_UnpauseIsOwnerOnly() (gas: 1424299)
+Suite result: ok. 33 passed; 0 failed; 0 skipped; finished in 18.51ms (14.11ms CPU time)
+
+Ran 15 tests for test/BadgeNFT.t.sol:BadgeNFTTest
+[PASS] test_AddMinter_OnlyAdmin() (gas: 44465)
+[PASS] test_Badge_Metadata_AllRegistered() (gas: 171622)
+[PASS] test_Badge_Rarities() (gas: 52207)
+[PASS] test_BatchTransfer_Reverts_Soulbound() (gas: 93461)
+[PASS] test_Deployer_Is_Admin() (gas: 10789)
+[PASS] test_MintBadge_AllRegisteredIds() (gas: 602571)
+[PASS] test_MintBadge_EmitsEvent() (gas: 53863)
+[PASS] test_MintBadge_Reverts_AlreadyHas() (gas: 53909)
+[PASS] test_MintBadge_Reverts_NonMinter() (gas: 15248)
+[PASS] test_MintBadge_Reverts_UnknownId() (gas: 17923)
+[PASS] test_MintBadge_Success() (gas: 52310)
+[PASS] test_RemoveMinter_OnlyAdmin() (gas: 23168)
+[PASS] test_SupportsInterface() (gas: 9866)
+[PASS] test_Transfer_Reverts_Soulbound() (gas: 56164)
+[PASS] test_URI_Suffix() (gas: 18115)
+Suite result: ok. 15 passed; 0 failed; 0 skipped; finished in 8.02ms (6.07ms CPU time)
+
+Ran 24 tests for test/PoolOracleResolver.t.sol:PoolOracleResolverTest
+[PASS] test_AnyoneMaySettle() (gas: 375791)
+[PASS] test_BatchFromOffsetSkipsTheHead() (gas: 515633)
+[PASS] test_ConstructorRejectsZeroWeth() (gas: 38141)
+[PASS] test_ExitPriceAnchoredAtSettleAt_NotKeeperTime() (gas: 403879)
+[PASS] test_ExitPrice_AveragesTheWindowEndingAtSettleAt() (gas: 434641)
+[PASS] test_FeedIdIsThePoolAddress() (gas: 8034)
+[PASS] test_LiveSpotDivergenceSincePassing_NoLongerBlocksPromptSettlement() (gas: 403313)
+[PASS] test_NotDue_IsNeverRefunded() (gas: 250829)
+[PASS] test_ObservationRingTooShort_RefundsAtOnce() (gas: 327938)
+[PASS] test_OtherObserveFailures_AreSkippedNeverRefunded() (gas: 419669)
+[PASS] test_PastGrace_IsRefundedNotSettled() (gas: 320995)
+[PASS] test_RefundFailure_DoesNotBlockTheBatch() (gas: 2050242)
+[PASS] test_SpotPrice_AllowsEntry_WhenSpotIsCloseToTwap() (gas: 105070)
+[PASS] test_SpotPrice_MatchesTheDefinition() (gas: 4031880)
+[PASS] test_SpotPrice_NegativeMeanTickFloors() (gas: 106978)
+[PASS] test_SpotPrice_RefusesEntry_WhenSpotHasAlreadyDivergedFromTwap() (gas: 108146)
+[PASS] test_SpotPrice_RevertsWhenPoolIsEmpty() (gas: 75002)
+[PASS] test_SpotPrice_RevertsWhenRingTooShort() (gas: 66212)
+[PASS] test_SpotPrice_TokenOrderingInvertsTheQuote() (gas: 1036632)
+[PASS] test_SpreadGuardTrip_IsPermanentSoItRefundsInsteadOfWaiting() (gas: 593080)
+[PASS] test_SpreadGuard_BriefSpikeNoLongerBlocksSettlementForever() (gas: 405003)
+[PASS] test_SpreadGuard_WindowAgainstSustainedAnchorPush() (gas: 366113)
+[PASS] test_UnpriceableMatchDoesNotBlockTheBatch() (gas: 2087565)
+[PASS] test_ZeroLiquidity_IsUnpriceable() (gas: 254492)
+Suite result: ok. 24 passed; 0 failed; 0 skipped; finished in 19.59ms (10.31ms CPU time)
+
+Ran 8 tests for test/PoolOracleResolverFork.t.sol:PoolOracleResolverForkTest
+[PASS] test_ADeepRingThatIsStaleAlsoReturnsTheSpotTick() (gas: 2306)
+[PASS] test_ASingleStaleObservationIsPricedAnyway_NotRefused() (gas: 2348)
+[PASS] test_CanServeWindowIsNotAQualityCheck() (gas: 2393)
+[PASS] test_CreatesARealMarketOnARealPool() (gas: 2349)
+[PASS] test_PricesARealPoolOnADifferentFeeTier() (gas: 2392)
+[PASS] test_PricesARealPoolWithAFilledObservationRing() (gas: 2371)
+[PASS] test_RefusesAWindowOlderThanThePoolItself() (gas: 2326)
+[PASS] test_TheCardinalityGateIsTheOneThatRejectsRealPools() (gas: 2393)
+Suite result: ok. 8 passed; 0 failed; 0 skipped; finished in 1.37ms (194.50µs CPU time)
+
+Ran 26 tests for test/FixRegressions.t.sol:FixRegressions
+[PASS] test_AboveMaxBetIsRejected() (gas: 18808)
+[PASS] test_BelowMinBetIsRejected() (gas: 29347)
+[PASS] test_Cancel_IsNotRepeatable() (gas: 331170)
+[PASS] test_Cancel_LetsAPartlyFilledWinnerClaimWithoutWaitingForTheTimeout() (gas: 8998953)
+[PASS] test_Cancel_NothingToCancelOnAFullyFilledOrder() (gas: 850846)
+[PASS] test_Cancel_OnlyTheTraderMay() (gas: 362492)
+[PASS] test_Cancel_UnfilledOrderReturnsTheWholeStakeAndLeavesTheQueue() (gas: 642241)
+[PASS] test_Cancel_WorksWhilePaused() (gas: 354365)
+[PASS] test_DeadPoolLeavesTheMatchRefundable() (gas: 872225)
+[PASS] test_EntryRevertsWhenThePoolCannotPrice() (gas: 36184)
+[PASS] test_PastGraceMatch_DoesNotBlockAFreshMatchInTheSameBatch() (gas: 1596426)
+[PASS] test_PlaceBetIsAnOrdinaryCall() (gas: 358638)
+[PASS] test_RefundUnpriceable_NotBeforeTheMatchIsDue() (gas: 847905)
+[PASS] test_RefundUnpriceable_OnlyTheResolver() (gas: 848881)
+[PASS] test_RingTooShort_RefundsWithoutWaiting() (gas: 871244)
+[PASS] test_RoundTrip_DownWins() (gas: 950544)
+[PASS] test_RoundTrip_TieRefundsBothSides() (gas: 912030)
+[PASS] test_RoundTrip_UpWins() (gas: 950969)
+[PASS] test_SpreadGuardTrip_RefundsAnLpBackedMatchAndReleasesExposure() (gas: 983794)
+[PASS] test_SpreadGuardTrip_RefundsBothSidesOnTheFirstCall() (gas: 925053)
+[PASS] test_StakeBoundsAreStatedInWeth() (gas: 7340)
+[PASS] test_StrikeComesFromThePoolTwap() (gas: 9364566)
+[PASS] test_TraderLpExposure_ReleasesOnEmergencyRefund() (gas: 902423)
+[PASS] test_TraderLpExposure_ReleasesOnSettle_NotLifetimeLocked() (gas: 2725945)
+[PASS] test_TraderLpExposure_ReleasesOnTie() (gas: 963880)
+[PASS] test_UnauthorisedMarketWithAFundedVault_StillTakesBets() (gas: 9179672)
+Suite result: ok. 26 passed; 0 failed; 0 skipped; finished in 27.74ms (24.00ms CPU time)
+
+Ran 10 tests for test/PoolRoundVectors.t.sol:PoolRoundVectors0Test
+[PASS] test_Vector00() (gas: 6902157)
+[PASS] test_Vector01() (gas: 6902329)
+[PASS] test_Vector02() (gas: 6894410)
+[PASS] test_Vector03() (gas: 6852609)
+[PASS] test_Vector04() (gas: 6926952)
+[PASS] test_Vector05() (gas: 6926864)
+[PASS] test_Vector06() (gas: 6781880)
+[PASS] test_Vector07() (gas: 6624052)
+[PASS] test_Vector08() (gas: 7243837)
+[PASS] test_Vector09() (gas: 6778569)
+Suite result: ok. 10 passed; 0 failed; 0 skipped; finished in 28.72ms (21.71ms CPU time)
+
+Ran 10 tests for test/PoolRoundVectors.t.sol:PoolRoundVectors2Test
+[PASS] test_Vector20() (gas: 7562895)
+[PASS] test_Vector21() (gas: 7809405)
+[PASS] test_Vector22() (gas: 8175658)
+[PASS] test_Vector23() (gas: 7173773)
+[PASS] test_Vector24() (gas: 7559013)
+[PASS] test_Vector25() (gas: 6778526)
+[PASS] test_Vector26() (gas: 7535504)
+[PASS] test_Vector27() (gas: 7653900)
+[PASS] test_Vector28() (gas: 8189573)
+[PASS] test_Vector29() (gas: 6933044)
+Suite result: ok. 10 passed; 0 failed; 0 skipped; finished in 37.49ms (34.35ms CPU time)
+
+Ran 16 tests for test/ConcurrencyRaces.t.sol:ConcurrencyRacesTest
+[PASS] test_DepositAndImmediateExitDuringOpenMatch_IsALoss() (gas: 379653)
+[PASS] test_DepositDuringOpenMatch_IsAFairBetNotAFreeOption() (gas: 610341)
+[PASS] test_ExitingBeforeALoss_GainsNothingOverStaying() (gas: 413745)
+[PASS] test_ExitingDuringOpenMatchForfeitsTheOutcome() (gas: 462514)
+[PASS] test_Race_AllMatchesSettle_ExposureReturnsToZero() (gas: 408931)
+[PASS] test_Race_DepositBetweenMatches_RaisesCapButStaysBounded() (gas: 602165)
+[PASS] test_Race_DoubleSettleSameMatch_Reverts() (gas: 137948)
+[PASS] test_Race_LastMatchInBlockIsTruncatedNotReverted() (gas: 371058)
+[PASS] test_Race_ManyInterleavedMatches_NeverBreachCaps() (gas: 734548)
+[PASS] test_Race_PauseBetweenMatchAndSettle_StillSettles() (gas: 144458)
+[PASS] test_Race_PausedPool_DeclinesInsteadOfBrickingPlaceBet() (gas: 26023)
+[PASS] test_Race_RefundAfterSettle_Reverts() (gas: 137040)
+[PASS] test_Race_ThreeMarketsSameBlock_ShareOneGlobalCap() (gas: 273807)
+[PASS] test_Race_WithdrawBetweenMatches_CannotStrandOpenExposure() (gas: 207683)
+[PASS] test_Race_WithdrawShrinksCap_NoNewHeadroomAppears() (gas: 231832)
+[PASS] test_SharePrice_HoldsWhileAMatchIsOpen() (gas: 188078)
+Suite result: ok. 16 passed; 0 failed; 0 skipped; finished in 13.94ms (10.54ms CPU time)
+
+Ran 6 tests for test/L04FeeEconomics.t.sol:L04FeeEconomicsTest
+[PASS] test_Economics_EmergencyRefund() (gas: 1216561)
+[PASS] test_Economics_LP_UserLoses() (gas: 751235)
+[PASS] test_Economics_LP_UserWins() (gas: 755358)
+[PASS] test_Economics_PvP_Win() (gas: 1311594)
+[PASS] test_Economics_Tie() (gas: 1238886)
+[PASS] test_Fix_LPWin_PaysTheSameProtocolFeeAUserWinWould() (gas: 753161)
+Suite result: ok. 6 passed; 0 failed; 0 skipped; finished in 9.03ms (4.71ms CPU time)
+
+Ran 7 tests for test/Integration.t.sol:IntegrationTest
+[PASS] test_MarketAuthorizedOn_All_Three() (gas: 25689)
+[PASS] test_PlaceBet_ReferralStable_OnSecondBet() (gas: 819208)
+[PASS] test_PlaceBet_RegistersReferral() (gas: 552464)
+[PASS] test_PlaceBet_ZeroReferrer_Skips_Register() (gas: 461395)
+[PASS] test_Settle_NoReferrer_FullSplitToSinks() (gas: 1171764)
+[PASS] test_Settle_PaysTheRegisteredReferrer_NotThisOrdersOwnReferrerArg() (gas: 1839041)
+[PASS] test_Settle_PushesFee_ToFeeDistributor_Split() (gas: 1324925)
+Suite result: ok. 7 passed; 0 failed; 0 skipped; finished in 32.78ms (29.20ms CPU time)
+
+Ran 8 tests for test/RedstoneOracle.t.sol:RedstoneOracleTest
+[PASS] test_AcceptsPayloadInsideTheWindow() (gas: 35104)
+[PASS] test_PriceIsEightDecimals() (gas: 35114)
+[PASS] test_ReadsLiveDogePrice() (gas: 35146)
+[PASS] test_ReadsLivePepePrice() (gas: 35049)
+[PASS] test_RejectsCallWithNoPayload() (gas: 10001)
+[PASS] test_RejectsPayloadForADifferentFeed() (gas: 31858)
+[PASS] test_RejectsStalePayload() (gas: 34858)
+[PASS] test_ThresholdIsThreeOfFive() (gas: 5573)
+Suite result: ok. 8 passed; 0 failed; 0 skipped; finished in 7.54ms (7.16ms CPU time)
+
+Ran 10 tests for test/PoolRoundVectors.t.sol:PoolRoundVectors3Test
+[PASS] test_Vector30() (gas: 7068180)
+[PASS] test_Vector31() (gas: 7813700)
+[PASS] test_Vector32() (gas: 6624176)
+[PASS] test_Vector33() (gas: 7222435)
+[PASS] test_Vector34() (gas: 6597975)
+[PASS] test_Vector35() (gas: 8133954)
+[PASS] test_Vector36() (gas: 7243815)
+[PASS] test_Vector37() (gas: 6932976)
+[PASS] test_Vector38() (gas: 7215358)
+[PASS] test_Vector39() (gas: 7974061)
+Suite result: ok. 10 passed; 0 failed; 0 skipped; finished in 33.23ms (30.95ms CPU time)
+
+Ran 8 tests for test/PoolRoundVectors.t.sol:PoolRoundVectors8Test
+[PASS] test_Vector80() (gas: 7515411)
+[PASS] test_Vector81() (gas: 7488486)
+[PASS] test_Vector82() (gas: 7215536)
+[PASS] test_Vector83() (gas: 7012598)
+[PASS] test_Vector84() (gas: 7241987)
+[PASS] test_Vector85() (gas: 7756024)
+[PASS] test_Vector86() (gas: 7852905)
+[PASS] test_Vector87() (gas: 7651401)
+Suite result: ok. 8 passed; 0 failed; 0 skipped; finished in 27.30ms (25.11ms CPU time)
+
+Ran 11 tests for test/RedstonePayloadBuilder.t.sol:RedstonePayloadBuilderTest
+[PASS] test_AcceptsMoreSignersThanTheThreshold() (gas: 64704)
+[PASS] test_BuildNowStampsTheCurrentBlockInMilliseconds() (gas: 23761)
+[PASS] test_ByteLayoutMatchesTheLiveGateway() (gas: 11679)
+[PASS] test_CanExpressAnyPrice() (gas: 152883)
+[PASS] test_ConsumerAcceptsABuiltPayload() (gas: 43490)
+[PASS] test_ConsumerReadsBackTheTimestampWeWrote() (gas: 23542)
+[PASS] test_EndsWithTheRedstoneMarker() (gas: 16445)
+[PASS] test_FeedIdIsRespected() (gas: 40438)
+[PASS] test_PackageCountChangesLengthBy142() (gas: 23775)
+[PASS] test_RejectsFewerSignersThanTheThreshold() (gas: 31627)
+[PASS] test_SignersAreDistinct() (gas: 4740)
+Suite result: ok. 11 passed; 0 failed; 0 skipped; finished in 27.67ms (27.23ms CPU time)
+
+Ran 9 tests for test/ReferralRegistry.t.sol:ReferralRegistryTest
+[PASS] test_AuthorizeMarket_RejectsAnAddressTheFactoryNeverCreated() (gas: 22745)
+[PASS] test_GenerateCode() (gas: 60218)
+[PASS] test_GenerateCode_OnlyOnce() (gas: 59718)
+[PASS] test_GenerateCode_Reverts_NotSelf() (gas: 13287)
+[PASS] test_Register() (gas: 88320)
+[PASS] test_Register_NoSelfReferral() (gas: 17856)
+[PASS] test_Register_OnlyAuthorized() (gas: 17770)
+[PASS] test_Register_OnlyOnce() (gas: 91255)
+[PASS] test_RevokeMarket() (gas: 22945)
+Suite result: ok. 9 passed; 0 failed; 0 skipped; finished in 2.81ms (963.20µs CPU time)
+
+Ran 27 tests for test/MarketFactory.t.sol:MarketFactoryTest
+[PASS] test_AddFeed_OnlyOwner() (gas: 12709)
+[PASS] test_AddFeed_ReAdd_DoesNotDuplicateInList() (gas: 28151)
+[PASS] test_CreateMarket_AllowedAfterCooldown() (gas: 653132)
+[PASS] test_CreateMarket_AuthorizesLP() (gas: 373506)
+[PASS] test_CreateMarket_ByMarketCreator() (gas: 395414)
+[PASS] test_CreateMarket_DifferentDuration_NotBlockedByCooldown() (gas: 672986)
+[PASS] test_CreateMarket_DifferentFeed_NotBlockedByCooldown() (gas: 699318)
+[PASS] test_CreateMarket_EarlyRolloverAt50Percent_StillWorks() (gas: 649375)
+[PASS] test_CreateMarket_Multiple_SharePool() (gas: 1012666)
+[PASS] test_CreateMarket_Owner_Bypass() (gas: 368504)
+[PASS] test_CreateMarket_Reverts_AfterCreatorRevoked() (gas: 28123)
+[PASS] test_CreateMarket_Reverts_DuplicateWithinCooldown() (gas: 370493)
+[PASS] test_CreateMarket_Reverts_DurationNotAllowed() (gas: 30011)
+[PASS] test_CreateMarket_Reverts_FeedNotWhitelisted() (gas: 13447)
+[PASS] test_CreateMarket_Reverts_UnauthorizedCaller() (gas: 15134)
+[PASS] test_CreatedMarket_HasCorrectParams() (gas: 381852)
+[PASS] test_GetAllFeedIds() (gas: 20356)
+[PASS] test_GetAllFeedIds_ExcludesRemovedFeed() (gas: 21006)
+[PASS] test_PauseMarketsForFeed_ByEmergencyPauser() (gas: 443382)
+[PASS] test_PauseMarketsForFeed_ByOwner() (gas: 416289)
+[PASS] test_PauseMarketsForFeed_CostDoesNotGrowWithFeedHistory() (gas: 42560820)
+[PASS] test_PauseMarketsForFeed_PausesAllMarketsForThatFeed() (gas: 745869)
+[PASS] test_PauseMarketsForFeed_PausesTheNewestMarkets_NotTheOldest() (gas: 37509530)
+[PASS] test_PauseMarketsForFeed_Reverts_Unauthorized() (gas: 373394)
+[PASS] test_RemoveFeed_OnlyOwner() (gas: 16978)
+[PASS] test_SetEmergencyPauser_OnlyOwner() (gas: 42596)
+[PASS] test_SetMarketCreator_OnlyOwner() (gas: 42505)
+Suite result: ok. 27 passed; 0 failed; 0 skipped; finished in 83.83ms (81.84ms CPU time)
+
+Ran 2 tests for test/RhcFeeDistributor.t.sol:RhcFeeDistributorTest
+[PASS] test_RhcKeepsNinetyPercentForSettlementReserve() (gas: 150381)
+[PASS] test_RhcSendsAnUnattributedFeeFullyToReserve() (gas: 83025)
+Suite result: ok. 2 passed; 0 failed; 0 skipped; finished in 1.69ms (278.20µs CPU time)
+
+Ran 36 tests for test/LiquidityPool.t.sol:LiquidityPoolTest
+[PASS] test_AuthorizeMarket_OnlyFactoryOrOwner() (gas: 127247)
+[PASS] test_AvailableForMatching_ReflectsGlobalCap() (gas: 355956)
+[PASS] test_Deauthorize_DoesNotStrandAnAlreadyOpenMatch() (gas: 487293)
+[PASS] test_Deauthorize_DoesNotStrandAnAlreadyOpenMatch_Refund() (gas: 444392)
+[PASS] test_Deauthorize_OnlyOwner() (gas: 20819)
+[PASS] test_Deposit_MintsShares() (gas: 356687)
+[PASS] test_Deposit_Reverts_BelowMin() (gas: 95696)
+[PASS] test_Exposure_Per_Market_Cap() (gas: 1024703)
+[PASS] test_FeeStream_GenesisBoost_Vs_Normal() (gas: 4900472)
+[PASS] test_Genesis_First20_Get_NFT() (gas: 4288903)
+[PASS] test_Genesis_Status_StableOnRepeatDeposit() (gas: 378373)
+[PASS] test_GetPoolStats() (gas: 356726)
+[PASS] test_IsFullyBacked_TrueWhenNoPendingFees() (gas: 355124)
+[PASS] test_LPDilution_BoundedByGlobalExposureCap() (gas: 1073104)
+[PASS] test_LPMatch_TakerFee_On_UserWin_ReducesPayoutFundsPool() (gas: 1033786)
+[PASS] test_LP_Loses_SharePrice_Drops() (gas: 1034709)
+[PASS] test_LP_Win_AccruesFee_To_LP() (gas: 1086077)
+[PASS] test_LP_Wins_SharePrice_Grows() (gas: 1035851)
+[PASS] test_MaxRedeem_MatchesFullBalance_WhenNoExposure() (gas: 361877)
+[PASS] test_Mint_Reverts_BelowMinDeposit() (gas: 106419)
+[PASS] test_Mint_SharesBasedDeposit_MintsExactSharesAndGenesis() (gas: 379913)
+[PASS] test_NeverAuthorizedCaller_CannotForgeASettlement() (gas: 18542)
+[PASS] test_OpenMatch_DoesNotMoveTheSharePrice() (gas: 484049)
+[PASS] test_OpenMatch_StillReservesTheStakeAgainstWithdrawals() (gas: 482132)
+[PASS] test_Pause_Blocks_Deposit() (gas: 100802)
+[PASS] test_Pause_Blocks_LPMatch_AllowsWithdraw() (gas: 338594)
+[PASS] test_Pause_OnlyOwner() (gas: 20863)
+[PASS] test_SetMarketFactory_OnceOnly() (gas: 2633268)
+[PASS] test_Shares_Are_Soulbound() (gas: 358062)
+[PASS] test_TotalAssets_Excludes_PendingFees() (gas: 1031402)
+[PASS] test_TraderLpExposureCap_LimitsSingleAddressSniping() (gas: 2805983)
+[PASS] test_TryMatch_Reverts_UnauthorizedMarket() (gas: 12989)
+[PASS] test_Unpause_RestoresDeposit() (gas: 358996)
+[PASS] test_Withdraw_AssetBasedWithdraw_ReturnsExactAssets() (gas: 396684)
+[PASS] test_Withdraw_Blocked_By_Exposure() (gas: 1026871)
+[PASS] test_Withdraw_FullAmount_NoExposure() (gas: 336258)
+Suite result: ok. 36 passed; 0 failed; 0 skipped; finished in 80.03ms (77.45ms CPU time)
+
+Ran 10 tests for test/PoolRoundVectors.t.sol:PoolRoundVectors5Test
+[PASS] test_Vector50() (gas: 8012774)
+[PASS] test_Vector51() (gas: 8131059)
+[PASS] test_Vector52() (gas: 7061417)
+[PASS] test_Vector53() (gas: 6624007)
+[PASS] test_Vector54() (gas: 7535405)
+[PASS] test_Vector55() (gas: 7172447)
+[PASS] test_Vector56() (gas: 8037573)
+[PASS] test_Vector57() (gas: 7673587)
+[PASS] test_Vector58() (gas: 8012869)
+[PASS] test_Vector59() (gas: 7973663)
+Suite result: ok. 10 passed; 0 failed; 0 skipped; finished in 42.81ms (40.57ms CPU time)
+
+Ran 11 tests for test/OrderbookMarketAccounting.t.sol:OrderbookMarketAccountingTest
+[PASS] test_GetReadySettlements_DoesNotStallAfterHeadSettled() (gas: 3112558)
+[PASS] test_GetReadySettlements_Pagination() (gas: 3561201)
+[PASS] test_LP_PartialMatch_QueueRemainder() (gas: 1014609)
+[PASS] test_PartialMatch_RemainderMatchedByLater() (gas: 1335716)
+[PASS] test_PartialMatch_RemainderQueued() (gas: 925192)
+[PASS] test_PartialMatch_SubMinBetDustRefunded() (gas: 912027)
+[PASS] test_PartialMatch_USDCConservation() (gas: 1403636)
+[PASS] test_PlaceBet_RejectsZeroExpectedPrice() (gas: 37240)
+[PASS] test_RefundExpired_NoFill_FullRefund() (gas: 340981)
+[PASS] test_RefundExpired_NotIdempotent() (gas: 337720)
+[PASS] test_RefundExpired_PartialFill_KeepsMatchedPortion() (gas: 949128)
+Suite result: ok. 11 passed; 0 failed; 0 skipped; finished in 69.19ms (65.76ms CPU time)
+
+Ran 13 tests for test/MarketClone.t.sol:MarketCloneTest
+[PASS] test_Clone_CannotBeReinitialized() (gas: 396990)
+[PASS] test_Clone_FullLifecycle_PvP() (gas: 1329062)
+[PASS] test_Clone_IdCountersStartAtOne() (gas: 391991)
+[PASS] test_Clone_InitializeRejectsNonFactory() (gas: 398347)
+[PASS] test_Clone_MatchIdZeroStaysMeaningful() (gas: 1316375)
+[PASS] test_Clone_PauseByFactoryWorks() (gas: 509299)
+[PASS] test_Clone_PerInstanceConfigIsIsolated() (gas: 726667)
+[PASS] test_Clone_ReadsImplementationImmutables() (gas: 403625)
+[PASS] test_Clone_StorageIsIsolatedBetweenMarkets() (gas: 1115331)
+[PASS] test_DirectDeploy_StillWorksAndIsLocked() (gas: 4537057)
+[PASS] test_Gas_CreateMarketStaysCheap() (gas: 364923)
+[PASS] test_Implementation_CannotBeInitialized() (gas: 16867)
+[PASS] test_Implementation_IsDistinctFromEveryClone() (gas: 391028)
+Suite result: ok. 13 passed; 0 failed; 0 skipped; finished in 21.40ms (17.38ms CPU time)
+
+Ran 10 tests for test/PoolRoundVectors.t.sol:PoolRoundVectors4Test
+[PASS] test_Vector40() (gas: 7381412)
+[PASS] test_Vector41() (gas: 7399468)
+[PASS] test_Vector42() (gas: 7535646)
+[PASS] test_Vector43() (gas: 8133485)
+[PASS] test_Vector44() (gas: 7403371)
+[PASS] test_Vector45() (gas: 7399347)
+[PASS] test_Vector46() (gas: 6597889)
+[PASS] test_Vector47() (gas: 8134058)
+[PASS] test_Vector48() (gas: 6782621)
+[PASS] test_Vector49() (gas: 6938543)
+Suite result: ok. 10 passed; 0 failed; 0 skipped; finished in 39.87ms (34.04ms CPU time)
+
+Ran 12 tests for test/PoolLiquidityPool.t.sol:PoolLiquidityPoolTest
+[PASS] test_AllDurationsOfOneFeedShareTheRhcExposureCap() (gas: 9380466)
+[PASS] test_DeauthorizedMarket_CanStillRefundAnAlreadyOpenMatch() (gas: 4911124)
+[PASS] test_DeauthorizedMarket_CanStillSettleAnAlreadyOpenMatch() (gas: 4912556)
+[PASS] test_DustIsRefusedByTheRhcVault() (gas: 98893)
+[PASS] test_MintIsGatedToo_NotJustDeposit() (gas: 108404)
+[PASS] test_NeverAuthorizedMarket_CannotForgeASettlement() (gas: 4500066)
+[PASS] test_OnEighteenDecimals_TheDollarFloorBuysEveryGenesisNftForDust() (gas: 3426244)
+[PASS] test_TheOverrideDoesNotTouchAnythingElse() (gas: 16963)
+[PASS] test_TheRhcVaultPricesTheSweepInWhatTheChainActuallyStakes() (gas: 3424037)
+[PASS] test_UnauthorizedMarket_EmptyVaultStillDeclinesCleanly() (gas: 4493267)
+[PASS] test_UnauthorizedMarket_TryMatchDeclinesRatherThanReverts() (gas: 4813219)
+[PASS] test_UpstreamVaultKeepsItsOwnFloorExactly() (gas: 5640)
+Suite result: ok. 12 passed; 0 failed; 0 skipped; finished in 25.71ms (22.92ms CPU time)
+
+Ran 12 tests for test/OracleResolverRedstone.t.sol:OracleResolverRedstoneTest
+[PASS] test_AppendsSuccessivePrices() (gas: 208264)
+[PASS] test_KeepsFeedsApart() (gas: 230128)
+[PASS] test_NeedsNoPaymentFromTheCaller() (gas: 120224)
+[PASS] test_NormalisesAPriceAboveADollar() (gas: 122273)
+[PASS] test_NormalisesASubCentPrice() (gas: 122254)
+[PASS] test_NormalisesEightDecimalsToEighteen() (gas: 122211)
+[PASS] test_RecordsThePriceCarriedByTheCall() (gas: 120841)
+[PASS] test_RecordsWithoutAnyEtherAtAll() (gas: 117980)
+[PASS] test_RefusesACallCarryingNoSignedPrice() (gas: 17662)
+[PASS] test_RefusesAPayloadForADifferentFeed() (gas: 45360)
+[PASS] test_RejectsTooFewSigners() (gas: 36529)
+[PASS] test_StillKeeperOnly() (gas: 24776)
+Suite result: ok. 12 passed; 0 failed; 0 skipped; finished in 31.91ms (30.69ms CPU time)
+
+Ran 10 tests for test/PoolRoundVectors.t.sol:PoolRoundVectors7Test
+[PASS] test_Vector70() (gas: 8174837)
+[PASS] test_Vector71() (gas: 8131018)
+[PASS] test_Vector72() (gas: 6624088)
+[PASS] test_Vector73() (gas: 6926930)
+[PASS] test_Vector74() (gas: 7852887)
+[PASS] test_Vector75() (gas: 7491783)
+[PASS] test_Vector76() (gas: 7890225)
+[PASS] test_Vector77() (gas: 6782602)
+[PASS] test_Vector78() (gas: 8015595)
+[PASS] test_Vector79() (gas: 7973965)
+Suite result: ok. 10 passed; 0 failed; 0 skipped; finished in 46.95ms (44.35ms CPU time)
+
+Ran 10 tests for test/PoolRoundVectors.t.sol:PoolRoundVectors6Test
+[PASS] test_Vector60() (gas: 8196712)
+[PASS] test_Vector61() (gas: 8193188)
+[PASS] test_Vector62() (gas: 7693224)
+[PASS] test_Vector63() (gas: 6752569)
+[PASS] test_Vector64() (gas: 7647519)
+[PASS] test_Vector65() (gas: 7673300)
+[PASS] test_Vector66() (gas: 7373809)
+[PASS] test_Vector67() (gas: 7173735)
+[PASS] test_Vector68() (gas: 8153166)
+[PASS] test_Vector69() (gas: 7624550)
+Suite result: ok. 10 passed; 0 failed; 0 skipped; finished in 69.14ms (66.49ms CPU time)
+
+Ran 10 tests for test/PoolRoundVectors.t.sol:PoolRoundVectors1Test
+[PASS] test_Vector10() (gas: 7068167)
+[PASS] test_Vector11() (gas: 7493861)
+[PASS] test_Vector12() (gas: 7241921)
+[PASS] test_Vector13() (gas: 8077702)
+[PASS] test_Vector14() (gas: 7215606)
+[PASS] test_Vector15() (gas: 6597890)
+[PASS] test_Vector16() (gas: 7396571)
+[PASS] test_Vector17() (gas: 7650184)
+[PASS] test_Vector18() (gas: 8015673)
+[PASS] test_Vector19() (gas: 6752527)
+Suite result: ok. 10 passed; 0 failed; 0 skipped; finished in 132.56ms (29.22ms CPU time)
+
+Ran 1 test for test/PoolRoundsGas.t.sol:PoolRoundsGasTest
+[PASS] test_Gas_FullLifecycle_2_10_50() (gas: 47219720)
+Suite result: ok. 1 passed; 0 failed; 0 skipped; finished in 122.52ms (119.36ms CPU time)
+
+Ran 56 tests for test/PoolRounds.t.sol:PoolRoundsTest
+[PASS] testFuzz_RoundId_RoundTrips(address,uint32,uint64) (runs: 1000, μ: 7465, ~: 7465)
+[PASS] test_Bet_EmitsTheV3Event() (gas: 233764)
+[PASS] test_Bet_OutsideItsWindow_Reverts() (gas: 265670)
+[PASS] test_Bet_Validation() (gas: 307830)
+[PASS] test_Cap1_WinnerGets196xOfItsAcceptedPart() (gas: 570684)
+[PASS] test_Claim_BadStates_Revert() (gas: 501013)
+[PASS] test_Constructor_Bounds() (gas: 4976150)
+[PASS] test_Constructor_RefusesARegistryWithoutCode() (gas: 4266651)
+[PASS] test_Delist_StopsNewBets_OpenRoundStillSettles() (gas: 506462)
+[PASS] test_DepthRule_BetGrowingTheBankPastDepthOverK_Reverts() (gas: 1748142)
+[PASS] test_DepthRule_JitLiquidityAtBetTime_DoesNotBuyACheapWindow() (gas: 1766427)
+[PASS] test_DepthRule_ThinExitWindow_Refunds() (gas: 606999)
+[PASS] test_DepthRule_ThinStrikeWindow_Refunds() (gas: 592693)
+[PASS] test_DepthRule_ThinStrikeWindow_RefundsAtSettleToo() (gas: 630303)
+[PASS] test_DisabledDuration_RefusesBets() (gas: 108360)
+[PASS] test_FixStrikeThenSettle_EqualsSettleAlone() (gas: 2226446)
+[PASS] test_FixStrike_LostStrikeWindow_RefundsAtOnce() (gas: 548475)
+[PASS] test_Gate_NoLiquidity_NoBets() (gas: 186893)
+[PASS] test_Gate_RecheckedOnEveryBet_AndAnyoneDelistsBelowGate() (gas: 775890)
+[PASS] test_IsMarket_AnswersForItselfOnly() (gas: 8934)
+[PASS] test_KeeperDeadlines_Formula() (gas: 37419)
+[PASS] test_ListPool_RefusesARingWithoutHistory() (gas: 1300540)
+[PASS] test_ListPool_RefusesASmallRing() (gas: 1378649)
+[PASS] test_ListPool_RefusesAThinPool() (gas: 1370465)
+[PASS] test_ListPool_RefusesCounterfeitAndNonWethPools() (gas: 2378027)
+[PASS] test_OneSideOnly_RefundedAtClose_KeeperNeverNeeded() (gas: 344684)
+[PASS] test_Oracle_BareRevert_IsNotARefund() (gas: 450853)
+[PASS] test_Oracle_HistoryGone_RefundsAtOnce() (gas: 489355)
+[PASS] test_Oracle_LiquidityPulledAfterTheWindows_DoesNotBlock() (gas: 653067)
+[PASS] test_Oracle_SpreadGuard_Refunds() (gas: 617798)
+[PASS] test_Oracle_UnreadablePool_WaitsThenAnyoneRefundsAfterGrace() (gas: 631694)
+[PASS] test_Orientation_WethAsToken0_TickDownIsPriceUp() (gas: 1710465)
+[PASS] test_Owner_BoundsAndAccess() (gas: 56208)
+[PASS] test_Pause_DoesNotBlockRefundOfUnplayedRound() (gas: 247941)
+[PASS] test_Pause_OnlyOwnerOrPauser() (gas: 15379)
+[PASS] test_Pause_StopsOnlyNewBets_EveryExitKeepsWorking() (gas: 815058)
+[PASS] test_PreviewClaim_EqualsClaim() (gas: 778257)
+[PASS] test_Reference_Balanced_DownWins_SameContribution() (gas: 634074)
+[PASS] test_Reference_Balanced_UpWins() (gas: 640910)
+[PASS] test_Reference_Cap1_Skew040vs010() (gas: 489424)
+[PASS] test_Reference_Cap4_Skew040vs002() (gas: 6032004)
+[PASS] test_Reference_OneSidedBook_RefundsEverything() (gas: 223620)
+[PASS] test_Reference_OracleRefund() (gas: 606192)
+[PASS] test_Reference_Tie() (gas: 647816)
+[PASS] test_Reference_UnderfundedBook_IsNotActivated() (gas: 351184)
+[PASS] test_Referral_BrokenRegistryNeverBlocksBetOrClaim() (gas: 6107302)
+[PASS] test_Referral_ClaimAndWithdraw() (gas: 629938)
+[PASS] test_Referral_HostileRegistryAnswers_ClaimStillPays() (gas: 18144252)
+[PASS] test_Referral_RecordedThroughBet() (gas: 439026)
+[PASS] test_Referral_WithoutReferrerGoesToTreasury() (gas: 445145)
+[PASS] test_Rounds_OfOnePool_CollectAndSettleInParallel() (gas: 920733)
+[PASS] test_Settle_ReadsNothingBeforeItIsDue() (gas: 448608)
+[PASS] test_Settle_Twice_And_FixStrike_Twice_Revert() (gas: 538730)
+[PASS] test_Snapshot_MinBankAndCostAllowance_NeverChangeARoundAlreadyOpen() (gas: 497805)
+[PASS] test_Strike_IsTheMeanOfTheWindowAfterThePause() (gas: 437614)
+[PASS] test_Times_PauseThenStrikeWindowThenDuration() (gas: 20774)
+Suite result: ok. 56 passed; 0 failed; 0 skipped; finished in 215.89ms (212.12ms CPU time)
+
+Ran 13 tests for test/PoolRoundsAttackMoney.t.sol:PoolRoundsAttackMoneyTest
+[PASS] test_ActivationThreshold_ExactWeiBoundary() (gas: 564112)
+[PASS] test_CapBoundary_OneWeiOverTheCap_DustNotRevenue_Cap1() (gas: 590494)
+[PASS] test_CapBoundary_OneWeiOverTheCap_DustNotRevenue_Cap4() (gas: 6864625)
+[PASS] test_ExtremeSkew_MaxAgainstOneWei_NoOverflow() (gas: 11716630)
+[PASS] test_ExtremeStakes_MaxUint96_BothOutcomes_Solvent() (gas: 11960603)
+[PASS] test_ExtremeStakes_SideOverflow_RevertsCleanly() (gas: 5858853)
+[PASS] test_L3_ContractAsReferrerFromTheRegistry_ShareGoesToTreasury() (gas: 523639)
+[PASS] test_L3_ReferrerIsTheContract_RefusedAtBet() (gas: 105464)
+[PASS] test_M1_RegistryWithoutCode_RefusedAtDeployment() (gas: 103509)
+[PASS] test_OneStakePerAddress_MaxStakeIsPerWalletOnly() (gas: 6119680)
+[PASS] test_OneWeiSide_NeverActivates() (gas: 354622)
+[PASS] test_Owner_CannotReachPlayerMoney() (gas: 680579)
+[PASS] test_ReferralShares_PlusTreasury_NeverExceedGross() (gas: 2591499)
+Suite result: ok. 13 passed; 0 failed; 0 skipped; finished in 50.99ms (46.63ms CPU time)
+
+Ran 8 tests for test/PoolRoundsAttackV3Keeper.t.sol:PoolRoundsAttackV3KeeperTest
+[PASS] test_Admission_FloorCoversTheKeeperPath_DefaultsHaveMargin() (gas: 6023)
+[PASS] test_Attacker_CannotWriteFasterThanOncePerSecond() (gas: 4577147)
+[PASS] test_ChainHalt_DoesNotEraseTheWindow() (gas: 12153242)
+[PASS] test_Deadline_FixStrike_600IsAlreadyTooLate() (gas: 28020888)
+[PASS] test_Deadline_Settle_840IsAlreadyTooLate() (gas: 27770759)
+[PASS] test_Deadline_Settle_T900_Is719() (gas: 62223930)
+[PASS] test_Economics_PriceSteering_WithTheDepthRule() (gas: 20826)
+[PASS] test_ForcedRefund_WhoLosesWhat() (gas: 26766004)
+Suite result: ok. 8 passed; 0 failed; 0 skipped; finished in 386.22ms (383.77ms CPU time)
+
+Ran 6 tests for test/TickMath.t.sol:TickMathTest
+[PASS] testFuzz_PositiveAndNegativeTicksAreReciprocal(int24) (runs: 1000, μ: 4147, ~: 3899)
+[PASS] testFuzz_StrictlyIncreasing(int24) (runs: 1000, μ: 3551, ~: 3447)
+[PASS] test_BoundsMatchUniswapConstants() (gas: 2504)
+[PASS] test_BracketsEveryLivePoolPrice() (gas: 1709037)
+[PASS] test_RevertsOutsideRange() (gas: 6537)
+[PASS] test_TickZeroIsUnity() (gas: 1060)
+Suite result: ok. 6 passed; 0 failed; 0 skipped; finished in 301.97ms (300.61ms CPU time)
+
+Ran 1 test for test/SettlementGasBench.t.sol:SettlementGasBenchTest
+[PASS] test_BatchSettlementGasScaling() (gas: 111494449)
+Suite result: ok. 1 passed; 0 failed; 0 skipped; finished in 913.89ms (911.71ms CPU time)
+
+Ran 6 tests for test/PoolRoundsAttackOracle.t.sol:PoolRoundsAttackOracleTest
+[PASS] test_L1_ExitWindow_SurvivesUntilTheDeadline() (gas: 58040586)
+[PASS] test_L1_TimelyFixStrike_SurvivesAnObservationEverySecond() (gas: 60128915)
+[PASS] test_L1_WithoutFixStrike_ABusyRingLosesTheStrikeWindow() (gas: 30585166)
+[PASS] test_M2_ListPool_RefusesSmallRingAndThinPool() (gas: 10224549)
+[PASS] test_ThinPool_NoSwapsInWindow_StillDecides() (gas: 4855309)
+[PASS] test_V3_2_LiquidityPulledBeforeTheWindow_RefundsAtOnce_AfterDoesNothing() (gas: 11651919)
+Suite result: ok. 6 passed; 0 failed; 0 skipped; finished in 693.61ms (685.78ms CPU time)
+
+Ran 9 tests for test/PoolRoundsAttackV3Bot.t.sol:PoolRoundsAttackV3BotTest
+[PASS] test_ActivationIsMonotone_NoBetCanCancelARound() (gas: 1010762)
+[PASS] test_Boundaries_BetAndClaimAtEverySecondThatMatters() (gas: 548597)
+[PASS] test_Cap1_BotCanOnlyActivate_NeverCancel() (gas: 619929)
+[PASS] test_Cap1_LastSecondWhale_CrowdsOutEarlierSameSideBettors() (gas: 569207)
+[PASS] test_Cap1_TwoSidedBet_AverageOverOutcomesIsInvestedMinusFee() (gas: 11575427)
+[PASS] test_Cap4_TwoSidedBet_HasPositiveEdgeOnASkewedBook() (gas: 7096)
+[PASS] test_Constructor_Bounds() (gas: 9153245)
+[PASS] test_UnluckyParams_CeilingCostAllowance_RoundsNeverActivate() (gas: 8654400)
+[PASS] test_UnluckyParams_MaxStakeBelowHalfMinBank_NeedsTwoPairs() (gas: 6158063)
+Suite result: ok. 9 passed; 0 failed; 0 skipped; finished in 293.12ms (286.54ms CPU time)
+
+Ran 9 tests for test/PoolRoundsAttackV3Gate.t.sol:PoolRoundsAttackV3GateTest
+[PASS] test_L3_Residual_DeadAddressReferrerDivertsTheShare() (gas: 537990)
+[PASS] test_M1_RevertingRegistryIsStillFine() (gas: 6103591)
+[PASS] test_M2_DepthGate_RespectsOrientation() (gas: 2677940)
+[PASS] test_Owner_FrontRunsFirstBetWithMinBank_OnlyCancels() (gas: 350274)
+[PASS] test_Owner_ImmutablesAndRelisting() (gas: 490420)
+[PASS] test_V3_2_LiquidityPulledAfterBets_RefundsAtOnce_NoLock() (gas: 542280)
+[PASS] test_V3_2_LiquidityPulledAfterTheWindows_SettlesNormally() (gas: 520570)
+[PASS] test_V3_3_MintListBurn_ThinPoolTakesNoBets_AndAnyoneDelists() (gas: 4643384)
+[PASS] test_V3_4_RegistryWithCodeButNoReturnData_ClaimStillPays() (gas: 6049442)
+Suite result: ok. 9 passed; 0 failed; 0 skipped; finished in 48.04ms (43.31ms CPU time)
+
+Ran 2 tests for test/PoolSettlementGasBench.t.sol:PoolSettlementGasBenchTest
+[PASS] test_BatchSettlementGasScaling() (gas: 106758829)
+[PASS] test_MockObserveUnderstatesTheRealPool() (gas: 1018125)
+Suite result: ok. 2 passed; 0 failed; 0 skipped; finished in 209.27ms (205.70ms CPU time)
+
+Ran 1 test for test/StressTest.t.sol:StressTest
+[PASS] test_Stress_500_Matches() (gas: 494258881)
+Suite result: ok. 1 passed; 0 failed; 0 skipped; finished in 6.48s (6.48s CPU time)
+
+Ran 24 tests for test/OracleResolver.t.sol:OracleResolverTest
+[PASS] testFuzz_Normalize_NoRevert_PositivePrice(uint64) (runs: 1000, μ: 121878, ~: 121888)
+[PASS] test_AddKeeper_OnlyAdmin() (gas: 13554)
+[PASS] test_HistoryHead_NotAffectingFreshPrices() (gas: 291321)
+[PASS] test_LateSettlement_UsesPriceAtSettleAt_NotAtKeeperTime() (gas: 10210413)
+[PASS] test_LateSingleSettlement_UsesPriceAtSettleAt_NotAtKeeperTime() (gas: 10205715)
+[PASS] test_RecordPrice_OnlyKeeper() (gas: 24803)
+[PASS] test_RejectsPlainEther() (gas: 15120)
+[PASS] test_RemoveKeeper_RevokesAccess() (gas: 28857)
+[PASS] test_ResolveOrderbookMarketBatch_AnomalyCancels_NoSettle() (gas: 10094123)
+[PASS] test_ResolveOrderbookMarketBatch_SettlesMultipleUpToMaxCount() (gas: 11033923)
+[PASS] test_ResolveOrderbookMarket_UnboundedWrapper_SettlesAll() (gas: 10119785)
+[PASS] test_ResolveOrderbookMatch_AnomalyCancels_NoSettle() (gas: 10087487)
+[PASS] test_ResolveOrderbookMatch_Reverts_NonKeeper() (gas: 9942836)
+[PASS] test_Resolve_SkipsMatchWhoseFeedHasNoPriceData() (gas: 9959262)
+[PASS] test_SettlementBeyondRetention_SkipsRatherThanInventingAWinner() (gas: 10174073)
+[PASS] test_StuckHeadDoesNotHideTheMatchesBehindIt() (gas: 11191178)
+[PASS] test_TWAP_AllStale_NotUsable() (gas: 229669)
+[PASS] test_TWAP_ConstantPrice() (gas: 462035)
+[PASS] test_TWAP_WindowCapsForLongDurationMarket() (gas: 10230353)
+[PASS] test_TWAP_WindowFloorsForVeryShortDuration() (gas: 10230649)
+[PASS] test_TWAP_WindowScalesDownForShortDurationMarket() (gas: 10999376)
+[PASS] test_WithdrawETH_OnlyAdmin() (gas: 11703)
+[PASS] test_WithdrawETH_Reverts_OnFailedTransfer() (gas: 61059)
+[PASS] test_WithdrawRescuesForcedEther() (gas: 45183)
+Suite result: ok. 24 passed; 0 failed; 0 skipped; finished in 75.49s (75.91s CPU time)
+
+Ran 6 tests for test/PoolRoundsInvariant.t.sol:PoolRoundsInvariantCap4Test
+[PASS] invariant_BalanceIsDepositsMinusOutflows() (runs: 64, calls: 12800, reverts: 0)
+
+╭-------------------+---------------+-------+---------+----------╮
+| Contract          | Selector      | Calls | Reverts | Discards |
++================================================================+
+| PoolRoundsHandler | bet           | 2593  | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | claim         | 855   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | claimAgain    | 864   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | claimReferral | 864   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | fixStrike     | 879   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | oracle        | 896   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | setPolicy     | 823   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | settle        | 1683  | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | togglePause   | 813   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | warp          | 1669  | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | withdrawFees  | 861   | 0       | 0        |
+╰-------------------+---------------+-------+---------+----------╯
+
+[PASS] invariant_DecidedRoundsCoverTheirBudget() (runs: 64, calls: 12800, reverts: 0)
+
+╭-------------------+---------------+-------+---------+----------╮
+| Contract          | Selector      | Calls | Reverts | Discards |
++================================================================+
+| PoolRoundsHandler | bet           | 2593  | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | claim         | 855   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | claimAgain    | 864   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | claimReferral | 864   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | fixStrike     | 879   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | oracle        | 896   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | setPolicy     | 823   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | settle        | 1683  | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | togglePause   | 813   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | warp          | 1669  | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | withdrawFees  | 861   | 0       | 0        |
+╰-------------------+---------------+-------+---------+----------╯
+
+[PASS] invariant_FinishedRoundsLeaveOnlyFeeAndDust() (runs: 64, calls: 12800, reverts: 0)
+
+╭-------------------+---------------+-------+---------+----------╮
+| Contract          | Selector      | Calls | Reverts | Discards |
++================================================================+
+| PoolRoundsHandler | bet           | 2593  | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | claim         | 855   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | claimAgain    | 864   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | claimReferral | 864   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | fixStrike     | 879   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | oracle        | 896   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | setPolicy     | 823   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | settle        | 1683  | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | togglePause   | 813   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | warp          | 1669  | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | withdrawFees  | 861   | 0       | 0        |
+╰-------------------+---------------+-------+---------+----------╯
+
+[PASS] invariant_NoTicketIsPaidTwice_AndPauseHoldsBets() (runs: 64, calls: 12800, reverts: 0)
+
+╭-------------------+---------------+-------+---------+----------╮
+| Contract          | Selector      | Calls | Reverts | Discards |
++================================================================+
+| PoolRoundsHandler | bet           | 2593  | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | claim         | 855   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | claimAgain    | 864   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | claimReferral | 864   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | fixStrike     | 879   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | oracle        | 896   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | setPolicy     | 823   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | settle        | 1683  | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | togglePause   | 813   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | warp          | 1669  | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | withdrawFees  | 861   | 0       | 0        |
+╰-------------------+---------------+-------+---------+----------╯
+
+[PASS] invariant_Solvent() (runs: 64, calls: 12800, reverts: 0)
+
+╭-------------------+---------------+-------+---------+----------╮
+| Contract          | Selector      | Calls | Reverts | Discards |
++================================================================+
+| PoolRoundsHandler | bet           | 2593  | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | claim         | 855   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | claimAgain    | 864   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | claimReferral | 864   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | fixStrike     | 879   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | oracle        | 896   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | setPolicy     | 823   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | settle        | 1683  | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | togglePause   | 813   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | warp          | 1669  | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | withdrawFees  | 861   | 0       | 0        |
+╰-------------------+---------------+-------+---------+----------╯
+
+[PASS] invariant_zz_CoverageSummary() (runs: 64, calls: 12800, reverts: 0)
+
+╭-------------------+---------------+-------+---------+----------╮
+| Contract          | Selector      | Calls | Reverts | Discards |
++================================================================+
+| PoolRoundsHandler | bet           | 2593  | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | claim         | 855   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | claimAgain    | 864   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | claimReferral | 864   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | fixStrike     | 879   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | oracle        | 896   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | setPolicy     | 823   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | settle        | 1683  | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | togglePause   | 813   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | warp          | 1669  | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | withdrawFees  | 861   | 0       | 0        |
+╰-------------------+---------------+-------+---------+----------╯
+
+Suite result: ok. 6 passed; 0 failed; 0 skipped; finished in 72.45s (190.16s CPU time)
+
+Ran 6 tests for test/PoolRoundsInvariant.t.sol:PoolRoundsInvariantCap1Test
+[PASS] invariant_BalanceIsDepositsMinusOutflows() (runs: 64, calls: 12800, reverts: 0)
+
+╭-------------------+---------------+-------+---------+----------╮
+| Contract          | Selector      | Calls | Reverts | Discards |
++================================================================+
+| PoolRoundsHandler | bet           | 2593  | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | claim         | 855   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | claimAgain    | 864   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | claimReferral | 864   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | fixStrike     | 879   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | oracle        | 896   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | setPolicy     | 823   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | settle        | 1683  | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | togglePause   | 813   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | warp          | 1669  | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | withdrawFees  | 861   | 0       | 0        |
+╰-------------------+---------------+-------+---------+----------╯
+
+[PASS] invariant_DecidedRoundsCoverTheirBudget() (runs: 64, calls: 12800, reverts: 0)
+
+╭-------------------+---------------+-------+---------+----------╮
+| Contract          | Selector      | Calls | Reverts | Discards |
++================================================================+
+| PoolRoundsHandler | bet           | 2593  | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | claim         | 855   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | claimAgain    | 864   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | claimReferral | 864   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | fixStrike     | 879   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | oracle        | 896   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | setPolicy     | 823   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | settle        | 1683  | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | togglePause   | 813   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | warp          | 1669  | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | withdrawFees  | 861   | 0       | 0        |
+╰-------------------+---------------+-------+---------+----------╯
+
+[PASS] invariant_FinishedRoundsLeaveOnlyFeeAndDust() (runs: 64, calls: 12800, reverts: 0)
+
+╭-------------------+---------------+-------+---------+----------╮
+| Contract          | Selector      | Calls | Reverts | Discards |
++================================================================+
+| PoolRoundsHandler | bet           | 2593  | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | claim         | 855   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | claimAgain    | 864   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | claimReferral | 864   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | fixStrike     | 879   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | oracle        | 896   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | setPolicy     | 823   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | settle        | 1683  | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | togglePause   | 813   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | warp          | 1669  | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | withdrawFees  | 861   | 0       | 0        |
+╰-------------------+---------------+-------+---------+----------╯
+
+[PASS] invariant_NoTicketIsPaidTwice_AndPauseHoldsBets() (runs: 64, calls: 12800, reverts: 0)
+
+╭-------------------+---------------+-------+---------+----------╮
+| Contract          | Selector      | Calls | Reverts | Discards |
++================================================================+
+| PoolRoundsHandler | bet           | 2593  | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | claim         | 855   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | claimAgain    | 864   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | claimReferral | 864   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | fixStrike     | 879   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | oracle        | 896   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | setPolicy     | 823   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | settle        | 1683  | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | togglePause   | 813   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | warp          | 1669  | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | withdrawFees  | 861   | 0       | 0        |
+╰-------------------+---------------+-------+---------+----------╯
+
+[PASS] invariant_Solvent() (runs: 64, calls: 12800, reverts: 0)
+
+╭-------------------+---------------+-------+---------+----------╮
+| Contract          | Selector      | Calls | Reverts | Discards |
++================================================================+
+| PoolRoundsHandler | bet           | 2593  | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | claim         | 855   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | claimAgain    | 864   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | claimReferral | 864   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | fixStrike     | 879   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | oracle        | 896   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | setPolicy     | 823   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | settle        | 1683  | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | togglePause   | 813   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | warp          | 1669  | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | withdrawFees  | 861   | 0       | 0        |
+╰-------------------+---------------+-------+---------+----------╯
+
+[PASS] invariant_zz_CoverageSummary() (runs: 64, calls: 12800, reverts: 0)
+
+╭-------------------+---------------+-------+---------+----------╮
+| Contract          | Selector      | Calls | Reverts | Discards |
++================================================================+
+| PoolRoundsHandler | bet           | 2593  | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | claim         | 855   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | claimAgain    | 864   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | claimReferral | 864   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | fixStrike     | 879   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | oracle        | 896   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | setPolicy     | 823   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | settle        | 1683  | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | togglePause   | 813   | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | warp          | 1669  | 0       | 0        |
+|-------------------+---------------+-------+---------+----------|
+| PoolRoundsHandler | withdrawFees  | 861   | 0       | 0        |
+╰-------------------+---------------+-------+---------+----------╯
+
+Suite result: ok. 6 passed; 0 failed; 0 skipped; finished in 80.35s (195.01s CPU time)
+
+Ran 9 tests for test/PoolRoundsAttackSettle.t.sol:PoolRoundsAttackSettleTest
+[PASS] testFuzz_ExtremeBooks_MatchReference(uint256,uint8,uint8,bool) (runs: 1000, μ: 3783318, ~: 1290080)
+[PASS] test_Oracle_ForcedRefundViaSpread_CostsPlayersOnePercent() (gas: 490310)
+[PASS] test_Oracle_StrikeWindow300s_ShortSpikeMovesEntryFiveTimesLess() (gas: 404083)
+[PASS] test_Oracle_StrikeWindowHasNoSpreadGuard_EntryIsMovable() (gas: 497188)
+[PASS] test_RoundId_NoCollisionBetweenAdjacentWindowsAndDurations() (gas: 237893)
+[PASS] test_StuckRound_DoesNotBlockAnotherRoundOfTheSamePool() (gas: 672154)
+[PASS] test_Timing_BetAtOpenAt_RefundAtCloseAt() (gas: 239974)
+[PASS] test_Timing_GraceBoundaryIsInclusive() (gas: 342991)
+[PASS] test_Timing_SettleAndFixStrike_BoundariesAreInclusiveAtDue() (gas: 442637)
+Suite result: ok. 9 passed; 0 failed; 0 skipped; finished in 79.40s (79.41s CPU time)
+
+Ran 25 tests for test/OrderbookMarket.t.sol:OrderbookMarketTest
+[PASS] testFuzz_PlaceBet_AmountRange(uint256) (runs: 1000, μ: 365150, ~: 365190)
+[PASS] testFuzz_Settle_Payout(uint256,uint256) (runs: 1000, μ: 986376, ~: 981891)
+[PASS] test_Claim_Reverts_NotYourOrder() (gas: 927382)
+[PASS] test_Fee_DirectDeployStartsAtZero() (gas: 7613)
+[PASS] test_Fee_IsNotChangeableOnAnOpenMarket() (gas: 7614)
+[PASS] test_GetPendingDepth() (gas: 364359)
+[PASS] test_GetPendingSettlements() (gas: 874882)
+[PASS] test_GetTraderOrders() (gas: 365640)
+[PASS] test_Match_LP_Fallback() (gas: 955371)
+[PASS] test_Match_PvP_Success() (gas: 873965)
+[PASS] test_Pause_OnlyMultisig() (gas: 61638)
+[PASS] test_Pause_Reverts_NonMultisig() (gas: 13149)
+[PASS] test_PlaceBet_AcceptsAPriceInsideTheEntryWindow() (gas: 364038)
+[PASS] test_PlaceBet_Reverts_AboveMax() (gas: 37188)
+[PASS] test_PlaceBet_Reverts_BelowMin() (gas: 37183)
+[PASS] test_PlaceBet_Reverts_SelfReferral() (gas: 37226)
+[PASS] test_PlaceBet_Reverts_StalePrice() (gas: 64080)
+[PASS] test_PlaceBet_Succeeds_AfterRefreshingStalePrice() (gas: 369224)
+[PASS] test_Refund_If_No_Match() (gas: 340404)
+[PASS] test_Refund_Reverts_NotExpired() (gas: 368260)
+[PASS] test_Settle_And_Claim_LP() (gas: 927971)
+[PASS] test_Settle_And_Claim_PvP() (gas: 895189)
+[PASS] test_Settle_Reverts_OnlyResolver() (gas: 870948)
+[PASS] test_Slippage_Revert_HighDeviation() (gas: 63542)
+[PASS] test_Slippage_Success_WithinDeviation() (gas: 367414)
+Suite result: ok. 25 passed; 0 failed; 0 skipped; finished in 80.43s (160.48s CPU time)
+
+Ran 12 tests for test/CriticalFixes.t.sol:CriticalFixesTest
+[PASS] test_C2_EmergencyRefundMatch_LP_RestoresPoolExposure() (gas: 903446)
+[PASS] test_C2_EmergencyRefundMatch_PvP_After24h() (gas: 887546)
+[PASS] test_C2_EmergencyRefundMatch_RevertsBeforeGrace() (gas: 870758)
+[PASS] test_C3_BarePlaceBetOverloadIsGone() (gas: 1056944212)
+[PASS] test_C3_PlaceBet_RejectsACallWithNoSignedPrice() (gas: 22357)
+[PASS] test_C3_PlaceBet_TakesNoFeeAndIsNotPayable() (gas: 364534)
+[PASS] test_C3_PlaceBet_WorksWithAnUnfundedResolver() (gas: 370030)
+[PASS] test_C4_GenesisTransferRebalancesFeeWeight() (gas: 4789823)
+[PASS] test_C5_RefundExpired_FreesMatchingSlot() (gas: 650524)
+[PASS] test_C5_RefundExpired_RemovesFromQueue() (gas: 904341)
+[PASS] test_C5_TryMatch_BoundedScan_NoDoS() (gas: 15885738)
+[PASS] test_SettleMatch_Reverts_AfterGraceWindowExpired() (gas: 874466)
+Suite result: ok. 12 passed; 0 failed; 0 skipped; finished in 80.45s (193.48ms CPU time)
+
+Ran 2 tests for test/PoolRoundsFuzz.t.sol:PoolRoundsFuzzTest
+[PASS] testFuzz_Round_MatchesReferenceAndConservesMoney(uint256,uint8,uint8,uint8,bool) (runs: 1000, μ: 4550879, ~: 6543420)
+[PASS] testFuzz_WideStakes_MatchReference(uint256,uint8,uint8,bool) (runs: 1000, μ: 4068879, ~: 1913909)
+Suite result: ok. 2 passed; 0 failed; 0 skipped; finished in 80.33s (160.61s CPU time)
+
+Ran 51 test suites in 80.45s (559.63s CPU time): 646 tests passed, 0 failed, 0 skipped (646 total tests)

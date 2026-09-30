@@ -1,0 +1,99 @@
+Compiling 1 files with Solc 0.8.24
+Solc 0.8.24 finished in 2.40s
+Compiler run successful!
+
+Ran 1 test for test/PoolRoundsGas.t.sol:PoolRoundsGasTest
+[PASS] test_Gas_FullLifecycle_2_10_50() (gas: 93587634)
+Logs:
+  n=2 A bet, first of the round: 241711
+  n=2 A bet, later, no referrer: 108007
+  n=2 A bet, later, with referrer: 0
+  n=2 A bet, average of later bets: 108007
+  n=2 B bet, first of the round: 178391
+  n=2 B bet, later, no referrer: 110872
+  n=2 B bet, later, with referrer: 0
+  n=2 B bet, average of later bets: 110872
+  n=2 fixStrike: 74785
+  n=2 settle, strike fixed (3-point read): 116472
+  n=2 settle, strike read at settle (5-point read): 136350
+  n=2 settle attempt, pool unreadable (reverts, retry later): 41280
+  n=2 settle -> REFUND, history gone: 53572
+  n=2 settle -> REFUND, grace lapsed: 40902
+  n=2 A claim, winner, referrer credited first time: 84684
+  n=2 A claim, winner, referrer credited again: 0
+  n=2 A claim, winner, no referrer (share to treasury): 0
+  n=2 A claim, loser: 40650
+  n=2 B claim, tie: 85183
+  n=2 C claim, oracle refund: 68120
+  n=2 E claim, round not activated: full refund: 54363
+  n=2 withdrawFees: 60594
+  n=2 claimReferral: 53690
+  n=2 mock observe 2 points: 36257
+  n=2 mock observe 3 points: 44634
+  n=2 mock observe 5 points: 61390
+  n=2 mock slot0 + liquidity (the depth read of a bet): 23490
+  n=10 A bet, first of the round: 241711
+  n=10 A bet, later, no referrer: 108007
+  n=10 A bet, later, with referrer: 164998
+  n=10 A bet, average of later bets: 120627
+  n=10 B bet, first of the round: 178391
+  n=10 B bet, later, no referrer: 110872
+  n=10 B bet, later, with referrer: 118778
+  n=10 B bet, average of later bets: 112585
+  n=10 fixStrike: 74785
+  n=10 settle, strike fixed (3-point read): 116472
+  n=10 settle, strike read at settle (5-point read): 136350
+  n=10 settle attempt, pool unreadable (reverts, retry later): 41280
+  n=10 settle -> REFUND, history gone: 53572
+  n=10 settle -> REFUND, grace lapsed: 40902
+  n=10 A claim, winner, referrer credited first time: 84684
+  n=10 A claim, winner, referrer credited again: 67584
+  n=10 A claim, winner, no referrer (share to treasury): 67481
+  n=10 A claim, loser: 40650
+  n=10 B claim, tie: 85183
+  n=10 C claim, oracle refund: 68120
+  n=10 E claim, round not activated: full refund: 54363
+  n=10 withdrawFees: 60594
+  n=10 claimReferral: 53690
+  n=10 mock observe 2 points: 36257
+  n=10 mock observe 3 points: 44634
+  n=10 mock observe 5 points: 61390
+  n=10 mock slot0 + liquidity (the depth read of a bet): 23490
+  n=50 A bet, first of the round: 241711
+  n=50 A bet, later, no referrer: 108007
+  n=50 A bet, later, with referrer: 164998
+  n=50 A bet, average of later bets: 121915
+  n=50 B bet, first of the round: 178391
+  n=50 B bet, later, no referrer: 110872
+  n=50 B bet, later, with referrer: 118778
+  n=50 B bet, average of later bets: 112759
+  n=50 fixStrike: 74785
+  n=50 settle, strike fixed (3-point read): 116472
+  n=50 settle, strike read at settle (5-point read): 136350
+  n=50 settle attempt, pool unreadable (reverts, retry later): 41280
+  n=50 settle -> REFUND, history gone: 53572
+  n=50 settle -> REFUND, grace lapsed: 40902
+  n=50 A claim, winner, referrer credited first time: 84684
+  n=50 A claim, winner, referrer credited again: 67584
+  n=50 A claim, winner, no referrer (share to treasury): 67481
+  n=50 A claim, loser: 40650
+  n=50 B claim, tie: 85183
+  n=50 C claim, oracle refund: 68120
+  n=50 E claim, round not activated: full refund: 54363
+  n=50 withdrawFees: 60594
+  n=50 claimReferral: 53690
+  n=50 mock observe 2 points: 36257
+  n=50 mock observe 3 points: 44634
+  n=50 mock observe 5 points: 61390
+  n=50 mock slot0 + liquidity (the depth read of a bet): 23490
+  EST real-pool observe adjustment, 2 points: 0
+  EST real-pool observe adjustment, 3 points: 0
+  EST real-pool observe adjustment, 5 points: 10376
+  EST keeper path A: fixStrike + settle, with L1 and real observe: 217299
+  EST keeper path B: settle alone, with L1 and real observe: 159747
+  EST one failed settle attempt, with L1 and real observe: 64677
+  EST failed attempts that still fit in the 1 000 000 budget after the worst path: 12
+
+Suite result: ok. 1 passed; 0 failed; 0 skipped; finished in 67.29ms (65.05ms CPU time)
+
+Ran 1 test suite in 68.90ms (67.29ms CPU time): 1 tests passed, 0 failed, 0 skipped (1 total tests)

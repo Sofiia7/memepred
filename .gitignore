@@ -98,3 +98,5 @@ workers/.wrangler/
 !docs/rhc/measurements/sharp-edge/*.json
 !docs/rhc/measurements/positive-ev/summary.json
 !docs/rhc/measurements/pool-toxicity/summary.json
+# Raw logs behind docs/rhc/ROUNDS-CONTRACT.md and ROUNDS-DEPLOY.md (forge gas, vectors, local end-to-end)
+!docs/rhc/measurements/rounds/*.log
