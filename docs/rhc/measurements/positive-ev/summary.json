@@ -1,27 +1,37 @@
 {
-  "schema": 1,
+  "schema": 4,
   "date": "2026-09-29",
   "implementedOnChain": false,
   "statement": "Outcome-independent positive contribution for activated externally funded books, conditional on the enforced total lifecycle cost allowance; no demand/volume claim.",
-  "calibration": "No fitted win probabilities and no historical parameter search.",
+  "calibration": "Mechanics use no fitted probabilities. The chosen configuration and its demand, tie share, revenue and player loss are read at full precision from the cap-1:1 cells of measurements/pool-toxicity/summary.json (historical price series, modeled player flow); the configuration was chosen on the first week and reported on the second.",
+  "chosenConfiguration": {
+    "mode": "visGap",
+    "T": 300,
+    "W": 300,
+    "fee": 0.02,
+    "bmin": 0.02
+  },
   "assumptions": {
     "normalFeeBps": 200,
     "activatedVoidFeeBps": 100,
     "maximumReferralShareOfFeeBps": 1000,
-    "maximumSideRatio": 4,
+    "maximumSideRatio": 1,
+    "minimumBankEth": 0.02,
     "gasBudgetMeasured": false,
     "totalLifecycleGasAllowance": 1000000,
     "minimumRetainedVoidFeeCostMultiple": 2,
     "ethUsdFrozen": 2713.8,
     "userPaysPlacementAndClaimGas": true,
     "operatorSuppliesDirectionalStake": false,
-    "fixedCostsIncludedInUnitContribution": false
+    "fixedCostsIncluded": false,
+    "revealPhase": false,
+    "demandIsModeled": true
   },
   "tests": {
-    "generatedBooks": 10000,
-    "outcomeChecks": 40000,
-    "activated": 7704,
-    "cancelled": 2296,
+    "generatedBooks": 20000,
+    "outcomeChecks": 80000,
+    "activated": 14688,
+    "cancelled": 5312,
     "note": "Random books are invariant tests, NOT a forecast of customer demand or fill rate."
   },
   "gasScenarios": [
@@ -29,11 +39,11 @@
       "gasGwei": 0.020142,
       "totalGasBudget": 1000000,
       "costEth": 0.000020142,
-      "minimumBankEth": 0.01,
-      "normalNetEth": 0.000159858,
-      "voidNetEth": 0.000069858,
-      "normalNetUsd": 0.4338226404,
-      "voidNetUsd": 0.1895806404
+      "minimumBankEth": 0.02,
+      "normalNetEth": 0.000339858,
+      "voidNetEth": 0.000159858,
+      "normalNetUsd": 0.9223066404000001,
+      "voidNetUsd": 0.4338226404
     },
     {
       "gasGwei": 0.069692,
@@ -66,68 +76,100 @@
       "voidNetUsd": 2.9200488
     }
   ],
-  "monthlyScenarios": [
+  "demandScenarios": [
     {
-      "bankEth": 0.01,
-      "assumedVoidPct": 3,
-      "fundedRoundsPerDay": 100,
-      "monthlyDepositedEth": 30,
-      "netPerRoundEth": 0.000157158,
-      "monthlyContributionUsd": 1279.4861412,
-      "illustrativeFixedUsd": 100,
-      "afterIllustrativeFixedUsd": 1179.4861412
+      "betsPerHourPerPool": 2,
+      "activeRoundsPerDay": 0.663905,
+      "avgActiveBankEth": 0.0259375,
+      "tieShare": 0.21875,
+      "simulatedNetEthPerPoolPerDay": 0.000264845,
+      "simulatedNetEthPerPoolPerDaySe": 0.0000377761,
+      "simulatedNetUsdPerPoolPerDay": 0.718736361,
+      "simulatedNetUsdPerPoolPer30Days": 21.562090830000002,
+      "formulaNetEthPerPoolPerDay": 0.0002626916482265625,
+      "formulaMatchesSimulationPct": -0.8130611389444709,
+      "netUsdPerPoolPer30DaysFreeRefunds": 18.62663163065558,
+      "netUsdPerPoolPer30DaysAllVoids": 11.529112784211,
+      "netUsdPerPoolPer30DaysNoVoids": 24.146924066779142
     },
     {
-      "bankEth": 0.026,
-      "assumedVoidPct": 3,
-      "fundedRoundsPerDay": 100,
-      "monthlyDepositedEth": 78,
-      "netPerRoundEth": 0.000440838,
-      "monthlyContributionUsd": 3589.0384932,
-      "illustrativeFixedUsd": 100,
-      "afterIllustrativeFixedUsd": 3489.0384932
+      "betsPerHourPerPool": 5,
+      "activeRoundsPerDay": 3.98343,
+      "avgActiveBankEth": 0.0282031,
+      "tieShare": 0.197917,
+      "simulatedNetEthPerPoolPerDay": 0.00175339,
+      "simulatedNetEthPerPoolPerDaySe": 0.000103453,
+      "simulatedNetUsdPerPoolPerDay": 4.758349782000001,
+      "simulatedNetUsdPerPoolPer30Days": 142.75049346000003,
+      "formulaNetEthPerPoolPerDay": 0.0017418556344844086,
+      "formulaMatchesSimulationPct": -0.6578322857773489,
+      "netUsdPerPoolPer30DaysFreeRefunds": 125.51932968343705,
+      "netUsdPerPoolPer30DaysAllVoids": 75.7856742891237,
+      "netUsdPerPoolPer30DaysNoVoids": 158.10353956839023
     },
     {
-      "bankEth": 0.1,
-      "assumedVoidPct": 3,
-      "fundedRoundsPerDay": 100,
-      "monthlyDepositedEth": 300,
-      "netPerRoundEth": 0.001752858,
-      "monthlyContributionUsd": 14270.718121200001,
-      "illustrativeFixedUsd": 100,
-      "afterIllustrativeFixedUsd": 14170.718121200001
+      "betsPerHourPerPool": 10,
+      "activeRoundsPerDay": 15.1972,
+      "avgActiveBankEth": 0.0285529,
+      "tieShare": 0.221843,
+      "simulatedNetEthPerPoolPerDay": 0.00661947,
+      "simulatedNetEthPerPoolPerDaySe": 0.00019558,
+      "simulatedNetUsdPerPoolPerDay": 17.963917686000002,
+      "simulatedNetUsdPerPoolPer30Days": 538.9175305800001,
+      "formulaNetEthPerPoolPerDay": 0.0066381894114489115,
+      "formulaMatchesSimulationPct": 0.2827932062372307,
+      "netUsdPerPoolPer30DaysFreeRefunds": 469.90687992227373,
+      "netUsdPerPoolPer30DaysAllVoids": 293.027618570868,
+      "netUsdPerPoolPer30DaysNoVoids": 610.9762255651298
     }
   ],
-  "botComparison": [
+  "playerLoss": [
     {
-      "botWinProbability": 0.5,
-      "currentDirectionalLpPctOfStake": 0,
-      "fundedRoundNetEth": 0.001402,
-      "note": "Different denominators: LP row per one user stake; funded round row per 0.1 ETH total bank."
+      "betsPerHourPerPool": 2,
+      "worstLossWeek2": 0.0428138,
+      "worstLossWeek2Se": 0.0378731,
+      "worstLossHalf1": 0.0566415,
+      "worstLossHalf2": 0.0298749,
+      "worstLossWeek1": 0.0241415,
+      "worstCaseBotBank": 0.49052,
+      "marginTo5PctInSe": 0.18974417198486535
     },
     {
-      "botWinProbability": 0.6,
-      "currentDirectionalLpPctOfStake": -19.599999999999994,
-      "fundedRoundNetEth": 0.001402,
-      "note": "Different denominators: LP row per one user stake; funded round row per 0.1 ETH total bank."
+      "betsPerHourPerPool": 5,
+      "worstLossWeek2": 0.0216656,
+      "worstLossWeek2Se": 0.0144294,
+      "worstLossHalf1": 0.0187295,
+      "worstLossHalf2": 0.0241826,
+      "worstLossWeek1": 0.0185632,
+      "worstCaseBotBank": 0.484267,
+      "marginTo5PctInSe": 1.9636575325377357
     },
     {
-      "botWinProbability": 0.75,
-      "currentDirectionalLpPctOfStake": -49,
-      "fundedRoundNetEth": 0.001402,
-      "note": "Different denominators: LP row per one user stake; funded round row per 0.1 ETH total bank."
+      "betsPerHourPerPool": 10,
+      "worstLossWeek2": 0.0199994,
+      "worstLossWeek2Se": 0.0031998,
+      "worstLossHalf1": 0.0238603,
+      "worstLossHalf2": 0.016614,
+      "worstLossWeek1": 0.0353575,
+      "worstCaseBotBank": 0.470504,
+      "marginTo5PctInSe": 9.375773485842865
+    }
+  ],
+  "freeRefundBreakEven": [
+    {
+      "bankEth": 0.02,
+      "gasGwei": 0.020142,
+      "breakEvenTieShare": 0.9440500000000001
     },
     {
-      "botWinProbability": 0.9,
-      "currentDirectionalLpPctOfStake": -78.4,
-      "fundedRoundNetEth": 0.001402,
-      "note": "Different denominators: LP row per one user stake; funded round row per 0.1 ETH total bank."
+      "bankEth": 0.03,
+      "gasGwei": 0.020142,
+      "breakEvenTieShare": 0.9627
     },
     {
-      "botWinProbability": 1,
-      "currentDirectionalLpPctOfStake": -98,
-      "fundedRoundNetEth": 0.001402,
-      "note": "Different denominators: LP row per one user stake; funded round row per 0.1 ETH total bank."
+      "bankEth": 0.09,
+      "gasGwei": 0.398,
+      "breakEvenTieShare": 0.754320987654321
     }
   ]
 }

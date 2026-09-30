@@ -97,3 +97,4 @@ workers/.wrangler/
 !docs/rhc/measurements/economics/*.log
 !docs/rhc/measurements/sharp-edge/*.json
 !docs/rhc/measurements/positive-ev/summary.json
+!docs/rhc/measurements/pool-toxicity/summary.json

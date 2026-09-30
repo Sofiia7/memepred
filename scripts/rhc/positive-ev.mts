@@ -1,11 +1,15 @@
 /**
  * Outcome-independent economics for a proposed funded round, not deployed code.
  * Run: node scripts/rhc/positive-ev.mts [--json path] [--self-test]
- * No network, keys, transactions or fitted probabilities. All money is bigint.
+ * No network, keys or transactions. All money mechanics are bigint wei.
  * The gas allowance is a DESIGN BUDGET, not a measurement of the proposed contract.
+ * Demand, tie share and simulated revenue are READ from the cap-1:1 cells of
+ * docs/rhc/measurements/pool-toxicity/summary.json (real price series, modeled player flow), so there is one
+ * source and no copied constants. The money rules below are the cap 1:1 design: accepted = min(UP, DOWN) per
+ * side, excess returned free, every accepted unit pays 1.96x. The same code is tested at cap 4 too.
  */
 import assert from 'node:assert/strict'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 
 const WEI = 10n ** 18n
@@ -18,18 +22,20 @@ const ceilDiv = (a: bigint, b: bigint) => (a + b - 1n) / b
 const max = (a: bigint, b: bigint) => a > b ? a : b
 const sum = (xs: bigint[]) => xs.reduce((a, b) => a + b, 0n)
 const asEth = (x: bigint) => Number(x) / 1e18
-const usd = (x: bigint) => asEth(x) * 2713.80
+const ETH_USD = 2713.80
+const usd = (x: bigint) => asEth(x) * ETH_USD
 
 // Chosen from product constraints, not from the historical price outcomes:
 // balanced normal round pays 1.96x, as the present user-vs-LP product does.
 const NORMAL_FEE_BPS = 200n
 const VOID_FEE_BPS = 100n // explicitly disclosed execution fee on an ACTIVATED tie/refund
 const REFERRAL_BPS = 1000n // conservative: every unit of fee has a referrer
-const MIN_BANK = eth('0.01')
+const MIN_BANK = eth('0.02') // chosen on the FIRST week of prices: 0.01 fails the 5% player-loss bar there
 const BANK_STEP = eth('0.005')
-const MAX_SIDE_RATIO = 4n // clear excess stakes: final split is between 20:80 and 80:20
+const MAX_SIDE_RATIO = 1n // accepted = min(UP, DOWN): a fixed 1.96x for everyone (cap 4 gave 15-22% player loss)
 const GAS_ALLOWANCE = 1_000_000n // TOTAL allowance over the round lifecycle, includes L1 gas units
 const COVER = 2n // retained void fee must be at least twice the lifecycle gas allowance
+const GAS_FLOOR_GWEI = 0.020142 // chain floor on 2026-09-29 (ECONOMICS.md)
 
 type Side = 'up' | 'down'
 type Outcome = Side | 'tie' | 'oracle-refund'
@@ -128,8 +134,17 @@ function selfTest() {
     assert.equal(r.payouts[0], eth('0.0495'))
     assert.equal(r.contribution, eth('0.000502'))
   }
+  // Cap 1:1 (the design): the larger side's excess comes back free, every accepted unit pays 1.96x.
+  const skew1: Ticket[] = [{ side: 'up', stake: eth('0.4') }, { side: 'down', stake: eth('0.1') }]
+  const s1 = settle(skew1, 'down', p, p.costAllowance)
+  assert.equal(s1.bank, eth('0.2'))
+  assert.equal(s1.payouts[0], eth('0.3'))
+  assert.equal(s1.payouts[1], eth('0.196'))
+  assert.equal(s1.contribution, eth('0.003202'))
+  // The same code at cap 4 (the earlier variable-multiplier proposal), kept as a regression check.
+  const p4 = { ...p, maxSideRatio: 4n }
   const skew: Ticket[] = [{ side: 'up', stake: eth('0.4') }, { side: 'down', stake: eth('0.02') }]
-  const s = settle(skew, 'down', p, p.costAllowance)
+  const s = settle(skew, 'down', p4, p.costAllowance)
   assert.equal(s.bank, eth('0.1'))
   assert.equal(s.payouts[0], eth('0.32'))
   assert.equal(s.payouts[1], eth('0.098'))
@@ -144,11 +159,11 @@ function selfTest() {
   let seed = 0x5eed1234
   const random = () => { seed ^= seed << 13; seed ^= seed >>> 17; seed ^= seed << 5; return seed >>> 0 }
   let activated = 0, cancelled = 0
-  for (let n = 0; n < 10_000; n++) {
+  for (let n = 0; n < 20_000; n++) { // 10 000 books at cap 1 (the design) and 10 000 at cap 4
     const tickets: Ticket[] = Array.from({ length: 1 + random() % 20 }, () => ({
       side: random() % 2 ? 'up' : 'down', stake: BigInt(1 + random() % 8) * eth('0.005') + BigInt(random() % 17),
     }))
-    const pp = policy([0.020142, 0.069692, 0.398, 1.039][random() % 4])
+    const pp = { ...policy([0.020142, 0.069692, 0.398, 1.039][random() % 4]), maxSideRatio: n < 10_000 ? 1n : 4n }
     const c = clear(tickets, pp)
     const cost = c.active ? pp.costAllowance * BigInt(random() % 101) / 100n : 0n
     const raw = sum(tickets.map(t => t.stake))
@@ -161,16 +176,56 @@ function selfTest() {
     }
     if (c.active) activated++; else cancelled++
   }
-  return { generatedBooks: 10_000, outcomeChecks: 40_000, activated, cancelled,
+  return { generatedBooks: 20_000, outcomeChecks: 80_000, activated, cancelled,
     note: 'Random books are invariant tests, NOT a forecast of customer demand or fill rate.' }
 }
+
+// ---- inputs from the simulation: ONE configuration, read from the cap-1:1 cells ------------------
+// The configuration was chosen on the FIRST week of prices and is reported on the SECOND (see
+// POOL-TOXICITY.md). Visible bets, a pause between the close and the strike, strike window W, no reveal.
+const CHOSEN = { mode: 'visGap', T: 300, W: 300, fee: 0.02, bmin: 0.02 }
+const DEMAND_LEVELS = [2, 5, 10]
+type Cell = Record<string, number | string>
+function readChosenCells() {
+  const data = JSON.parse(readFileSync(new URL('../../docs/rhc/measurements/pool-toxicity/summary.json', import.meta.url), 'utf8'))
+  assert.equal(data.schema, 1, 'unsupported pool-toxicity data schema')
+  const cols: string[] = data.capOneSearchColumns
+  const cells = new Map<number, Cell>()
+  for (const row of data.capOneSearchCells) {
+    const r: Cell = Object.fromEntries(cols.map((c, i) => [c, row[i]]))
+    if (r.mode === CHOSEN.mode && r.T === CHOSEN.T && r.W === CHOSEN.W && r.fee === CHOSEN.fee && r.bmin === CHOSEN.bmin) {
+      assert(!cells.has(r.betsPerHour as number), 'duplicate cell')
+      cells.set(r.betsPerHour as number, r)
+    }
+  }
+  for (const h of DEMAND_LEVELS) {
+    const r = cells.get(h)
+    assert(r, `chosen configuration has no cell for ${h} bets/hour`)
+    for (const f of ['activeRoundsPerDay', 'meanBank', 'tieShare', 'rev2', 'rev2Se', 'loss2', 'loss2Se', 'loss2H1', 'loss2H2', 'mono2Share']) {
+      assert(Number.isFinite(r[f] as number), `cell ${h}/h has no finite ${f}`)
+    }
+  }
+  return cells
+}
+
+/** Expected retained result of ONE activated round, in ETH, after referrals and the full gas allowance.
+ * v is the share of activated rounds ending as tie/oracle refund. With chargeVoid = false the refund is
+ * free (the current product rule) and the round earns nothing on those v.
+ */
+function expectedNet(bank: bigint, v: number, p: Policy, chargeVoid: boolean) {
+  const normal = Number(fees(bank, p.normalFeeBps, p.referralBps).retained)
+  const voidFee = chargeVoid ? Number(fees(bank, p.voidFeeBps, p.referralBps).retained) : 0
+  return ((1 - v) * normal + v * voidFee - Number(p.costAllowance)) / 1e18
+}
+const ethOf = (x: number) => BigInt(Math.round(x * 1e6)) * (WEI / 1_000_000n)
 
 const tests = selfTest()
 if (process.argv.includes('--self-test')) {
   console.log(JSON.stringify({ ok: true, ...tests }, null, 2))
 } else {
+  const cells = readChosenCells()
   const gasLevels = [0.020142, 0.069692, 0.398, 1.039]
-  const rows = gasLevels.map(gwei => {
+  const gasScenarios = gasLevels.map(gwei => {
     const p = policy(gwei), bank = minimumFundedBank(p)
     const f = fees(bank, p.normalFeeBps, p.referralBps)
     const v = fees(bank, p.voidFeeBps, p.referralBps)
@@ -179,46 +234,69 @@ if (process.argv.includes('--self-test')) {
       voidNetEth: asEth(v.retained - p.costAllowance), normalNetUsd: usd(f.retained - p.costAllowance),
       voidNetUsd: usd(v.retained - p.costAllowance) }
   })
-  const examples = [eth('0.01'), eth('0.026'), eth('0.1')].map(bank => {
-    const p = policy(gasLevels[0]), normal = fees(bank, p.normalFeeBps, p.referralBps).retained
-    const voidFee = fees(bank, p.voidFeeBps, p.referralBps).retained
-    const average = (normal * 97n + voidFee * 3n) / 100n - p.costAllowance
-    const month = average * 100n * 30n
-    return { bankEth: asEth(bank), assumedVoidPct: 3, fundedRoundsPerDay: 100,
-      monthlyDepositedEth: asEth(bank * 3000n), netPerRoundEth: asEth(average),
-      monthlyContributionUsd: usd(month), illustrativeFixedUsd: 100, afterIllustrativeFixedUsd: usd(month) - 100 }
+
+  const floor = policy(GAS_FLOOR_GWEI)
+  const demandScenarios = DEMAND_LEVELS.map(h => {
+    const c = cells.get(h)!
+    const rounds = c.activeRoundsPerDay as number, bankEth = c.meanBank as number, v = c.tieShare as number
+    const bank = ethOf(bankEth)
+    const withFee = expectedNet(bank, v, floor, true), freeRefunds = expectedNet(bank, v, floor, false)
+    const allVoids = expectedNet(bank, 1, floor, true), noVoids = expectedNet(bank, 0, floor, true)
+    const day = (perRound: number) => perRound * rounds
+    const month = (perRound: number) => day(perRound) * ETH_USD * 30
+    const simulatedDay = c.rev2 as number
+    return { betsPerHourPerPool: h, activeRoundsPerDay: rounds, avgActiveBankEth: bankEth, tieShare: v,
+      simulatedNetEthPerPoolPerDay: simulatedDay, simulatedNetEthPerPoolPerDaySe: c.rev2Se as number,
+      simulatedNetUsdPerPoolPerDay: simulatedDay * ETH_USD, simulatedNetUsdPerPoolPer30Days: simulatedDay * ETH_USD * 30,
+      formulaNetEthPerPoolPerDay: day(withFee), formulaMatchesSimulationPct: 100 * (day(withFee) / simulatedDay - 1),
+      // Bounds for the SAME realized accepted bank and activated count, conditional on the cost cap.
+      // They do not bound customer demand or revenue on an arbitrary calendar month.
+      netUsdPerPoolPer30DaysFreeRefunds: month(freeRefunds),
+      netUsdPerPoolPer30DaysAllVoids: month(allVoids), netUsdPerPoolPer30DaysNoVoids: month(noVoids) }
   })
-  const p = policy(0.398), b = eth('0.1')
-  const normal = fees(b, p.normalFeeBps, p.referralBps).retained - p.costAllowance
-  const comparisons = [0.5, 0.6, 0.75, 0.9, 1].map(botWinProbability => ({
-    botWinProbability,
-    currentDirectionalLpPctOfStake: 100 * .98 * (1 - 2 * botWinProbability),
-    fundedRoundNetEth: asEth(normal),
-    note: 'Different denominators: LP row per one user stake; funded round row per 0.1 ETH total bank.',
-  }))
+  const playerLoss = DEMAND_LEVELS.map(h => {
+    const c = cells.get(h)!
+    return { betsPerHourPerPool: h, worstLossWeek2: c.loss2 as number, worstLossWeek2Se: c.loss2Se as number,
+      worstLossHalf1: c.loss2H1 as number, worstLossHalf2: c.loss2H2 as number, worstLossWeek1: c.loss1 as number,
+      worstCaseBotBank: c.mono2Share as number, marginTo5PctInSe: (0.05 - (c.loss2 as number)) / (c.loss2Se as number) }
+  })
+
+  // Free refunds: the tie share at which an activated round stops paying for its own gas allowance.
+  const freeRefundBreakEven = [{ bank: '0.02', gwei: 0.020142 }, { bank: '0.03', gwei: 0.020142 }, { bank: '0.09', gwei: 0.398 }].map(x => {
+    const p = policy(x.gwei), normal = fees(eth(x.bank), p.normalFeeBps, p.referralBps).retained
+    return { bankEth: Number(x.bank), gasGwei: x.gwei, breakEvenTieShare: 1 - Number(p.costAllowance) / Number(normal) }
+  })
+
   const result = {
-    schema: 1, date: '2026-09-29', implementedOnChain: false,
+    schema: 4, date: '2026-09-29', implementedOnChain: false,
     statement: 'Outcome-independent positive contribution for activated externally funded books, conditional on the enforced total lifecycle cost allowance; no demand/volume claim.',
-    calibration: 'No fitted win probabilities and no historical parameter search.',
+    calibration: 'Mechanics use no fitted probabilities. The chosen configuration and its demand, tie share, revenue and player loss are read at full precision from the cap-1:1 cells of measurements/pool-toxicity/summary.json (historical price series, modeled player flow); the configuration was chosen on the first week and reported on the second.',
+    chosenConfiguration: CHOSEN,
     assumptions: { normalFeeBps: Number(NORMAL_FEE_BPS), activatedVoidFeeBps: Number(VOID_FEE_BPS),
       maximumReferralShareOfFeeBps: Number(REFERRAL_BPS), maximumSideRatio: Number(MAX_SIDE_RATIO),
-      gasBudgetMeasured: false, totalLifecycleGasAllowance: Number(GAS_ALLOWANCE),
-      minimumRetainedVoidFeeCostMultiple: Number(COVER), ethUsdFrozen: 2713.80,
-      userPaysPlacementAndClaimGas: true, operatorSuppliesDirectionalStake: false,
-      fixedCostsIncludedInUnitContribution: false },
-    tests, gasScenarios: rows, monthlyScenarios: examples, botComparison: comparisons,
+      minimumBankEth: asEth(MIN_BANK), gasBudgetMeasured: false, totalLifecycleGasAllowance: Number(GAS_ALLOWANCE),
+      minimumRetainedVoidFeeCostMultiple: Number(COVER), ethUsdFrozen: ETH_USD,
+      userPaysPlacementAndClaimGas: true, operatorSuppliesDirectionalStake: false, fixedCostsIncluded: false,
+      revealPhase: false, demandIsModeled: true },
+    tests, gasScenarios, demandScenarios, playerLoss, freeRefundBreakEven,
   }
-  console.log('Funded rounds: proposed mechanics, not deployed. No fitted probabilities.')
-  console.log('Normal fee 2% of bank; activated tie/oracle refund 1%; up to 10% of fees to referrals.')
-  console.log('Full refund of unmatched/never-activated deposits; user pays placement and claim gas.')
+  console.log('Matched rounds (cap 1:1, fixed 1.96x): proposed mechanics, not deployed.')
+  console.log('Normal fee 2% of accepted bank; activated tie/oracle refund 1%; up to 10% of fees to referrals.')
+  console.log('Full refund of the excess and of never-activated deposits; user pays bet and claim gas.')
   console.log('Total lifecycle gas allowance 1,000,000 is a design budget, NOT a gas measurement.')
   console.log('L1 is included in this TOTAL gas allowance; do not add it a second time.')
-  console.log('\ngwei | max lifecycle ETH | min bank ETH | normal net ETH | void net ETH')
-  for (const r of rows) console.log(`${r.gasGwei} | ${r.costEth.toFixed(8)} | ${r.minimumBankEth.toFixed(3)} | ${r.normalNetEth.toFixed(8)} | ${r.voidNetEth.toFixed(8)}`)
-  console.log('\nAt frozen 0.020142 gwei and $2713.80/ETH: 100 FUNDED rounds/day, 3% voids, all fees referred.')
-  console.log('bank ETH | monthly user deposits ETH | monthly contribution USD | after assumed $100 fixed USD')
-  for (const r of examples) console.log(`${r.bankEth.toFixed(3)} | ${r.monthlyDepositedEth.toFixed(1)} | ${r.monthlyContributionUsd.toFixed(2)} | ${r.afterIllustrativeFixedUsd.toFixed(2)}`)
-  console.log(`\nTests: ${tests.generatedBooks} books, ${tests.outcomeChecks} outcomes; conservation, no uncovered payout, clearing, referral fees, funding gate, gas cap.`)
+  console.log('\nA. minimum funded bank by gas price (never below 0.02 ETH)')
+  console.log('gwei | max lifecycle ETH | min bank ETH | normal net ETH | void net ETH')
+  for (const r of gasScenarios) console.log(`${r.gasGwei} | ${r.costEth.toFixed(8)} | ${r.minimumBankEth.toFixed(3)} | ${r.normalNetEth.toFixed(8)} | ${r.voidNetEth.toFixed(8)}`)
+  console.log(`\nB. chosen configuration ${JSON.stringify(CHOSEN)}, ${GAS_FLOOR_GWEI} gwei, $${ETH_USD}/ETH, before fixed costs`)
+  console.log('bets/h | active rounds/day | avg bank ETH | tie share | simulated USD/day | simulated USD/30 d | formula vs simulation | free refunds USD/30 d | all voids USD/30 d')
+  for (const r of demandScenarios) console.log(`${r.betsPerHourPerPool} | ${r.activeRoundsPerDay.toFixed(3)} | ${r.avgActiveBankEth.toFixed(4)} | ${(100 * r.tieShare).toFixed(1)}% | ${r.simulatedNetUsdPerPoolPerDay.toFixed(2)} | ${r.simulatedNetUsdPerPoolPer30Days.toFixed(0)} | ${r.formulaMatchesSimulationPct.toFixed(1)}% | ${r.netUsdPerPoolPer30DaysFreeRefunds.toFixed(0)} | ${r.netUsdPerPoolPer30DaysAllVoids.toFixed(0)}`)
+  console.log('\nC. player loss, worst case over bot types at bot share up to 25% (second week)')
+  console.log('bets/h | loss % +- se | halves % | margin to 5% in se')
+  for (const r of playerLoss) console.log(`${r.betsPerHourPerPool} | ${(100 * r.worstLossWeek2).toFixed(1)} +- ${(100 * r.worstLossWeek2Se).toFixed(1)} | ${(100 * r.worstLossHalf1).toFixed(1)} / ${(100 * r.worstLossHalf2).toFixed(1)} | ${r.marginTo5PctInSe.toFixed(1)}`)
+  console.log('\nD. free refunds: tie share above which an activated round no longer pays its own gas allowance')
+  for (const r of freeRefundBreakEven) console.log(`bank ${r.bankEth} ETH, ${r.gasGwei} gwei: ${(100 * r.breakEvenTieShare).toFixed(2)}%`)
+  console.log(`\nTests: ${tests.generatedBooks} books, ${tests.outcomeChecks} outcomes (half at cap 1, half at cap 4); conservation, no uncovered payout, clearing, referral fees, funding gate, gas cap.`)
   const at = process.argv.indexOf('--json')
   if (at >= 0) {
     const path = process.argv[at + 1]
