@@ -4,6 +4,7 @@ import { ScreenTitle } from '../components/ui/AppShell'
 import { MAX_BET, MIN_BET, CURRENCY_SYMBOL, MATCH_TIMEOUT_SEC, SETTLE_GRACE_SEC } from '../lib/contracts'
 import { IS_POOL_BACKED } from '../lib/chain'
 import { PRICE_JUMP_REFUND_PCT } from '../lib/rules'
+import { ROUNDS_ENABLED } from '../rounds/flag'
 
 // Read from the contract mirrors rather than retyped, like Terms does.
 const MATCH_TIMEOUT_MIN = MATCH_TIMEOUT_SEC / 60
@@ -22,9 +23,34 @@ function Step({ n, title, children }: { n: number; title: string; children: Reac
 }
 
 export function HowItWorksPage() {
+  const showRounds = IS_POOL_BACKED && ROUNDS_ENABLED
   return (
     <>
       <ScreenTitle title="How it works" />
+
+      {showRounds && (
+        <>
+          <div className="b-title">Rounds on Robinhood Chain testnet</div>
+          <p>
+            In <Link to="/rounds">Rounds</Link>, traders publicly stake UP or DOWN during a 5-minute betting window.
+            The two sides play only up to the smaller side's total, one for one. The rest of each stake is returned without a fee.
+            A round plays only when both sides stake enough for a matched bank of at least 0.02 WETH; otherwise every stake
+            is returned in full after bets close.
+          </p>
+          <p>
+            After betting closes, there is a 5-minute pause. The strike is averaged over the next 5 minutes, and the exit
+            price is read 5 minutes later. The result is due about 20 minutes after betting opened. Your bet is on the move
+            from that future strike to the exit, not on the price when you bet.
+          </p>
+          <p>
+            A winning side receives 1.96 times its matched stake, plus any unmatched part. The fee is 2% of the matched
+            bank on a result. A tie or an unpriceable active round returns the matched stakes minus 1%. You must press
+            Collect to receive winnings or refunds. The contract's pool-depth rule limits the bank, but price manipulation
+            remains possible. These are testnet pools with scripted prices and test WETH only.
+          </p>
+          <div className="b-title">Continuous markets</div>
+        </>
+      )}
 
       <div className="how-steps">
         <Step n={1} title="Pick a coin, a direction, and a timeframe">
@@ -86,7 +112,7 @@ export function HowItWorksPage() {
         <li>Settlement is automatic and on-chain - there's no house to argue an outcome with.</li>
         <li>Queue information shows waiting orders, not the probability that UP or DOWN wins.
           The exact payout and fee are shown before you place a bet.</li>
-        <li>This is a real-money product with real-money risk. You can lose your entire
+        <li>{IS_POOL_BACKED ? 'This testnet demo uses test tokens. A live version would put real funds at risk.' : 'This is a real-money product with real-money risk.'} You can lose your entire
           stake. Nothing here is investment advice, and past outcomes don't predict future
           ones.</li>
         {IS_POOL_BACKED ? (

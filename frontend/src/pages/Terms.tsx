@@ -5,24 +5,12 @@ import { IS_POOL_BACKED } from '../lib/chain'
 import { MAX_BET, CURRENCY_SYMBOL, SETTLE_GRACE_SEC, MATCH_TIMEOUT_SEC } from '../lib/contracts'
 import { PRICE_JUMP_REFUND_PCT } from '../lib/rules'
 import { joinList, restrictedNames } from '../lib/restrictedRegions'
+import { ROUNDS_ENABLED } from '../rounds/flag'
 
 const SETTLE_GRACE_HOURS = SETTLE_GRACE_SEC / 3600
 const MATCH_TIMEOUT_MINUTES = MATCH_TIMEOUT_SEC / 60
 
-/**
- * ⚠️ ACTION REQUIRED BEFORE LAUNCH - set a real security contact.
- *
- * §12 offers a paid bug bounty, which is the main compensating control for
- * shipping unaudited contracts (§4). A bounty with nowhere to report to is
- * worse than no bounty: it reads as a promise that can't be kept. Set this
- * to a channel that is actually monitored - a dedicated address such as
- * security@flipthememe.com, or a Telegram/X handle - via
- * VITE_SECURITY_CONTACT, and the placeholder disappears.
- */
-const SECURITY_CONTACT: string =
-  import.meta.env.VITE_SECURITY_CONTACT ||
-  '[NOT YET PUBLISHED - no security contact has been set up. Until one is, ' +
-  'do not rely on being able to reach anyone about a vulnerability.]'
+const SECURITY_CONTACT = import.meta.env.VITE_SECURITY_CONTACT
 
 function Section({ n, title, children }: { n: string; title: string; children: ReactNode }) {
   return (
@@ -34,6 +22,7 @@ function Section({ n, title, children }: { n: string; title: string; children: R
 }
 
 export function TermsPage() {
+  const showRounds = IS_POOL_BACKED && ROUNDS_ENABLED
   return (
     <>
       <ScreenTitle title="Terms & Privacy" />
@@ -46,7 +35,7 @@ export function TermsPage() {
       </div>
 
       <h3 className="terms-h">Terms of Service</h3>
-      <div className="terms-meta">Last updated: 2026-09-29</div>
+      <div className="terms-meta">Last updated: {showRounds ? '2026-09-30' : '2026-09-29'}</div>
 
       <Section n="1" title="Who runs this">
         FlipTheMeme is built and operated by an individual developer, not a
@@ -59,7 +48,7 @@ export function TermsPage() {
       <Section n="2" title="What this is">
         {IS_POOL_BACKED ? (
           <>
-            A non-custodial, peer-to-peer prediction market on Robinhood
+            Continuous markets are non-custodial, peer-to-peer prediction markets on Robinhood
             Chain. You stake {CURRENCY_SYMBOL} to bet on the short-term price
             direction (UP/DOWN) of a listed meme coin over a fixed window. The
             window is set per market and shown on it (the demo market runs 5
@@ -93,6 +82,32 @@ export function TermsPage() {
         )}
       </Section>
 
+      {showRounds && (
+        <Section n="2a" title="Rounds on Robinhood Chain testnet">
+          <p>
+            Rounds are a separate testnet contract. Each wallet may place one UP or DOWN stake of 0.005-0.04 WETH in a
+            round. Both sides' totals are public. Only equal amounts from the two sides play; each side's excess is
+            returned without a fee. A round needs both sides and a matched bank of at least 0.02 WETH. If it does not
+            activate, every stake is returned in full after bets close.
+          </p>
+          <p>
+            The 5-minute betting window is followed by a 5-minute pause, a 5-minute strike average, and an exit price
+            5 minutes later. The result is due about 20 minutes after bets opened. The price when you place your bet does
+            not set the strike. If your side wins, you receive 1.96 times your matched stake plus any excess. The contract
+            keeps 2% of the matched bank when there is a winner. On a tie or when an active round cannot be priced, it
+            keeps 1% of the matched bank and returns the rest. If settlement is not completed within 24 hours of its due
+            time, the round can be refunded with that 1% fee. You must call Collect for winnings and refunds; nothing is
+            sent automatically. Gas for the approval, bet and collection is paid separately.
+          </p>
+          <p>
+            A pool must clear the contract's depth gate, and the round's bank is limited by that pool's depth. The rule
+            limits the size of a bet that can be affected by moving the pool price; it does not prevent manipulation.
+            Testnet pools are stand-ins with scripted prices. The test tokens have no monetary value. See the{' '}
+            <Link to="/rounds">Rounds screen</Link> for the current contract values and times before betting.
+          </p>
+        </Section>
+      )}
+
       <Section n="3" title="Who can use this">
         You must be at least 18 (or the age of majority where you live) and
         legally permitted to use cryptocurrency products where you are, and
@@ -119,15 +134,10 @@ export function TermsPage() {
         {IS_POOL_BACKED && (
           <p style={{ marginTop: 10 }}>
             <b>On Robinhood Chain specifically:</b> the policy above applies
-            regardless of network - this product does not knowingly serve
-            Restricted Territories on any chain it runs on. Whether the
-            automated edge-level enforcement described above is already
-            live for this network's traffic has not been independently
-            confirmed as of this writing, and eligibility/settlement
-            enforcement details for this network are still being finalized.
-            Do not treat the absence of an automatic block as permission -
-            the underlying restriction still applies, and you remain solely
-            responsible for determining whether using this is legal for you.
+            to both continuous markets and rounds. The edge checks the visitor's
+            region before the app loads; the current blocked list is published
+            by the API endpoint above. You remain responsible for determining
+            whether using this is legal for you.
           </p>
         )}
       </Section>
@@ -171,7 +181,7 @@ export function TermsPage() {
               and name the auditor.</li>
           )}
           {IS_POOL_BACKED ? (
-            <li><b>Oracle risk.</b> Settlement depends on reading the token's
+            <li><b>Oracle risk in continuous markets.</b> Settlement depends on reading the token's
               own on-chain Uniswap v3 pool - a time-weighted average price, not
               a single spot tick. A pool that's too thin, too new, or drained
               out from under a position can't be read safely. What happens
@@ -190,14 +200,14 @@ export function TermsPage() {
               refund instead of a payout.</li>
           )}
           {IS_POOL_BACKED && (
-            <li><b>Ties refund, they don't settle.</b> If the price at
+            <li><b>Ties in continuous markets refund in full.</b> If the price at
               settlement is exactly equal to the entry price, both sides get
               their stake back in full and no fee is charged to either side -
               this is not a loss for either trader, and it is not a payout
               either.</li>
           )}
           {IS_POOL_BACKED ? (
-            <li><b>No guaranteed counterparty.</b> If nobody's on the other
+            <li><b>No guaranteed counterparty in continuous markets.</b> If nobody's on the other
               side and the LP vault can't (or, on that market, isn't set up to)
               cover you, the unmatched part waits in the book. You can cancel it
               yourself at any time; if you don't, it stops matching after{' '}
@@ -208,6 +218,12 @@ export function TermsPage() {
             <li><b>No guaranteed counterparty.</b> If nobody's on the other
               side and the LP pool can't cover you, your bet is refunded - but
               it's locked for up to {MATCH_TIMEOUT_MINUTES} minutes while that's decided.</li>
+          )}
+          {showRounds && (
+            <li><b>Round oracle risk.</b> The strike and exit are averages from the listed pool, which can still be
+              manipulated. The contract limits the matched bank by pool depth. If an active round ties, lacks usable
+              price history, or cannot meet its liquidity rule during the pricing window, it returns the matched
+              stakes minus 1%; the player must call Collect. A round that never activates returns all stakes in full.</li>
           )}
           <li><b>Meme coins are extremely volatile</b> and can be manipulated,
             delisted from the price feed, or go to zero - independent of
@@ -224,9 +240,11 @@ export function TermsPage() {
       </Section>
 
       <Section n="6" title="Fees & referrals">
-        The protocol fee is whatever the deployed contract's <code>feeBps</code>{' '}
-        currently is (changes only through an on-chain 48h timelock, never
-        instantly). Referral rewards are paid directly by the smart contract
+        {IS_POOL_BACKED && 'For continuous markets, '}
+        the protocol fee is whatever the deployed market contract's <code>feeBps</code>{' '}
+        currently is (changes for future continuous markets only through an on-chain 48h timelock, never
+        instantly). {showRounds && 'Rounds have separate contract-enforced fees: 2% of the matched bank when there is a winner, and 1% on a tie or a refund of an active round. Unmatched stake and a round that never activates are returned without a fee. '}
+        Referral rewards are paid directly by the smart contract
         from protocol fees - not a service the operator personally owes you -
         so if a contract bug over- or under-pays a referral, your recourse is
         governed by §8/§9 below, not treated as a billing dispute.
@@ -264,25 +282,17 @@ export function TermsPage() {
         operator - to be specified once formally reviewed.
       </Section>
 
-      <Section n="12" title="Security disclosure & bug bounty">
-        Because these contracts are unaudited (§4), responsible disclosure is
-        the main line of defence and it is paid for. If you find a bug that
-        can cause loss of user funds, incorrect settlement, or a bypass of
-        the <code>MAX_BET</code> cap, report it privately{' '}
-        <b>before</b> using it or telling anyone else.
-        <ul className="terms-list">
-          <li><b>Where:</b> {SECURITY_CONTACT}</li>
-          <li><b>Reward:</b> paid in {CURRENCY_SYMBOL}, scaled to what the bug
-            could have cost users, and paid whether or not the report ends up
-            being the first one received for that issue.</li>
-          <li><b>Safe harbour:</b> testing against the deployed contracts is
-            explicitly permitted, and the operator will not pursue any claim
-            against a reporter who acts in good faith - meaning: stays within
-            the <code>MAX_BET</code> cap while testing, does not touch other
-            users' funds, does not degrade the service for others, and gives
-            a reasonable window to fix before publishing.</li>
-        </ul>
-        This is not a substitute for an audit and is not presented as one.
+      <Section n="12" title="Security disclosure">
+        These contracts have not received an external security audit. If you
+        find a vulnerability, do not exploit it or publish details that could
+        put other users' funds at risk.{' '}
+        {SECURITY_CONTACT ? (
+          <>Report it privately to <b>{SECURITY_CONTACT}</b>. A paid bug bounty
+          is not currently offered.</>
+        ) : (
+          <>A private reporting channel and paid bug bounty are not currently
+          available. Do not put vulnerability details in a public issue.</>
+        )}
       </Section>
 
       <h3 className="terms-h" style={{ marginTop: 24 }}>Privacy</h3>

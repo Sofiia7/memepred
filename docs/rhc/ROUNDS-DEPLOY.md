@@ -276,7 +276,7 @@ scripts\node_modules\.bin\tsx scripts\rhc\rounds-e2e.mts --testnet --yes-testnet
 запускает код кипера внутри скрипта (кошелёк `--keeper-key-env`, по умолчанию `PRIVATE_KEY`), если отдельного кипера
 нет. Стоимость прогона - около 1.6 млн газа игроков и 0.4 млн кипера, 0.00002 ETH при 0.01 gwei.
 
-## Шаг 8. Сайт с вкладкой раундов (описание, не выполнялось)
+## Шаг 8. Сайт с вкладкой раундов (выполнено 30.09)
 
 Экран выключен, пока сборка не задаёт `VITE_ROUNDS_ENABLED=1` (`ROUNDS-UI.md`). Выкладка **меняет публичное демо**
 `rhc.flipthememe.com`: вкладка ROUNDS появится у всех. Можно сначала выложить предпросмотр без `--prod`.
@@ -313,16 +313,22 @@ scripts\node_modules\.bin\tsx scripts\rhc\rounds-e2e.mts --testnet --yes-testnet
    ```
    cd /d C:\Server\rhc-site-deploy
    xcopy /E /I /Y C:\Server\rhc-rounds-build\dist C:\Server\rhc-site-deploy\dist
-   copy /Y C:\Server\memepred\frontend\vercel.json C:\Server\rhc-site-deploy\vercel.json
+   copy /Y C:\Server\memepred\deploy\vercel.rhc.json C:\Server\rhc-site-deploy\vercel.json
    vercel deploy --yes
    ```
 
-   Это отдельная ссылка, публичный сайт не меняется. Проверить на ней `/rounds` с кошельком, и только потом боевой
+   Это отдельная ссылка, публичный сайт не меняется. В Vercel для предпросмотра включён вход; проверять сам ответ
+   можно через `vercel curl /rounds --deployment <URL>` после статуса Ready. Первый предпросмотр без
+   `outputDirectory: "dist"` ошибочно отдавал 404; поэтому нужен именно `deploy/vercel.rhc.json`, а не общий
+   `frontend/vercel.json`. После проверки выложить боевой
    выпуск из той же папки:
 
    ```
    vercel deploy --prod --yes
    ```
+
+   Продакшен уже выложен: `dpl_7opSdBYYrnktRQk19RAdohCdfdVy`, `https://rhc.flipthememe.com/rounds`.
+   Маршрут, три пула и правила проверены публично. Браузерный кошелёк остаётся отдельной сквозной проверкой.
 
 Экран ищет события от `VITE_ROUNDS_DEPLOY_BLOCK` одним `eth_getLogs` (постраничного обхода нет), поэтому блок
 развёртывания задать обязательно.

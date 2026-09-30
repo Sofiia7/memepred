@@ -35,10 +35,13 @@
 раунд с одной стороной вернул ставку целиком в момент закрытия, ставки 0.07 равны выплатам 0.069 плюс комиссиям 0.001, реферальная доля и
 `claimReferral` сошлись.
 
-**Сайт.** Сборка с `VITE_ROUNDS_ENABLED=1` проверена локально на настоящих данных контракта (три пула, отсчёты, потолок банка). Папка выкладки
-`C:\Server\rhc-site-deploy` привязана к проекту `flipthememe-rhc`; предпросмотр выложен (закрыт входом Vercel), **боевая выкладка на
-`rhc.flipthememe.com` не сделана**: автоматическая проверка прав её заблокировала, выполнить должна София (`vercel deploy --prod --yes` из
-этой папки). Без флага в сборке кода раундов нет.
+**Сайт (обновлено 30.09).** Сборка с `VITE_ROUNDS_ENABLED=1`, адресом `PoolRounds` и блоком `126565756` опубликована на
+`https://rhc.flipthememe.com/rounds`, продакшен Vercel `dpl_CZdFUdXumbGuT8jac753Lwm9N8Hq` (Ready). В браузере на
+публичном домене проверены три пула, счётчики, форма, а также отдельные правила раундов в Terms и How it works.
+`/health/deep`, `/api/rounds/health` и внешний сторож вернули `ok`. Полный путь через браузерный кошелёк ещё не проверен.
+Папка выкладки `C:\Server\rhc-site-deploy` привязана только к `flipthememe-rhc`; её `vercel.json` скопирован из
+`deploy/vercel.rhc.json`. Первый предпросмотр с одним лишь `frontend/vercel.json` вернул 404 на `/`: Vercel раздавал
+корень, тогда как готовая сборка лежала в `dist`. Для повторения нужен `outputDirectory: "dist"`.
 
 ## Robinhood Chain testnet, деплой 2026-09-29 (ТЕКУЩИЙ)
 
@@ -176,7 +179,10 @@ EOA-заглушка `0xAA1a14ad2f57fc79Ac14b2Cf5e2968Fdaeb9047F`. Кипер `0
 выложен, поэтому продление получило бы те же 451 (см. `DECISIONS.md`, «Что осталось»).
 
 Повторный выпуск сайта: пересобрать (`npx vite build --mode rhc-testnet --outDir <папка>\dist`), скопировать
-`dist` и `frontend\vercel.json` в пустую папку, в ней `vercel deploy --prod --yes`. Не запускать `vercel` из самой папки
+`dist` и `deploy\vercel.rhc.json` (под именем `vercel.json`) в папку выкладки проекта
+`flipthememe-rhc`, в ней `vercel deploy --prod --yes`. Конфигурация RHC задаёт
+`outputDirectory: "dist"`; общий `frontend\vercel.json` здесь отдавал 404 на `/rounds`.
+Не запускать `vercel` из самой папки
 `frontend`: она привязана к проекту Base.
 
 ### Что осталось для этого деплоя

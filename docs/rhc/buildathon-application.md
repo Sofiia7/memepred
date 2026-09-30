@@ -1,52 +1,8 @@
-# Заявка на Arbitrum Open House Singapore - черновик
+# FlipTheMeme — Arbitrum Open House Singapore application
 
-## Для тебя (не копировать в форму)
+Draft updated 2026-09-30 for the deployed **PoolRounds** testnet product. The public rounds release is live; the fresh-wallet browser check and video remain. Copy the English sections into the HackQuest project form, adapting to its actual fields. Check every link and the video before submission. This document does not record a HackQuest submission.
 
-**Сроки** - сверено на hackquest 11.09, время твоё местное (UTC+2), как его показывает сайт:
-
-| | |
-|---|---|
-| Регистрация | до **2 октября 19:01** |
-| Приём работ | **13 сентября 19:01 - 4 октября 17:59** (это 23:59 по Сингапуру) |
-| Итоги | 12 октября 08:00 |
-| Founder House | 23-25 октября, Сингапур, очно. **Отдельная заявка** на `https://luma.com/openhouse-singapore`, рассматривают по мере поступления. Победители buildathon попадают туда гарантированно |
-
-**Призы:** основной трек 70 000 USDC (40 / 20 / 10 тысяч), Promising Products 15 000 USDC
-(7 / 5 / 3 тысячи), гранты до 30 000 USDC на усмотрение фонда. **В обоих треках минимум одно
-место из трёх зарезервировано под проект на Robinhood Chain.** Призы выплачивают по вехам
-разработки. Участников 615+ на 11.09.
-
-**Требование:** проект развёрнут на цепочке Arbitrum, и Arbitrum Sepolia названа прямо - то
-есть тестнет допускается, мейннет не обязателен. Засчитывается ли тестнет Robinhood Chain
-под зарезервированное место, прямо не написано; это стоит спросить у организаторов.
-
-Подаём в **Promising Products**.
-
-**Тексты для формы регистрации** (длина проверена, лимит поля 300 знаков):
-
-- *Do you already have an idea…* (274 знака):
-  `Yes. FlipTheMeme on Robinhood Chain: short up/down bets on graduated memecoins, staked in ETH and settled from each token's own Uniswap v3 TWAP. Contracts are deployed and soak-tested on RHC testnet; the buildathon is for a fixed redeploy, the public web flow, and the demo.`
-- *Do you already have a project…* (текст обновлён 2026-09-29 под текущий деплой; было: рынок `0x9afA…` из деплоя 5 сентября, он устарел):
-  `Yes, FlipTheMeme. It is deployed on Robinhood Chain testnet (46630) with every contract source-verified; a market with settled, refunded and cancelled bets from an on-chain end-to-end run: https://explorer.testnet.chain.robinhood.com/address/0x2C179142844093BaEece809aE6F7Efb9c6a959C1`
-
-**Что нужно от тебя (обновлено 2026-09-29):**
-
-0. DNS-записи `api-rhc` и `rhc` **созданы 29.09 вечером**: сайт открывается по `https://rhc.flipthememe.com`, API
-   отвечает (см. `DEPLOYMENTS.md`).
-   Судья из Сингапура сайт увидит: с 29.09 Сингапур открыт на деплое RHC (`DECISIONS.md`, решение 19).
-1. Регистрация - **сделана 11.09**. Дальше - создать проект на hackquest (кнопка Create Project
-   уже доступна) и сдать его до 4 октября 17:59.
-2. Репозиторий приватный. Контракты жюри увидит в обозревателе тестнета **с исходным кодом** -
-   **все восемь контрактов текущего деплоя от 29.09 верифицированы** (адреса ниже и в `DEPLOYMENTS.md`);
-   бэкенд и фронтенд - только если откроешь репозиторий или дашь доступ по запросу. Перед открытием:
-   `memory.md` в корне репозитория содержит IP сервера и почту (секретов нет), решай, оставлять ли его.
-3. Кошелёк Arbitrum One для призов - твой собственный, не адрес депозита на бирже.
-4. Демо-видео - к сдаче 4 октября.
-5. Команда: ниже написано «solo founder, AI-assisted engineering». Поменяй, если хочешь иначе.
-
-Ниже текст на английском, разбит по обычным вопросам такой формы.
-
----
+The [published buildathon page](https://www.hackquest.io/hackathons/Arbitrum-Open-House-Singapore-Online-Buildathon) accepts an existing project deployed on an Arbitrum chain; Robinhood Chain is named as an example, and Arbitrum Sepolia establishes that testnet deployment can qualify. The page does not explicitly confirm whether **Robinhood Chain testnet** receives the Robinhood-reserved prize. Submission closes **4 October 2026, 23:59 Singapore time** (17:59 Budapest). Registration was completed 11 September. The proposed track is **Promising Products**.
 
 ## Project name
 
@@ -54,212 +10,75 @@ FlipTheMeme
 
 ## One-liner
 
-Short, capped up-or-down positions on Robinhood Chain memecoins: staked in ETH, priced by each
-token's own Uniswap v3 pool, settled 1 to 15 minutes after the bet is matched.
+Short, transparent UP/DOWN rounds on Robinhood Chain memecoins. Traders stake test WETH on opposite sides; accepted stakes are matched one for one and settled from each token pool's on-chain time-weighted price.
 
-## In one paragraph
+## What problem does it solve?
 
-FlipTheMeme lets Robinhood Chain memecoin communities take a time-limited view on a token
-without buying it. The stake and the maximum payout are shown before entry, and every result
-can be checked on chain against a published pool-price rule. It is a working prototype on
-Robinhood Chain testnet, built on a settlement engine we have been developing and testing
-since March 2026.
+Communities following newly graduated memecoins can take a bounded view on the next price move without buying the token itself. New tokens usually have no listed price feed. An ordinary spot quote can be manipulated at the instant of settlement, and an LP that fills every one-sided bet absorbs adverse selection. Our product uses the token's own v3 pool for a published price rule and accepts only equally backed UP and DOWN stakes. Users can see both sides' totals before betting. The size of an active round is constrained by the depth of its pool.
 
-## The problem
+## How does the current product work?
 
-Robinhood Chain trades about $1.9B a day on its DEXes (DefiLlama, 11 September), and much of it
-is launchpad tokens that did not exist a week earlier: our own scan of the Uniswap v3 factory
-found 496 new pools in a single day. Nearly everything built around that flow is a way to buy
-the token. A bounded, short-dated view - "does this hold for the next five minutes" - without
-holding the token is barely served, and it cannot be built on a price feed, because no feed
-carries a token that graduated an hour ago.
+Each 5-minute round accepts public UP and DOWN stakes of 0.005–0.04 test WETH per wallet. Only the smaller side's total plays on each side, with larger-side excess refundable without a fee. A matched bank below 0.02 WETH does not activate; every stake in that round is refundable in full. A pool must clear the contract's depth and observation gates, and the bank cannot exceed pool depth divided by 2,500. The demo has three listed tokens.
 
-## What we are building
+After betting closes, a 5-minute pause starts. The strike is averaged over the following 5 minutes; the exit is measured 5 minutes after the strike window ends. The result is due about 20 minutes after the round opened. A trader is betting on the move **from the future strike to the exit**, not on the displayed price at entry. A winner receives 1.96× the accepted portion of their stake, plus any unmatched portion. The contract retains 2% of the matched bank when it produces a winner. A tie or an active round that cannot be priced returns the matched stakes minus 1%. Players press **Collect** to receive winnings or refunds; gas is separate.
 
-Two traders take opposite sides of "token X will be higher in N minutes than when we matched".
-Each stakes ETH into a market contract, and the winner takes the pot minus a protocol fee capped
-at 1%. It is peer-to-peer first. When the book is one-sided, an LP vault can take the other
-side, capped at 5% of the vault's assets per market and 10% overall - so the vault does carry
-directional risk, and it is sized for that rather than pretending otherwise.
+The round contract reads both price windows from the token pool's on-chain observations. Anyone can verify the result, call settlement when due, and collect their own position. A keeper normally fixes the strike and settles within contract-reported deadlines. Public health checks and an external watchdog monitor that path.
 
-**The token's own pool is the oracle.** Entry and exit prices are time-weighted averages read
-with `observe()` straight from the token's Uniswap v3 pool. There is no feed to wait for, no
-keeper paying to push prices, and no list of supported assets: any WETH pool that clears the
-on-chain gates can host a market, and anyone can create it.
+## Why Robinhood Chain?
 
-That has a known catch, which we measured on live pools rather than assumed. A new pool stores a
-single price observation (288 of the 292 WETH pools created in the day we scanned), so it cannot
-answer for a window until someone pays to grow its observation ring. Uniswap writes at most one
-observation per second, so ring slots buy seconds, not blocks. The longest exit window we use is
-180 seconds, and the ring also has to cover how late a settlement runs - 65 seconds at the 99th
-percentile across 148 real settlements - so we require 300 slots. Growing a ring to 300 costs
-6,655,224 gas once per pool, about $6.60 at early-September gas, measured on a live pool.
+Launchpad tokens on Robinhood Chain graduate into on-chain liquidity pools before a conventional asset-specific oracle exists. Our price source is the token's own pool, and the stake token is WETH on that chain. During an earlier one-day scan, we found 496 new v3 pools, 292 paired with WETH; only 5 of those 292 met the current round depth gate of 50 WETH. That is a measured coverage limitation, not a claim that every memecoin is eligible. We use v3 pools because the oracle reads their observations directly; v4-only tokens need a different price source.
 
-The second half of the catch surprised us, and a fork test against live mainnet pools is how we
-found it: a pool whose newest observation is older than the window does not refuse - Uniswap
-extrapolates it forward at the current price. A successful `observe()` therefore proves
-capacity, not history. What keeps a thin pool out is the depth gates, not the oracle.
+## What exists today?
 
-**No rounds and no schedule.** Our market contract has no close time: a match's clock starts when
-it is matched. One market per pool and duration is created once and lives indefinitely, so a
-trader never waits for the next round, and nothing has to be rolled over or pushed on a timer.
-Markets remain permissionless for PvP; the vault owner separately enables the few reviewed
-markets allowed to draw on shared LP capital.
-What remains is settlement gas per match, a one-off onboarding cost per pool, RPC and hosting.
-Over a 24-hour sample of 1,900 points, gas sat at a median of 0.398 gwei and a 90th percentile of
-0.453, with rare four-minute spikes to 3.06 and no daily cycle.
+**On Robinhood Chain testnet, chain ID 46630:** `PoolRounds` at `0xe3620f0855c4dc1aace648cc8240a4fa89fd93c4` and its `ReferralRegistry` are deployed and source-verified. Three test pools for MOONCAT, PEPE, and FROGGO are listed. Their tokens and pools are **stand-ins**: there is no canonical Uniswap v3 deployment for this demo testnet, and the price is moved by a script. They reproduce the pool observations and liquidity-history calls that the round contract uses. Their artificial prices are never presented as organic market prices or user demand.
 
-**Fees you can verify.** The protocol fee is capped at 1% of the pot by a contract constant that
-cannot be raised, and any change for future markets goes through a 48-hour timelock; each market
-keeps the fee it was created with. We ran that timelock end to end on the deployed testnet
-factory: proposed on 5 September, applied on 11 September, `feeBps` moved 0 to 100. To be
-complete about what a user pays: a trader who wins against the LP vault pays a further 1%, and
-every transaction pays gas. One gap the timelock run exposed is closed and now
-deployed (29 September): new markets used to start at 0% until governance completed its first change,
-so a permissionless caller could occupy a slot at zero fee before that ever happened. The factory now
-snapshots the fee cap itself at creation, and the current markets all read `feeBps = 100`.
+The deployed keeper on the server settled and fixed strikes in an end-to-end testnet run. That run checked a winning round, a tie, a round with one side only, claims, fees and referral payments: **40 checks, zero failures**. The winning 0.02 WETH stake received 0.0392 WETH; a 0.01 WETH stake on a tie received 0.0099 WETH. Transaction hashes and observed timing are in [`measurements/rounds/e2e-testnet.log`](measurements/rounds/e2e-testnet.log). `/api/rounds/health` reports the current keeper state. Contract tests cover monetary invariants, fuzzing, deadline boundaries and oracle failure paths. The full Foundry suite had **646 passing tests on 30 September**; mainnet fork tests need `RHC_MAINNET_RPC`, so an offline green run by itself is not evidence those tests ran against live pools.
 
-## Why Robinhood Chain
+The [public browser rounds screen](https://rhc.flipthememe.com/rounds) shows both sides' totals, a timeline from bets to exit, pool depth, the maximum bank, predicted accepted stake and payout, the refund fee and explicit acknowledgement before betting. It was checked publicly with three pools on 30 September. A fresh-wallet public-browser transaction and demo video remain the final acceptance check. The continuous orderbook markets are an **older, separate mode** that remains in the same app; they use a different contract, a per-match clock, optional LP fills and different fees. The figures and rules above belong to PoolRounds.
 
-- The flow is here and it is already in ETH: launchpad curves and pools are token/ETH, so a bet
-  in ETH needs no bridge or swap first.
-- Markets arrive without anyone listing them. In one day the v3 factory created 496 pools, 292 of
-  them paired with WETH and 169 with liquidity. The median graduated pool holds 1.5 ETH. Anyone
-  can open a market on a pool with at least 2 ETH of depth; our own keeper pays to onboard pools
-  from 20 ETH, about seven a day.
-- Blocks every 82 ms make one-minute settlement meaningful rather than theatre.
-- We are explicit about coverage. On DefiLlama, Uniswap v3 and v4 each show about $1.1B of
-  24-hour volume on this chain (11 September). Our oracle reads v3 WETH pools; tokens that trade
-  only on v4 need a separate price source, and we treat that as its own project, not a footnote.
+## What is innovative?
 
-## What exists today on Robinhood Chain
+The price rule and market capacity are tied to the same on-chain pool. A pool whose observation ring lacks sufficient history cannot safely serve a round. The contract requires depth and observation capacity at listing, uses a time window after betting closes to reduce the stale-entry advantage, and bounds the accepted bank by pool depth. The 1:1 matched-bank model does not require a house vault to take a side, so an active round's promised payouts fit inside what the traders deposited. This does **not** make pool manipulation impossible: the depth rule caps the payoff, and thin pools remain unsuitable.
 
-Deployed on Robinhood Chain testnet (46630); the current stack was redeployed on 29 September from
-commit `271946a`, with all eight contracts source-verified on the testnet explorer. The testnet has no
-canonical Uniswap v3 or WETH, so there the markets run against stand-in pools (named tokens MOONCAT,
-PEPE and FROGGO) that integrate the price over time and refuse out-of-range windows the way real ones do;
-their price is whatever their owner records, which is why the demo price is driven by a script and
-why we say so. Against the real pools on mainnet 4663 we use fork tests.
+Before this design, we built continuous PvP orderbook markets with an optional LP vault. A 47-hour test of a **previous deployment** exercised 1,113 scripted orders and 278 matches. It measured settlement and monitoring reliability; those orders were generated by our own test scripts, **not real user traction**. Analysis of that design exposed an edge against the vault from stale entry TWAP, leading us to build the matched-bank rounds as the current candidate. This is the buildathon's substantive product change.
 
-- **Contracts:** `PoolOracleResolver` (v3 TWAP), `PoolMarketFactory` (permissionless creation
-  behind on-chain gates), `PoolOrderbookMarket` (EIP-1167 clones, partial fills, `cancelOrder`, WETH
-  stakes), an LP vault with exposure caps, a fee distributor and a referral registry, all source-verified
-  on the testnet explorer. **433 Foundry tests** at commit `dd4df60`: the original engine's suite
-  passes unchanged, and 11 tests exercise live Robinhood Chain mainnet pools - they need an RPC, and
-  without one they return early, so an offline run counts them as passing.
-- **Checked on chain after the redeploy (29 September):** a script drives the deployment with two
-  wallets: a peer-to-peer match with a partial fill and `cancelOrder` returning the unmatched half at
-  once, a win against the vault paying exactly 0.0196 WETH on a 0.02 pot, and the resolver's consistency
-  guard tripping so that both sides are refunded on the first call after `settleAt`. Every hash and the
-  measured gas are in `docs/rhc/DEPLOYMENTS.md`. Separately, the keeper on the server settled and
-  refunded matches with nobody else calling the resolver.
-- **Against real mainnet pools:** on a fork of chain 4663 the resolver prices live pools
-  correctly, and `createMarket` creates a real market on a live pool (RMHT) through every gate.
-  Our vendored `TickMath` is checked against 224 `(tick, sqrtPriceX96)` pairs read off live pools.
-- **A 47-hour soak** (5-7 September): 1,113 orders and 278 matches, 56 of them against the LP
-  vault, with settlements, claims and refunds. Two paths that had never run anywhere were then
-  exercised on chain: the emergency refund of a match that cannot be priced - both sides got
-  their stake back exactly - and the fee timelock.
-- **An invariant monitor** reconciles contract balances against our database every minute. Over
-  the soak it raised 56 critical alerts, and not one was money that was actually missing: 46 were
-  the indexer lagging in the safe direction, 8 predate a decimals fix, and 2 were balance reads
-  that timed out and were counted as zero - a monitor bug, since fixed. The final snapshot matched
-  the chain to the wei.
-- **Backend and keeper:** event indexer, a pool watcher that onboards new pools unaided, a
-  settlement keeper with nonce escalation and a gas budget, a watchdog. **439 unit tests.**
+## Who is it for, and what have you learned about demand?
 
-The web betting flow reads the same PoolOracleResolver TWAP as the contract, submits an ordinary RHC
-call without a RedStone payload, uses WETH bounds, shows market-specific fees and states that queue counts
-are not odds; before signing it lists what the user is agreeing to (matching timeout, partial fills, the
-price band, when both stakes are refunded). The chain-level path is checked as above; a browser wallet
-run through the public site still has to be done once the DNS records exist.
+The intended user is someone already following a specific liquid memecoin who wants a short, clearly capped directional position instead of owning it. The first distribution channel to test is that token's community, with a direct link to its pool's round and visible, verifiable outcomes. We have **no demonstrated organic user demand yet**. Volume and bets visible on the testnet were generated by development scripts and should be read as reliability tests. The next milestone is to observe whether real participants understand the strike timing, return for another round, and provide enough opposing flow to activate rounds without synthetic stakes.
 
-## What testing found
+## Safety and limitations
 
-Running the system found defects no unit test had. The latest: a keeper limit sized off gas USED
-instead of the peak (a transaction's limit must cover the peak, before the storage-clearing refund),
-which made a one-match, vault-backed settlement run out of gas twenty times in a row and wait five
-minutes on the first live keeper check (fixed, with escalation and a pause on repeated reverts); and a
-consistency guard that treated a permanent condition as temporary and locked a match for 24 hours
-(the resolver now refunds it on the first call). The earlier ones, every one in code written for the
-original single-chain version: amounts divided by the wrong currency's decimals in the indexer
-and the monitor, a partially filled order that never left `PENDING`, payouts that were never
-recorded, and a watchdog that paused every market on the chain. The subtlest was a constant:
-`MIN_DEPOSIT = 50e6` meant fifty dollars in USDC and became dust on an 18-decimal token, which
-would have let one address take all twenty Genesis LP NFTs - each worth 1.5x fee weight for the
-life of the vault - for a gwei. It is fixed, and the test that guards it performs the attack on
-both versions of the vault.
+The contracts have **not received an external security audit**. Each stake is capped at 0.04 WETH on testnet, but multiple wallets can participate, and the cap is not an economic guarantee. An active round on a manipulated or unpriceable pool can end in a 1% refund rather than a directional result. A round that never gets enough opposing flow returns stakes in full and pays nobody. The oracle uses one pool; its checks are not independent price sources. The public demo's scripted stand-in pools do not prove that the same economics will hold with real mainnet liquidity or organic demand. We will not claim a mainnet product is live.
 
-## What we will ship during the buildathon (13 September - 4 October)
+## What we built during the buildathon
 
-**Week 1 - the Robinhood Chain web flow.** Done in code: price bets come from the pool oracle,
-calls use the RHC path, amounts use the 0.005-0.04 WETH range, and the preview includes the
-market fee plus the LP fee. The acceptance check remains a fresh-wallet bet and claim on RHC
-testnet.
-
-**Week 2 - settlement rules and economics.** Done and redeployed on 29 September: a tie
-refunds both sides, every settled match has a minimum lot, and PvP creation no longer
-authorizes LP capital by default - the vault owner opts each reviewed market in separately. The
-same pass fixed two ways the settlement queue could jam behind one unpriceable match (a batch's
-gas limit now scales with its size instead of a fixed ceiling too small for a busy tick; an
-overdue match is now swept into the permissionless emergency refund automatically) and closed a
-window where a resting order could be filled at a stale one-second price. Remaining economics
-work is to monitor the RHC gas reserve at low volume. The RHC-specific distributor sends 90% of
-protocol fee to treasury reserve and 10% to a referrer; Base keeps its original split.
-
-**Week 3 - public demo and submission.** A public testnet deployment with external monitoring,
-three to five selected active v3 tokens, a demo video, the submission. A capped mainnet pilot
-only if our own criteria are met first: multisig ownership, working external monitoring, a hard
-limit on total risk, and a launch order in which the fee is set before any market can be created
-- markets snapshot the fee at creation, and creation is permissionless. Otherwise we submit an
-honest testnet demo.
-
-## Track
-
-Promising Products (new financial primitives), building on Robinhood Chain.
+We adapted the existing engine to Robinhood Chain testnet, deployed and source-verified the first stack, ran a 47-hour scripted soak on an earlier deployment, measured the oracle and settlement gas, identified the vault's adverse-selection edge, designed and implemented PoolRounds with a 1:1 bank and post-close strike, deployed that contract and its keeper, completed a testnet end-to-end run, and published the browser interface. The continuous markets are retained separately for comparison. The remaining submission work is a fresh-wallet browser check and video.
 
 ## Team
 
-Sofia - founder, product and engineering. Solo founder with AI-assisted engineering; the
-contracts, tests and operations above are the output of that setup since March 2026.
+Sofia — solo founder, product and engineering, with AI-assisted development and review. State any additional team members or contributors in the actual form if applicable.
 
-## Links
+## Links for the form
 
-- A one-minute vault-enabled market with settled, refunded and cancelled bets from the on-chain run, on the
-  Robinhood Chain testnet explorer (an EIP-1167 clone of the source-verified `PoolOrderbookMarket`):
-  https://explorer.testnet.chain.robinhood.com/address/0x2C179142844093BaEece809aE6F7Efb9c6a959C1
-- The market factory (source verified):
-  https://explorer.testnet.chain.robinhood.com/address/0x86230738bC6193B9233013462E60Ee19308FAcBC
-- The oracle and settlement contract (source verified):
-  https://explorer.testnet.chain.robinhood.com/address/0x8AC440A14610c685B2a59fBA4A2B3C62f8375E28
-- The 47-hour soak of 5-7 September ran on the PREVIOUS deployment (`0xE5802e...75a42`); its numbers
-  above are a history of the engine, not of the current stack, which has run an end-to-end check and a
-  keeper check but no long soak yet.
-- Repository: private today, access on request.
-- Decisions, measurements and deployed addresses: `docs/rhc/` (`DECISIONS.md`, `measurements/`,
-  `DEPLOYMENTS.md`).
+- Public demo: [rhc.flipthememe.com/rounds](https://rhc.flipthememe.com/rounds), live and checked with three pools on 30 September.
+- Verified current contract: [PoolRounds on the Robinhood Chain testnet explorer](https://explorer.testnet.chain.robinhood.com/address/0xe3620f0855c4dc1aace648cc8240a4fa89fd93c4).
+- Health status: [rounds keeper](https://api-rhc.flipthememe.com/api/rounds/health).
+- Repository: `https://github.com/Sofiia7/memepred` after the final branch is pushed and Sofia opens it before submission. Point judges to the `robinhood-chain` branch and `docs/rhc/README.md`.
+- Video: insert the final recording URL here after verifying it opens without the creator account.
 
-## What the prize and the Founder House would be used for
+## Demo video, about 3–4 minutes
 
-An audit of the oracle and settlement path. The contracts are tested but unaudited, which is why
-stakes are capped at 0.04 ETH per bet; prizes paid against development milestones suit that work.
+Recording plan and verified transaction links: [`ROUNDS-DEMO-RUNBOOK.md`](ROUNDS-DEMO-RUNBOOK.md).
 
-## Risks we state plainly
+1. State the problem and show the testnet label, three round pools, visible UP/DOWN totals and depth limit. Say that the demo pools have scripted prices and activity is test traffic.
+2. Open a round. Show the 5-minute betting window, pause, strike average and exit. Explain that the bet is on strike-to-exit, not on today's displayed spot price; show accepted stake, 1.96× payout and both refund cases.
+3. Use a prepared wallet and a prepared round to show the placed bet and a completed round, then Collect. Show the actual transaction in the explorer. Edit across the waiting interval and make the edit visible; do not imply the 20-minute result happened immediately.
+4. Show the verified contract, `/api/rounds/health` and a short screen of tests/measurements. End with the actual risks, and the next experiment with organic users.
 
-- A thin pool can be moved within a short averaging window. The contract requires 2 ETH of depth,
-  our keeper only onboards pools from 20 ETH, spread checks refund an anomalous settlement, and LP
-  exposure is capped. A cap on open interest tied to the pool's own liquidity is not designed yet.
-- The entry price averages the 60 seconds before the match. When the price moves just before
-  entry, the live price is known while the average lags, which can give a trader an edge against
-  the vault's fixed-payout side. We will measure this on active pools before real money.
-- Both spread checks read the same pool, so they are not independent sources, and an ordinary
-  memecoin move can trip them. When the exit-window guard trips, both stakes are refunded at once with no
-  fee, which is safe but means a large late move produces a refund instead of a result. We will measure
-  the refund rate on real pools rather than raise the threshold blind.
-- Settlement gas measured on the live chain is 288-293 thousand per match with the real fee transfers,
-  about a third more than we had assumed; at the median gas of early September a minimum-size match costs
-  the treasury more than the 1% fee brings in. That is a product decision (minimum bet, fee, a gas
-  reserve) that we have not taken, and it is why stakes are capped and the pilot is testnet.
-- Tokens that trade only on Uniswap v4 are out of reach of the v3 oracle.
-- Settlement gas is paid per match, and gas moved eightfold within a single day in early
-  September.
+## Submit checklist
+
+- [x] Public `/rounds`, Terms and How it works describe the separate contracts and fees.
+- [ ] Fresh-wallet path on the public site: test ETH, wrap, approve, bet, result, Collect.
+- [ ] Final branch pushed; source reachable by judges after Sofia opens the repository.
+- [ ] Video uploaded and accessible in a signed-out browser; transaction and demo links checked.
+- [ ] HackQuest project created, text pasted, track and links checked, submission completed before deadline.
