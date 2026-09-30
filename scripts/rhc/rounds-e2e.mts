@@ -712,8 +712,9 @@ async function mainTestnet() {
     poolList = [...new Set(logs.map((l: any) => l.args.pool as Address))].slice(0, 3)
   }
   if (poolList.length !== 3) throw new Error('three listed pools are needed: win, tie, one (ROUNDS_E2E_POOLS)')
-  const soak = readSoakKeys()
-  if (soak.length < 3) throw new Error('scripts/rhc/.soak-wallets.json needs at least three keys (players and referrer)')
+  // ROUNDS_E2E_WALLETS_FILE: other wallets than the soak ones (see rounds-e2e-wallets.mts), when a traffic run is live
+  const soak = readSoakKeys(process.env.ROUNDS_E2E_WALLETS_FILE || undefined)
+  if (soak.length < 3) throw new Error('the wallets file (scripts/rhc/.soak-wallets.json or ROUNDS_E2E_WALLETS_FILE) needs at least three keys (players and referrer)')
   const p1 = actor('p1', soak[0])
   const p2 = actor('p2', soak[1])
   const ref = actor('referrer', soak[2])
