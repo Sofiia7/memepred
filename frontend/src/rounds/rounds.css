@@ -1,0 +1,95 @@
+/* Rounds screen (frontend/src/rounds). Only rnd-* classes, so nothing here can
+   restyle the rest of the app; the shared pieces (.cta, .chip, .stake-input,
+   .stake-hint, .rules*) come from index.css unchanged. Text stays at 11px or above. */
+
+.rnd-lead{font-size:13px;line-height:1.5;color:var(--text-dim);margin:-6px 0 14px}
+.rnd-section{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--text-dim);margin:18px 0 8px}
+.rnd-note{font-family:var(--mono);font-size:12px;line-height:1.5;color:var(--text-dim);margin:0 0 10px}
+.rnd-note.warn{color:var(--warn)}
+.rnd-note.bad{color:var(--down)}
+.rnd-list{display:flex;flex-direction:column;gap:8px}
+
+/* ── pools ─────────────────────────────────────────── */
+.rnd-pool{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:11px 13px}
+.rnd-pool-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:6px}
+.rnd-pool-sym{font-weight:800;font-size:15px}
+.rnd-pool-addr{font-family:var(--mono);font-size:11px;color:var(--text-faint)}
+.rnd-round{display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--line)}
+.rnd-round:first-of-type{border-top:0}
+.rnd-round-main{flex:1;min-width:0}
+.rnd-round-top{font-family:var(--mono);font-size:12px;color:#fff;display:flex;gap:8px;flex-wrap:wrap}
+.rnd-round-sub{font-family:var(--mono);font-size:11px;color:var(--text-dim);margin-top:2px;line-height:1.4}
+.rnd-dur{font-weight:700;color:var(--up)}
+.rnd-btn{min-height:36px;padding:0 14px;border-radius:7px;background:var(--base-blue);color:#fff;font-family:var(--mono);
+  font-size:11px;font-weight:700;letter-spacing:.08em;white-space:nowrap}
+.rnd-btn:hover{background:var(--base-blue-hover)}
+.rnd-btn:disabled{background:var(--surface-2);color:var(--text-faint);cursor:not-allowed}
+.rnd-btn.ghost{background:transparent;border:1px solid var(--line-2)}
+.rnd-btn.ghost:hover{border-color:var(--base-blue-2)}
+
+/* ── bet form ──────────────────────────────────────── */
+.rnd-bet{margin-top:8px;padding:12px;border:1px solid var(--line-2);border-radius:10px;background:var(--surface-solid)}
+.rnd-bet-head{font-family:var(--mono);font-size:12px;color:var(--text-dim);margin-bottom:10px;line-height:1.5}
+.rnd-bet-head b{color:#fff}
+.rnd-sides{display:flex;gap:6px;margin-bottom:10px}
+.rnd-side{flex:1;min-height:42px;border-radius:8px;border:1px solid var(--line-2);font-family:var(--mono);font-weight:800;
+  font-size:13px;letter-spacing:.08em;color:var(--text-dim)}
+.rnd-side.up.on{background:var(--up-strong);border-color:var(--up);color:#fff}
+.rnd-side.down.on{background:var(--down-strong);border-color:var(--down);color:#fff}
+.rnd-side:disabled{opacity:.5;cursor:not-allowed}
+.rnd-ack{display:flex;gap:9px;align-items:flex-start;font-size:12px;line-height:1.45;color:#fff;margin:0 0 10px;cursor:pointer}
+.rnd-ack input{margin-top:2px;width:16px;height:16px;flex:none;accent-color:var(--base-blue-2)}
+/* The shared .rules-list scrolls inside 176px; here every point is meant to be read before signing. */
+.rnd-bet .rules-list{max-height:none;overflow:visible}
+.rnd-links{font-family:var(--mono);font-size:11px;color:var(--text-dim);margin:0 0 10px}
+.rnd-links a{color:var(--base-blue-2);text-decoration:underline}
+.rnd-steps{font-family:var(--mono);font-size:11px;color:var(--text-dim);line-height:1.5;margin-top:8px}
+.rnd-status{font-family:var(--mono);font-size:12px;line-height:1.5;margin-top:8px;word-break:break-word;color:var(--text-dim)}
+.rnd-status.err{color:var(--down)}
+.rnd-status.ok{color:var(--up)}
+
+/* ── the player's stakes ───────────────────────────── */
+.rnd-ticket{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:11px 13px}
+.rnd-ticket.urgent{border-color:var(--warn);box-shadow:0 0 0 1px rgba(255,181,71,.25) inset}
+.rnd-ticket.gone{border-color:rgba(255,61,110,.35)}
+.rnd-ticket-head{display:flex;justify-content:space-between;gap:8px;font-family:var(--mono);font-size:12px}
+.rnd-ticket-head b{font-size:13px}
+.rnd-ticket-state{font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-size:11px}
+.rnd-ticket-body{font-size:12px;line-height:1.5;color:var(--text-dim);margin-top:6px}
+.rnd-ticket-body b{color:#fff}
+.rnd-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.rnd-tone-warn{color:var(--warn)}
+.rnd-tone-bad{color:var(--down)}
+.rnd-tone-good{color:var(--up)}
+.rnd-tone-dim{color:var(--text-dim)}
+
+
+/* ── timeline: bets, pause, strike, to the exit ────── */
+.rnd-timeline{margin:0 0 10px;padding:10px 12px;border:1px solid var(--line-2);border-radius:9px;background:var(--surface-2)}
+.rnd-tl-bar{position:relative;display:flex;gap:2px;height:10px;border-radius:5px;overflow:visible;margin:2px 0 10px}
+.rnd-tl-seg{height:100%;border-radius:3px;background:var(--surface-3);opacity:.9}
+.rnd-tl-betting{background:rgba(77,141,255,.45)}
+.rnd-tl-pause{background:rgba(255,255,255,.12)}
+.rnd-tl-strike{background:rgba(255,181,71,.55)}
+.rnd-tl-exit{background:rgba(180,140,255,.45)}
+.rnd-tl-seg.on{outline:1px solid #fff}
+.rnd-tl-now{position:absolute;top:-4px;width:2px;height:18px;background:#fff;border-radius:1px;transform:translateX(-1px)}
+.rnd-tl-list{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:3px}
+.rnd-tl-list li{display:flex;justify-content:space-between;gap:8px;font-family:var(--mono);font-size:11px;color:var(--text-dim)}
+.rnd-tl-list li.on{color:#fff}
+.rnd-tl-list li.on .rnd-tl-name::before{content:'> '}
+.rnd-tl-name{font-weight:700}
+.rnd-tl-note{font-size:12px;line-height:1.5;color:#fff;margin:8px 0 0}
+.rnd-tl-note b{color:var(--warn)}
+
+/* ── sums and the estimate of the part that plays ──── */
+.rnd-sums{display:flex;gap:6px;margin:0 0 10px}
+.rnd-sum{flex:1;border:1px solid var(--line);border-radius:8px;padding:7px 9px;font-family:var(--mono);font-size:11px;color:var(--text-dim)}
+.rnd-sum b{display:block;font-size:14px;color:#fff;margin-top:2px}
+.rnd-sum.up b{color:var(--up)}
+.rnd-sum.down b{color:var(--down)}
+.rnd-estimate{font-size:12px;line-height:1.5;color:#fff;border:1px dashed var(--line-2);border-radius:8px;padding:8px 10px;margin:0 0 10px}
+.rnd-estimate .rnd-tone-dim{display:block;margin-top:4px;font-size:11px}
+.rnd-key{font-size:12px;line-height:1.5;color:var(--warn);border:1px solid rgba(255,181,71,.35);border-radius:8px;
+  padding:9px 11px;margin:0 0 10px;background:rgba(255,181,71,.06)}
+.rnd-key b{font-weight:800}

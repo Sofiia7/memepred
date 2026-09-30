@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { lazy, Suspense, useEffect } from 'react'
 import { BrowserRouter, Navigate, Routes, Route } from 'react-router-dom'
 import { signalAppReady } from './lib/miniapp'
 import { captureReferralCode } from './lib/referral'
@@ -16,6 +16,10 @@ import { GeoGate } from './components/GeoGate'
 import { RiskGate } from './components/RiskDisclosure'
 import { AppShell } from './components/ui/AppShell'
 import { IS_POOL_BACKED } from './lib/contracts'
+import { ROUNDS_ENABLED } from './rounds/flag'
+
+// Rounds (PoolRounds, candidate v2): only in builds with VITE_ROUNDS_ENABLED=1, loaded on demand.
+const RoundsPage = ROUNDS_ENABLED ? lazy(() => import('./rounds/RoundsPage').then((m) => ({ default: m.RoundsPage }))) : null
 
 export function App() {
   useEffect(() => {
@@ -49,6 +53,7 @@ export function App() {
           <Route path="/refer" element={<ReferPage />} />
           <Route path="/how-it-works" element={<HowItWorksPage />} />
           <Route path="/terms" element={<TermsPage />} />
+          {RoundsPage && <Route path="/rounds" element={<Suspense fallback={<p className="empty-state">Loading…</p>}><RoundsPage /></Suspense>} />}
         </Routes>
       </AppShell>
       </RiskGate>

@@ -2,6 +2,8 @@ import { NavLink } from 'react-router-dom'
 import { useAccount } from 'wagmi'
 import { MarketsIcon, TrophyIcon, StarIcon, WalletIcon, PoolsIcon } from './icons'
 import { IS_POOL_BACKED } from '../../lib/contracts'
+import { ROUNDS_ENABLED } from '../../rounds/flag'
+import { RoundsIcon } from '../../rounds/RoundsIcon'
 
 export function TabNav() {
   const { isConnected } = useAccount()
@@ -13,6 +15,8 @@ export function TabNav() {
   // list is three whitelisted symbols and there is nothing to browse.
   if (IS_POOL_BACKED) tabs.splice(1, 0, { to: '/pools', label: 'POOLS', ico: <PoolsIcon /> })
   else tabs.push({ to: '/genesis', label: 'GENESIS', ico: <StarIcon /> })
+  // Only in builds that turn the rounds screen on (VITE_ROUNDS_ENABLED=1); otherwise the tabs are unchanged.
+  if (ROUNDS_ENABLED) tabs.splice(1, 0, { to: '/rounds', label: 'ROUNDS', ico: <RoundsIcon /> })
   if (isConnected) tabs.push({ to: '/portfolio', label: 'PORTFOLIO', ico: <WalletIcon /> })
 
   return (

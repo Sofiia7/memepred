@@ -38,6 +38,14 @@ interface ImportMetaEnv {
    */
   readonly VITE_SITE_URL?: string
   readonly VITE_SECURITY_CONTACT?: string
+  /** "1" shows the rounds screen (/rounds and its tab). Off otherwise. See frontend/src/rounds/roundsAbi.ts. */
+  readonly VITE_ROUNDS_ENABLED?: string
+  /** PoolRounds address on this build's chain. Needed only with VITE_ROUNDS_ENABLED=1. */
+  readonly VITE_POOL_ROUNDS_ADDRESS?: string
+  /** Optional: PoolRounds deployment block; log scans start here (default 0). */
+  readonly VITE_ROUNDS_DEPLOY_BLOCK?: string
+  /** Optional: candidate round lengths in seconds, e.g. "300,900" (default). */
+  readonly VITE_ROUNDS_DURATIONS?: string
 }
 
 interface ImportMeta {
