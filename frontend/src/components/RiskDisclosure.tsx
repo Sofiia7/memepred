@@ -51,6 +51,16 @@ export function isReadableBeforeAck(pathname: string): boolean {
   return READABLE_BEFORE_ACK.includes(p)
 }
 
+/**
+ * The rounds screen has its own refund rules (1% of the matched bank is kept on every refund
+ * after a round started; a round that never starts returns everything), so the price-and-refund
+ * paragraph below must not promise "no fee" there.
+ */
+export function isRoundsRoute(pathname: string): boolean {
+  const p = pathname.toLowerCase().replace(/\/+$/, '')
+  return p === '/rounds' || p.startsWith('/rounds/')
+}
+
 function readAck(): boolean {
   try {
     return localStorage.getItem(ACK_KEY) === '1'
@@ -120,7 +130,24 @@ export function RiskGate({ children }: { children: React.ReactNode }) {
             perfect code - if the price goes the other way, the money goes to
             whoever took the other side. This is not investing.
           </li>
-          {IS_POOL_BACKED && (
+          {IS_POOL_BACKED && isRoundsRoute(pathname) && (
+            <li>
+              <b>The price comes from the token's own liquidity pool, and a
+              thin pool can be pushed.</b> A round prices a time-weighted
+              average of a window that opens only after the bets close, and again
+              at the end - never the price at the moment you bet. The contract
+              limits a round's bank to a fraction of the pool's depth and lists
+              only deep pools, which caps what moving the price can win but
+              does not remove it. If the price history no longer covers a
+              window, if the pool was thinner than the bank needs while the price
+              was read, or if the two prices come out exactly equal, nobody wins:
+              the round is refunded and <b>1% of the matched bank is kept</b>. A
+              round that never gets both sides or a big enough bank returns every
+              stake in full, with no fee. It is not fully solved, and you should
+              size your bets knowing that.
+            </li>
+          )}
+          {IS_POOL_BACKED && !isRoundsRoute(pathname) && (
             <li>
               <b>The price comes from the token's own liquidity pool, and a
               thin pool can be pushed.</b> Settlement reads a time-weighted

@@ -164,6 +164,16 @@ describe('the settlement paragraph matches what the contracts now do', () => {
     expect(text()).toMatch(/both stakes are refunded immediately, with no fee/)
   })
 
+  it('on the rounds screen it says 1% is kept on a refund and never promises no fee there', () => {
+    renderAt('/rounds')
+    expect(text()).toMatch(/1% of the matched bank is kept/)
+    expect(text()).toMatch(/returns every stake in full, with no fee/)
+    expect(text()).not.toMatch(/both stakes are refunded immediately, with no fee/)
+    cleanup()
+    renderAt('/Rounds/')
+    expect(text()).toMatch(/1% of the matched bank is kept/)
+  })
+
   it('no longer claims settlement waits for the price to calm down', () => {
     renderAt('/')
     expect(text()).not.toMatch(/comes back in line/)
