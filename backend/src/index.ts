@@ -24,6 +24,7 @@ import { referralRoutes }    from './routes/referral.js'
 import poolRoutes            from './routes/pool.js'
 import { poolsRoutes }        from './routes/pools.js'
 import { keeperHealthRoutes } from './routes/keeperHealth.js'
+import { roundsHealthRoutes } from './rounds/health.js'
 import { deploymentRoutes }   from './routes/deployment.js'
 import { oracleRoutes }      from './routes/oracle.js'
 import { pg }                from './db/pg.js'
@@ -57,6 +58,7 @@ await app.register(referralRoutes,    { prefix: '/api/referral' })
 await app.register(poolsRoutes,       { prefix: '/api/pools' })
 await app.register(poolRoutes)        // mounts /api/pool/*
 await app.register(keeperHealthRoutes)// mounts /api/keeper/health
+await app.register(roundsHealthRoutes)// mounts /api/rounds/health ({status:'off'} while the rounds keeper is off)
 // Which deployment this is, for the frontend to check itself against. Behind the
 // same edge proof and rate limit as everything else under /api.
 await app.register(deploymentRoutes)  // mounts /api/deployment

@@ -31,6 +31,7 @@ import { FastifyInstance } from 'fastify'
 import { redis } from '../db/redis.js'
 import { CHAIN_PROFILE } from '../chainProfile.js'
 import { POISON_KEY } from '../keeper/poisonTracker.js'
+import { evaluateRoundsHealth } from '../rounds/health.js'
 
 const STATE_KEY       = 'watchdog:state'
 const INVARIANT_KEY   = 'invariant:critical'
@@ -342,8 +343,13 @@ export async function keeperHealthRoutes(app: FastifyInstance, opts: Opts = {}) 
   // alert body. Nothing else goes in here - see the header comment.
   app.get('/health/deep', async (_req, reply) => {
     const v = await evaluateKeeperHealth(get, now(), cfg)
+    // PoolRounds keeper (rounds/health.ts): 'absent' while it is off, which
+    // leaves this answer exactly as before; never throws.
+    const r = await evaluateRoundsHealth(get, now())
+    if (v.ok && r.state === 'down') return reply.code(503).send({ status: 'down', reason: r.code })
+    const warn = [...(v.warn ?? []), ...(r.state === 'absent' ? [] : r.warn)]
     return v.ok
-      ? reply.send({ status: 'ok', warn: v.warn?.length ? v.warn : undefined })
+      ? reply.send({ status: 'ok', warn: warn.length ? warn : undefined })
       : reply.code(503).send({ status: 'down', reason: v.code })
   })
 }

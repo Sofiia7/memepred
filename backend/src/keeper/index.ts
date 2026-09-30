@@ -11,6 +11,7 @@ import { badgeSweepTick } from './badgeSweep.js'
 import { invariantTick }          from './invariantMonitor.js'
 import { poolWatcherTick }        from './poolWatcher.js'
 import { CHAIN_PROFILE }          from '../chainProfile.js'
+import { roundsEnabled }          from '../rounds/config.js'
 import { runMigrations }          from '../db/migrate.js'
 import { pg }                     from '../db/pg.js'
 import { redis }                  from '../db/redis.js'
@@ -119,6 +120,9 @@ async function start() {
     'badgeSweep', badgeSweepTick,
     positiveIntervalMs(process.env.BADGE_SWEEP_INTERVAL_MS, 10 * 60_000),
   )
+  // PoolRounds (backend/src/rounds, docs/rhc/ROUNDS-KEEPER.md). Off unless
+  // ROUNDS_ENABLED=true; while off, the module is not even loaded.
+  if (roundsEnabled()) await (await import('../rounds/index.js')).startRoundsKeeper(start)
 
   // Listing what actually started, rather than a hardcoded sentence that would
   // keep claiming a price recorder on a chain that has none.
