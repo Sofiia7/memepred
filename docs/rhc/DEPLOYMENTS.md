@@ -1,5 +1,45 @@
 # Адреса развёрнутого
 
+## Robinhood Chain testnet, PoolRounds (раунды), деплой 2026-09-30
+
+Дополнение к стеку ниже, не замена: рынки, API и демо от 29.09 не тронуты. Развёрнуто `contracts/script/DeployPoolRounds.s.sol`
+через `scripts/rhc/rounds-deploy.mts` из коммита `7e72f7d` (запись forge: `contracts/broadcast/DeployPoolRounds.s.sol/46630/run-latest.json`),
+блок 126 565 756, 9 транзакций, 6 155 437 газа, 0.00006155 ETH. Порядок, шаги и откат: `ROUNDS-DEPLOY.md`.
+
+| Контракт | Адрес |
+|---|---|
+| `PoolRounds` | `0xe3620f0855c4dc1aace648cc8240a4fa89fd93c4` |
+| `ReferralRegistry` (новый; `marketFactory` и допуск - `PoolRounds`) | `0x56ebafcdd73778f898ee95cbf69897f272adb77f` |
+| стенд-ин фабрика Uniswap для раундов (своя, демо и старый кипер её не видят) | `0x9e0ed78ca0e72fc8b50f11266467e89f0476c137` |
+| пул MOONCAT (`PoolRoundMockPool`, токен `0xDf1F40c97e6F191f1cEbd5Bec7678136a24522Cc`) | `0x56bddc1c5a201273c99fa0925e35b46c4f3cff99` |
+| пул PEPE (токен `0xC12B7F3F9667c69075a89d3151153CE8E1EE6B4B`) | `0x2dbc59198cfe170560e2e9c1d9ce95f2185f25e9` |
+| пул FROGGO (токен `0xa1cF709d63f5C1f3e9E81Fd7abFA56ef3F8c0B94`) | `0xbfd0cb69ab5411b8276d4311018fd56a998884e8` |
+
+Параметры (проверены чтением 30.09): кап 1, пауза перед страйком 300 с, окно страйка 300 с, `depthPerBank` 2500, порог глубины 50 WETH,
+кольцо от 900, банк от 0.02 ETH (потолок банка раунда на пуле глубиной 1 000 WETH 0.4), ставка 0.005-0.04, длительность 300 с. Владелец -
+деплойер, мультисигу права не переданы; `pauser` - кипер. Три пула залистованы, у каждого глубина 1 000 WETH, кольцо 900, история ликвидности.
+Пулы демо от 29.09 гейт не проходят (глубина 40 WETH при пороге 50, кольцо 300 при 900) и не отдают `secondsPerLiquidity`, поэтому раундам
+нужны были новые стенд-ины (`ROUNDS-DEPLOY.md`, шаг 2; 16 транзакций, 4.96 млн газа).
+
+**Верификация.** `PoolRounds` и `ReferralRegistry` верифицированы (`is_verified: true` по API обозревателя, 30.09). `PoolRounds` прошёл через
+`forge verify-contract`. Реестр forge пропустил словами «already verified», а флаг оставался `false`: отправлен напрямую в API обозревателя
+(`/api/v2/smart-contracts/<адрес>/verification/via/standard-input`).
+
+**Кипер** работает на VPS в том же контейнере `deploy-rhc-keeper-1` (модуль `roundsKeeper`, строки `ROUNDS_ENABLED`, `ROUNDS_ADDRESS`,
+`ROUNDS_START_BLOCK` в `/home/openclaw/memepred-rhc/.env.rhc`), код из коммита `7e72f7d`. Перед раскаткой сделан бэкап
+`/home/openclaw/backups/memepred-rhc-20260930-094202`. `/api/rounds/health` и `/health/deep` - `ok`.
+
+**Сквозная проверка на тестнете** (`scripts/rhc/rounds-e2e.mts --testnet --yes-testnet`, лог `measurements/rounds/e2e-testnet.log`, три одноразовых
+кошелька, пополненных с деплойера): **40 проверок, 0 упавших**. Настоящий кипер на VPS вызвал `fixStrike` через 3-5 с после `strikeEnd` и
+`settle` через 3-5 с после `settleAt` (допустимо 599 и 839 с). Победитель получил 0.0392 со ставки 0.02 (1.96x), ничья по 0.0099 (минус 1%),
+раунд с одной стороной вернул ставку целиком в момент закрытия, ставки 0.07 равны выплатам 0.069 плюс комиссиям 0.001, реферальная доля и
+`claimReferral` сошлись.
+
+**Сайт.** Сборка с `VITE_ROUNDS_ENABLED=1` проверена локально на настоящих данных контракта (три пула, отсчёты, потолок банка). Папка выкладки
+`C:\Server\rhc-site-deploy` привязана к проекту `flipthememe-rhc`; предпросмотр выложен (закрыт входом Vercel), **боевая выкладка на
+`rhc.flipthememe.com` не сделана**: автоматическая проверка прав её заблокировала, выполнить должна София (`vercel deploy --prod --yes` из
+этой папки). Без флага в сборке кода раундов нет.
+
 ## Robinhood Chain testnet, деплой 2026-09-29 (ТЕКУЩИЙ)
 
 Третий деплой стека (05.09, 28.09, 29.09). Причина: правки L02 (резолвер

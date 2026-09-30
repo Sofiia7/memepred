@@ -1,0 +1,130 @@
+# rounds-e2e --testnet (SENDING), 2026-09-30 06:46:32 UTC
+chain 46630, RPC https://rpc.testnet.chain.robinhood.com, PoolRounds 0xe3620f0855c4dc1aace648cc8240a4fa89fd93c4
+WETH 0xaF3aCfCE41417DE5C973cc214E170C73480b068a, treasury 0x12f9B9De75ccEa7be573F643A99AAA63b9448BD2, minCardinality 900
+gas price 0.01 gwei
+  p1 0xdCCfd5fFD811889D6C152Ad73a7e782E9E8D2D1b: 0.000400 ETH (needs 0.000200)
+  p2 0xB2ce6a2ec33d67a347Ce2Ddf0b7C9efA6175B01A: 0.000400 ETH (needs 0.000200)
+  referrer 0xd04C1F8273Ad600D936Ed1195249783aa8BFA346: 0.000100 ETH (needs 0.000050)
+  pool win 0x56bDDC1C5a201273C99fa0925e35b46c4f3cFF99: listed true
+  pool tie 0x2DBc59198cfE170560E2E9C1D9ce95F2185f25E9: listed true
+  pool one 0xBfd0cb69aB5411b8276d4311018fd56a998884E8: listed true
+  keeper: external (the deployed keeper must be running with ROUNDS_ENABLED=true and this ROUNDS_ADDRESS)
+plan: mint stand-in WETH to p1 and p2, approve, 5 bets in the next 300 s window (A 0.02 each side, TIE 0.01 each side, ONE 0.01 one side),
+      claim ONE at closeAt, wait strikeEnd (+10 min) for fixStrike, ONE pushTick on the win pool, wait settleAt (+5 min) for settle,
+      4 claims, claimReferral, withdrawFees if anything is left. About 25 minutes; about 2.5 million gas in total for the players and the push.
+
+== cycle: rounds of 300 s on 0xe3620f0855c4dc1aace648cc8240a4fa89fd93c4
+  params: stake 0.005000-0.040000, minBank 0.020000, costAllowance 69692 gwei, side cap 1, grace 86400 s, minCardinality 900, depthPerBank 2500, gateDepth 50.00 (all read from the contract)
+  ok   duration 300 s enabled
+  ok   pool win 0x56bDDC1C5a201273C99fa0925e35b46c4f3cFF99 listed
+  ok   pool tie 0x2DBc59198cfE170560E2E9C1D9ce95F2185f25E9 listed
+  ok   pool one 0xBfd0cb69aB5411b8276d4311018fd56a998884E8 listed
+  ok   pool win: maxBankOf 0.400000 (depth / depthPerBank) admits a bank of 0.040000
+  ok   pool tie: maxBankOf 0.400000 (depth / depthPerBank) admits a bank of 0.020000
+
+-- players
+  [step] mint stand-in WETH (p1) gas 56414 2417 ms - 0.040000
+  [step] approve exactly the stakes (p1) gas 51465 2189 ms - 0.040000
+  [step] mint stand-in WETH (p2) gas 56414 3214 ms - 0.030000
+  [step] approve exactly the stakes (p2) gas 51465 2397 ms - 0.030000
+
+-- window 5969170: openAt 1790751000, closeAt +300, strikeStart +600, strikeEnd +900, settleAt +1200 (seconds from openAt)
+   keeperDeadlines: fixStrike by strikeEnd + 599 s, settle by settleAt + 839 s
+  ok   roundTimes: openAt = k*T, closeAt = openAt + T
+  waiting for openAt (1790751000)
+
+-- bets (open)
+  [step] bet UP 0.020000 on A with a referrer (opens the round) (p1) gas 251902 t=+3s 2808 ms
+  [step] bet DOWN 0.020000 on A (p2) gas 118198 t=+6s 3136 ms
+  [step] bet UP 0.010000 on TIE (opens the round) (p1) gas 160514 t=+9s 2680 ms
+  [step] bet DOWN 0.010000 on TIE (p2) gas 108598 t=+12s 3313 ms
+  [step] bet UP 0.010000 on ONE (opens the round) (p1) gas 150925 t=+15s 2613 ms
+  ok   a second bet by the same player in the same round is refused (AlreadyBet)
+  ok   the bet recorded the referral link in the registry (setMarketFactory + authorizeMarket wiring works)
+  waiting for closeAt (1790751300)
+
+-- closeAt: book final
+  ok   a bet at closeAt is refused (NotCollecting)
+  ok   A activated, bank 0.040000
+  ok   TIE activated at the smallest bank, 0.020000
+  ok   ONE (one side only) not activated
+  [step] claim ONE: the whole stake back at closeAt (p1) gas 77358 t=+303s 2257 ms - 0.010000
+  ok   ONE refunded in full at closeAt: 0.010000 = stake
+  waiting for strikeStart (1790751600)
+
+-- strikeStart (pause over, strike window running)
+  waiting for strikeEnd (1790751900)
+
+-- strikeEnd: fixStrike due (by keeperDeadlines().fixStrikeBy, strikeEnd + 599 s)
+  ok   fixStrike on ONE is refused (NotActivated): nothing for the keeper to pay
+  ok   StrikeFixed for A
+  [step] fixStrike A (deployed keeper 0xbfa008e5a8d46d2014b83551ce6209108416eea4) (keeper) gas 76713 t=+905s
+  ok   fixStrike A 5 s after strikeEnd (keeperDeadlines allows 599)
+  ok   StrikeFixed for TIE
+  [step] fixStrike TIE (deployed keeper 0xbfa008e5a8d46d2014b83551ce6209108416eea4) (keeper) gas 76713 t=+903s
+  ok   fixStrike TIE 3 s after strikeEnd (keeperDeadlines allows 599)
+  ok   settle before settleAt is refused (NotDue)
+  [step] price step on the winner pool: tick 0 -> -200 (WETH is token0) from strikeEnd (p1) gas 58539 t=+911s 2276 ms - stand-in only; +1 stored step for good
+  waiting for settleAt (1790752200)
+
+-- settleAt: settle due (by keeperDeadlines().settleBy, settleAt + 839 s)
+  ok   RoundSettled for A
+  [step] settle A (deployed keeper 0xbfa008e5a8d46d2014b83551ce6209108416eea4) (keeper) gas 104874 t=+1205s
+  ok   settle A 5 s after settleAt (keeperDeadlines allows 839)
+  ok   RoundSettled for TIE
+  [step] settle TIE (deployed keeper 0xbfa008e5a8d46d2014b83551ce6209108416eea4) (keeper) gas 113344 t=+1203s
+  ok   settle TIE 3 s after settleAt (keeperDeadlines allows 839)
+  ok   A settled UP (price stepped up after the strike): expected UP
+  ok   TIE settled TIE (no price step): expected TIE - on the testnet another process may have moved this pool
+
+-- claims
+  [step] claim A: winner, 1.96x (p1) gas 89988 t=+1210s 2742 ms - 0.039200 WETH, referral share 80000000000000 wei to the referrer
+  ok   p1 A: received 0.039200 = previewClaim
+  ok   p1 A: 0.039200 = expected 0.039200
+  [step] claim A: loser, nothing to transfer (p2) gas 45918 t=+1214s 2638 ms - 0.000000 WETH, referral share 0 wei to the treasury
+  ok   p2 A: received 0.000000 = previewClaim
+  ok   p2 A: 0.000000 = expected 0.000000
+  [step] claim TIE: tie, stake less 1% (p1) gas 73387 t=+1217s 2630 ms - 0.009900 WETH, referral share 10000000000000 wei to the referrer
+  ok   p1 TIE: received 0.009900 = previewClaim
+  ok   p1 TIE: 0.009900 = expected 0.009900
+  [step] claim TIE: tie, stake less 1% (p2) gas 90403 t=+1220s 2631 ms - 0.009900 WETH, referral share 10000000000000 wei to the treasury
+  ok   p2 TIE: received 0.009900 = previewClaim
+  ok   p2 TIE: 0.009900 = expected 0.009900
+  ok   a second claim is refused (AlreadyClaimed)
+  ok   referrer owed 90000000000000 wei = the shares of p1's tickets (the registry link is global: it also covers p1's TIE ticket)
+  [step] claimReferral (referrer) gas 62639 t=+1224s 2445 ms - 90000000000000 wei
+  ok   referrer received 90000000000000 wei
+
+-- fees
+  [step] withdrawFees (anyone may call) (p1) gas 44989 t=+1227s 2681 ms - 910000000000000 wei to the treasury
+  ok   feesAccrued is 0 after withdrawal
+  ok   stakes 0.070000 = payouts 0.069000 + fees 0.001000 + dust 0 wei
+  ok   referral shares 90000000000000 + house shares 10000000000000 <= pots 100000000000000 wei
+
+== steps
+| # | step | who | gas | chain time from openAt, s | wall, ms |
+|---:|---|---|---:|---:|---:|
+| 1 | mint stand-in WETH (0.040000) | p1 | 56414 |  | 2417 |
+| 2 | approve exactly the stakes (0.040000) | p1 | 51465 |  | 2189 |
+| 3 | mint stand-in WETH (0.030000) | p2 | 56414 |  | 3214 |
+| 4 | approve exactly the stakes (0.030000) | p2 | 51465 |  | 2397 |
+| 5 | bet UP 0.020000 on A with a referrer (opens the round) | p1 | 251902 | 3 | 2808 |
+| 6 | bet DOWN 0.020000 on A | p2 | 118198 | 6 | 3136 |
+| 7 | bet UP 0.010000 on TIE (opens the round) | p1 | 160514 | 9 | 2680 |
+| 8 | bet DOWN 0.010000 on TIE | p2 | 108598 | 12 | 3313 |
+| 9 | bet UP 0.010000 on ONE (opens the round) | p1 | 150925 | 15 | 2613 |
+| 10 | claim ONE: the whole stake back at closeAt (0.010000) | p1 | 77358 | 303 | 2257 |
+| 11 | fixStrike A (deployed keeper 0xbfa008e5a8d46d2014b83551ce6209108416eea4) | keeper | 76713 | 905 |  |
+| 12 | fixStrike TIE (deployed keeper 0xbfa008e5a8d46d2014b83551ce6209108416eea4) | keeper | 76713 | 903 |  |
+| 13 | price step on the winner pool: tick 0 -> -200 (WETH is token0) from strikeEnd (stand-in only; +1 stored step for good) | p1 | 58539 | 911 | 2276 |
+| 14 | settle A (deployed keeper 0xbfa008e5a8d46d2014b83551ce6209108416eea4) | keeper | 104874 | 1205 |  |
+| 15 | settle TIE (deployed keeper 0xbfa008e5a8d46d2014b83551ce6209108416eea4) | keeper | 113344 | 1203 |  |
+| 16 | claim A: winner, 1.96x (0.039200 WETH, referral share 80000000000000 wei to the referrer) | p1 | 89988 | 1210 | 2742 |
+| 17 | claim A: loser, nothing to transfer (0.000000 WETH, referral share 0 wei to the treasury) | p2 | 45918 | 1214 | 2638 |
+| 18 | claim TIE: tie, stake less 1% (0.009900 WETH, referral share 10000000000000 wei to the referrer) | p1 | 73387 | 1217 | 2630 |
+| 19 | claim TIE: tie, stake less 1% (0.009900 WETH, referral share 10000000000000 wei to the treasury) | p2 | 90403 | 1220 | 2631 |
+| 20 | claimReferral (90000000000000 wei) | referrer | 62639 | 1224 | 2445 |
+| 21 | withdrawFees (anyone may call) (910000000000000 wei to the treasury) | p1 | 44989 | 1227 | 2681 |
+
+40 checks, 0 failed; whole run 1437.4 s wall
+ALL CHECKS PASSED
