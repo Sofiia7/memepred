@@ -4,7 +4,7 @@ FlipTheMeme is for people who enjoy betting on outcomes but cannot find a short 
 
 [Try the public rounds demo](https://rhc.flipthememe.com/rounds) · [Verified PoolRounds contract](https://explorer.testnet.chain.robinhood.com/address/0xe3620f0855c4dc1aace648cc8240a4fa89fd93c4) · [Buildathon application text](docs/rhc/buildathon-application.md) · [Demo recording plan](docs/rhc/ROUNDS-DEMO-RUNBOOK.md)
 
-The hackathon product is **PoolRounds**. The older continuous Markets tab is a separate contract with different timing and fees.
+For this hackathon entry, use the **Rounds** tab at the demo link above.
 
 ## One round in 30 seconds
 
@@ -14,11 +14,9 @@ The hackathon product is **PoolRounds**. The older continuous Markets tab is a s
 
 The pool must pass depth and price-history checks. The accepted bank is also limited by the pool's WETH depth. These checks reduce the amount exposed to price manipulation; they cannot make a thin coin safe.
 
-## Why we changed the design
+## Why these rules
 
-The earlier continuous-market system was exercised for 47 hours with **1,113 scripted orders and 278 matches**. This established operational behavior, not user demand. We then replayed **743,127 real swaps across 15 Robinhood Chain pools** and found that a simulated fast trader could win **89.4%** of decided 60-second matches against the old LP vault after a swap. The strike included pre-swap prices, giving that trader an edge. [Backtest and method](docs/rhc/SHARP-EDGE.md).
-
-PoolRounds removes the house LP from each bet: only matched trader stakes play, with a published 1:1 cap and a strike measured after betting closes. That removes the vault's exposure to the measured edge. Skilled traders can still win against other traders, and manipulation of the underlying pool remains possible.
+Only matched trader stakes play, so every possible payout is funded by the two sides rather than a house taking the opposite bet. The future strike gives both sides the same published price window after betting closes. Pool-depth and observation checks restrict which coins can be listed and how large a round can become. Skilled traders can still beat other traders, and the underlying pool can still be manipulated.
 
 ## Evidence and limits
 
