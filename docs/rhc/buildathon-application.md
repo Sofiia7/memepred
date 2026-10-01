@@ -36,7 +36,9 @@ The deployed keeper on the server settled and fixed strikes in an end-to-end tes
 
 On **1 October**, we separately ran the current PoolRounds code on a local fork of Robinhood Chain mainnet at block **77,215,106**. The canonical RMHT/WETH pool had about **93.5 WETH** depth against a **50 WETH** gate and **1,801** price observations against a **900** requirement. PoolRounds listed it, read its real v3 price history, settled a local tie and paid **0.0099 WETH** back to each simulated 0.01 WETH trader. [Test, raw output and limits](measurements/rounds/mainnet-fork-2026-10-01.md). All balances, bets and clock changes existed only in the fork; **there was no mainnet deployment or transaction**.
 
-The [public browser rounds screen](https://rhc.flipthememe.com/rounds) shows both sides' totals, a timeline from bets to exit, pool depth, the maximum bank, predicted accepted stake and payout, the refund fee and explicit acknowledgement before betting. It was checked publicly with three pools on 30 September. A fresh-wallet public-browser transaction and demo video remain the final acceptance check. The `/rounds` route is the entry for this submission.
+In a second fork test, a local 0.1 WETH swap through that canonical pool changed its price after the strike. PoolRounds read the pool's observations, settled **UP**, and paid **0.0196 WETH** to the simulated 0.01 WETH UP trader. This tests the winner path against real pool code and liquidity; the price-moving swap was made inside the fork, **not by an organic mainnet trader**. [Captured result](measurements/rounds/mainnet-fork-swap-2026-10-01.log).
+
+The [public browser rounds screen](https://rhc.flipthememe.com/rounds) shows both sides' totals, a timeline from bets to exit, pool depth, the maximum bank, predicted accepted stake and payout, the refund fee and explicit acknowledgement before betting. It was checked publicly with three pools on 1 October; the keeper health endpoint was current and the contract was not paused. A fresh-wallet public-browser transaction and demo video remain the final acceptance check. The `/rounds` route is the entry for this submission.
 
 ## What is innovative?
 
@@ -52,7 +54,7 @@ The contracts have **not received an external security audit**. Each stake is ca
 
 ## What we built during the buildathon
 
-We built PoolRounds with a 1:1 matched bank, a future strike, pool-depth limits, oracle failure refunds and player collection. We deployed and source-verified it on Robinhood Chain testnet, connected a keeper, completed a testnet end-to-end run, published the browser interface, and checked its listing and price reads against a real pool on a local mainnet fork. The remaining submission work is a fresh-wallet browser check and video.
+We built PoolRounds with a 1:1 matched bank, a future strike, pool-depth limits, oracle failure refunds and player collection. We deployed and source-verified it on Robinhood Chain testnet, connected a keeper, completed a testnet end-to-end run, published the browser interface, and checked both tie and winner settlement against a real pool on a local mainnet fork. The remaining submission work is a fresh-wallet browser check and video.
 
 ## Team
 

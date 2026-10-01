@@ -23,17 +23,17 @@ Only matched trader stakes play, so every possible payout is funded by the two s
 | Check | What it establishes |
 |---|---|
 | [Testnet end-to-end run](docs/rhc/measurements/rounds/e2e-testnet.log) | Deployed keeper, win, tie, inactive refund, claims, fees and referrals: 40 checks, zero failures. These are development-script transactions. |
-| [Real-pool mainnet fork](docs/rhc/measurements/rounds/mainnet-fork-2026-10-01.md) | On Robinhood Chain mainnet state at block **77,215,106**, the current PoolRounds code listed the canonical RMHT v3 pool, read its real observations, settled a fork-only tie and paid both simulated traders. |
+| [Real-pool mainnet fork](docs/rhc/measurements/rounds/mainnet-fork-2026-10-01.md) | The current PoolRounds code listed the canonical RMHT v3 pool, read its real observations and paid a tie. In a second test, a locally simulated swap through that real pool moved its price; PoolRounds settled UP and paid the winner. |
 | [Foundry suite](docs/rhc/measurements/rounds/README.md) | Monetary invariants, adversarial oracle paths, fuzzing and deadline boundaries. The full suite had 646 passing tests on 30 September; the new live fork test runs only when `RHC_MAINNET_RPC` is set. |
 
-The three public testnet pools are **stand-ins with scripted prices** because the demo testnet lacks a canonical Uniswap v3 deployment. Their prices and transactions do not show organic user demand. The contract has **no external security audit**. The mainnet fork uses real pool state but local balances and clock changes; it is not a mainnet deployment or a live wager. A fresh-wallet browser transaction and video are still to be completed. No claim of real user traction is made.
+The three public testnet pools are **stand-ins with scripted prices** because the demo testnet lacks a canonical Uniswap v3 deployment. Their prices and transactions do not show organic user demand. The contract has **no external security audit**. The mainnet fork uses real pool code and state, but its balances, stakes, price-moving swap and clock changes are local; it is not a mainnet deployment or a live wager. A fresh-wallet browser transaction and video are still to be completed. No claim of real user traction is made.
 
 To reproduce the real-pool check from `contracts/` with Foundry installed:
 
 ```bash
-RHC_MAINNET_RPC=https://rpc.mainnet.chain.robinhood.com forge test --match-path test/PoolRoundsMainnetFork.t.sol -vv
+RHC_MAINNET_RPC=https://robinhood-rpc.publicnode.com forge test --match-path test/PoolRoundsMainnetFork.t.sol -vv
 ```
 
-This reads a live pool, so its eligibility can change. Without the environment variable the test is explicitly skipped. The public RPC keeps little historical state; use the [recorded result and block](docs/rhc/measurements/rounds/mainnet-fork-2026-10-01.md) when reviewing the 1 October run.
+This reads a live pool, so its eligibility can change. Without the environment variable the test is explicitly skipped. Use the [recorded results and blocks](docs/rhc/measurements/rounds/mainnet-fork-2026-10-01.md) when reviewing the 1 October runs.
 
 The [Robinhood Chain project notes](docs/rhc/README.md) explain architecture, deployment, measurements and remaining work. The current product code is under `contracts/src/PoolRounds.sol`, `backend/src/rounds/` and `frontend/src/rounds/`.

@@ -1,0 +1,24 @@
+No files changed, compilation skipped
+
+Ran 2 tests for test/PoolRoundsMainnetFork.t.sol:PoolRoundsMainnetForkTest
+[PASS] test_RealPoolRoundReadsAndCollects() (gas: 735716)
+Logs:
+  fork block: 77406312
+  WETH depth: 93513564319882490993
+  observation cardinality: 1801
+  required WETH depth: 50000000000000000000
+  required cardinality: 900
+  real pool strike tick: 153999
+  real pool exit tick: 153999
+  fork-only tie payout to each player: 9900000000000000
+
+[PASS] test_RealPoolSwapThenWinnerCollects() (gas: 1140552)
+Logs:
+  fork block: 77406312
+  real pool strike tick: 153999
+  real pool exit tick after fork-only swap: 153978
+  fork-only UP winner payout: 19600000000000000
+
+Suite result: ok. 2 passed; 0 failed; 0 skipped; finished in 2.84s (3.35s CPU time)
+
+Ran 1 test suite in 2.86s (2.84s CPU time): 2 tests passed, 0 failed, 0 skipped (2 total tests)
