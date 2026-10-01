@@ -2,6 +2,7 @@
 
 Актуально 01.10. Публичный экран: `https://rhc.flipthememe.com/rounds`, сеть Robinhood Chain **testnet** (46630).
 Текст заявки: [`buildathon-application.md`](buildathon-application.md). Для подачи показывай маршрут `/rounds`.
+Покадровый план и закадровый текст видео: [`ROUNDS-DEMO-SCRIPT.md`](ROUNDS-DEMO-SCRIPT.md).
 
 ## Перед записью
 
