@@ -168,8 +168,13 @@ export function RiskGate({ children }: { children: React.ReactNode }) {
         </ol>
 
         <p className="risk-fine">
-          Not available in {restrictedNames('short').join(', ')}, or sanctioned
-          countries. Full detail in the <Link to="/terms">Terms</Link>.
+          {restrictedNames('short').length > 0 ? (
+            <>Not available in {restrictedNames('short').join(', ')}, or sanctioned countries.</>
+          ) : (
+            // The whole restricted list is off on this build (a testnet demo).
+            <>This testnet preview is not region-restricted beyond comprehensively sanctioned countries.</>
+          )}{' '}
+          Full detail in the <Link to="/terms">Terms</Link>.
         </p>
 
         <button className="cta risk-accept" onClick={accept}>

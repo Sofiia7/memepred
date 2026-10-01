@@ -1,6 +1,9 @@
 import { joinList, restrictedNames } from '../lib/restrictedRegions'
 
 export function GeoBlock() {
+  // Empty on a build that has switched the whole restricted list off: the
+  // screen then names only the sanctioned countries, which are all it enforces.
+  const restricted = restrictedNames('short')
   return (
     <div className="geo-block">
       <h1 style={{ color: 'var(--down)' }}>⛔</h1>
@@ -13,9 +16,12 @@ export function GeoBlock() {
       <p style={{ marginTop: 12 }}>
         Short-horizon price contracts are a licensed derivatives or gambling
         product in a number of countries. This one holds no such licence
-        anywhere, so it doesn't operate in those places - that includes{' '}
-        {joinList(restrictedNames('short'), 'and')}, alongside comprehensively
-        sanctioned countries.
+        anywhere, so it doesn't operate in those places
+        {restricted.length > 0 ? (
+          <> - that includes {joinList(restricted, 'and')}, alongside comprehensively sanctioned countries.</>
+        ) : (
+          <>. On this testnet preview only comprehensively sanctioned countries are excluded.</>
+        )}
       </p>
       <p style={{ marginTop: 12, fontSize: 12, opacity: 0.7 }}>
         This isn't a check to get around. Using a VPN to reach the product

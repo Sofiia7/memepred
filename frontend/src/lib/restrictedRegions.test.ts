@@ -6,6 +6,7 @@ import {
   OFAC_CODES,
   OPENABLE_CODES,
   RESTRICTED_CODES,
+  allRestrictedOpen,
   blockedCodes,
   joinList,
   parseOpenCountries,
@@ -72,6 +73,40 @@ describe('the Worker and the page agree on what is blocked', () => {
       const openedOnWorker = !blockedFor({ GEO_OPEN_COUNTRIES: c }).has(c)
       expect(openedOnWorker).toBe((OPENABLE_CODES as readonly string[]).includes(c))
     }
+  })
+})
+
+describe('a deployment that has switched the whole restricted list off', () => {
+  // A testnet demo: GEO_OPEN_ALL_RESTRICTED on the Worker, VITE_GEO_OPEN_ALL_RESTRICTED
+  // in the build. Opens what GEO_OPEN_COUNTRIES never can; never the OFAC list.
+  const off = { GEO_OPEN_ALL_RESTRICTED: '1' }
+
+  it('opens every restricted jurisdiction, the U.S. and Tor included, on both sides', () => {
+    expect(sorted(blockedFor(off))).toEqual(sorted(blockedCodes(allRestrictedOpen())))
+    expect(sorted(blockedFor(off))).toEqual(sorted(OFAC_CODES))
+    for (const c of RESTRICTED_CODES) expect(blockedFor(off).has(c)).toBe(false)
+  })
+
+  it('still blocks every OFAC country', () => {
+    for (const c of OFAC_CODES) {
+      expect(blockedFor(off).has(c)).toBe(true)
+      expect(blockedCodes(allRestrictedOpen())).toContain(c)
+    }
+  })
+
+  it('needs exactly "1"; any other value leaves the list as it was', () => {
+    for (const v of ['', '0', 'true', 'yes', ' 1', 'ALL']) {
+      expect(sorted(blockedFor({ GEO_OPEN_ALL_RESTRICTED: v }))).toEqual(sorted(blockedFor({})))
+    }
+  })
+
+  it('wins over GEO_OPEN_COUNTRIES, which is harmless beside it', () => {
+    expect(sorted(blockedFor({ ...off, GEO_OPEN_COUNTRIES: 'SG' }))).toEqual(sorted(OFAC_CODES))
+  })
+
+  it('names no country as restricted in the copy', () => {
+    expect(restrictedNames('short', allRestrictedOpen())).toEqual([])
+    expect(restrictedNames('long', allRestrictedOpen())).toEqual([])
   })
 })
 

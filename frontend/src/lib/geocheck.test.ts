@@ -302,3 +302,46 @@ describe('checkGeo, a deployment that has opened a country', () => {
     }
   })
 })
+
+describe('checkGeo, a deployment that has switched the whole restricted list off', () => {
+  // VITE_GEO_OPEN_ALL_RESTRICTED=1, the frontend half of the Worker's
+  // GEO_OPEN_ALL_RESTRICTED (a testnet demo). The Worker's list stays the
+  // authority; only the built-in fallback changes, and only for the
+  // restricted jurisdictions, never for the OFAC countries.
+  const configDown = {
+    '/api/geo/config': () => {
+      throw new TypeError('config down')
+    },
+  }
+
+  it.each(['US', 'PR', 'GB', 'DE', 'SG', 'T1'])('the fallback lets %s in when the Worker list cannot be read', async (country) => {
+    vi.stubEnv('VITE_GEO_OPEN_ALL_RESTRICTED', '1')
+    vi.stubGlobal('fetch', routeFetch({ '/api/geo': () => res(200, { country }), ...configDown }))
+    const { checkGeo } = await load()
+    expect(await checkGeo()).toEqual({ status: 'allowed', country })
+  })
+
+  it.each(['CU', 'IR', 'KP', 'SY'])('but the fallback still blocks %s', async (country) => {
+    vi.stubEnv('VITE_GEO_OPEN_ALL_RESTRICTED', '1')
+    vi.stubGlobal('fetch', routeFetch({ '/api/geo': () => res(200, { country }), ...configDown }))
+    const { checkGeo } = await load()
+    expect(await checkGeo()).toEqual({ status: 'blocked', country })
+  })
+
+  it("still follows the Worker's own list when it can be read", async () => {
+    vi.stubEnv('VITE_GEO_OPEN_ALL_RESTRICTED', '1')
+    vi.stubGlobal('fetch', routeFetch({
+      '/api/geo': () => res(200, { country: 'US' }),
+      '/api/geo/config': () => res(200, { blocked: ['US'] }),
+    }))
+    const { checkGeo } = await load()
+    expect(await checkGeo()).toEqual({ status: 'blocked', country: 'US' })
+  })
+
+  it('needs exactly "1"', async () => {
+    vi.stubEnv('VITE_GEO_OPEN_ALL_RESTRICTED', 'true')
+    vi.stubGlobal('fetch', routeFetch({ '/api/geo': () => res(200, { country: 'US' }), ...configDown }))
+    const { checkGeo } = await load()
+    expect(await checkGeo()).toEqual({ status: 'blocked', country: 'US' })
+  })
+})

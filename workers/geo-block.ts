@@ -37,6 +37,16 @@ export interface Env {
    * widen the sanctions or CFTC exposure or switch the whole list off.
    */
   GEO_OPEN_COUNTRIES?: string
+  /**
+   * Optional, per deployment: exactly "1" takes EVERY restricted jurisdiction
+   * off this Worker's list - the U.S. and its territories and Tor included,
+   * which GEO_OPEN_COUNTRIES can never do. The OFAC list stays whatever this
+   * says. Meant for a testnet demo whose tokens have no value (set on the
+   * Robinhood Chain testnet Worker on 2026-10-01 so the buildathon judges can
+   * open the site from anywhere); never on a deployment that handles real
+   * funds. Any other value is ignored.
+   */
+  GEO_OPEN_ALL_RESTRICTED?: string
 }
 
 // ── LAYER 1: OFAC comprehensively-sanctioned countries ─────────────────
@@ -99,10 +109,12 @@ const OPENABLE_JURISDICTIONS = new Set(['GB', 'FR', 'DE', 'NL', 'CA', 'AU', 'JP'
 /**
  * The blocked set for one deployment: every OFAC country, plus every restricted
  * jurisdiction that this deployment has not explicitly opened through
- * GEO_OPEN_COUNTRIES. Exported so the tests (and the frontend's parity test)
- * can pin exactly what each deployment enforces.
+ * GEO_OPEN_COUNTRIES - or none of them, when GEO_OPEN_ALL_RESTRICTED is
+ * exactly "1" (a testnet demo). Exported so the tests (and the frontend's
+ * parity test) can pin exactly what each deployment enforces.
  */
-export function blockedFor(env: Pick<Env, 'GEO_OPEN_COUNTRIES'>): Set<string> {
+export function blockedFor(env: Pick<Env, 'GEO_OPEN_COUNTRIES' | 'GEO_OPEN_ALL_RESTRICTED'>): Set<string> {
+  if (env.GEO_OPEN_ALL_RESTRICTED === '1') return new Set(OFAC_SANCTIONED)
   const open = new Set(
     (env.GEO_OPEN_COUNTRIES ?? '')
       .split(',')

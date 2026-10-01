@@ -6,7 +6,12 @@
 ## Перед записью
 
 1. Открой сайт без входа в Vercel, убедись, что видны MOONCAT, PEPE и FROGGO, а Terms описывают 2%/1% и Collect.
-   Не используйте ссылку предпросмотра Vercel: он закрыт входом, публичный домен доступен гостю из разрешённой страны.
+   Не используйте ссылку предпросмотра Vercel: он закрыт входом. Публичный домен открыт гостю из любой страны, кроме
+   четырёх санкционных (OFAC), после выкладки переключателя: `GEO_OPEN_ALL_RESTRICTED = "1"` в
+   `workers/wrangler.geo-block.rhc.toml` (`wrangler deploy -c wrangler.geo-block.rhc.toml`) и
+   `VITE_GEO_OPEN_ALL_RESTRICTED=1` в сборке сайта (переменная проекта Vercel или `.env.rhc-testnet`, затем пересборка
+   и `vercel deploy --prod`). Проверка: `https://api-rhc.flipthememe.com/api/geo/config` отдаёт только `CU, IR, KP, SY`,
+   а Terms на сайте в разделе 3 говорят, что ограниченных юрисдикций на этом превью нет.
 2. В кошельке выбери Robinhood Chain Testnet (chain ID 46630, RPC `https://rpc.testnet.chain.robinhood.com`, символ ETH,
    обозреватель `https://explorer.testnet.chain.robinhood.com`). Получи тестовый ETH из крана, указанного сайтом.
    В форме раунда кнопка WRAP превратит нужную часть тестового ETH в тестовый WETH; далее approve и bet.

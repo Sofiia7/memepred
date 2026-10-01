@@ -117,11 +117,23 @@ export function TermsPage() {
           <li><b>Comprehensively sanctioned countries</b> - Cuba, Iran, North
             Korea, Syria. This one isn't a choice; it's U.S. sanctions law and
             it applies regardless of where an operator sits.</li>
-          <li><b>Restricted jurisdictions</b> - {joinList(restrictedNames('long'), 'and', true)}.
-            These are places whose regulators treat short-horizon price contracts
-            like this one as a licensed derivatives or gambling product. This
-            product holds no such licence anywhere, so it does not serve
-            them. Tor exit nodes are blocked for the same reason.</li>
+          {restrictedNames('long').length > 0 ? (
+            <li><b>Restricted jurisdictions</b> - {joinList(restrictedNames('long'), 'and', true)}.
+              These are places whose regulators treat short-horizon price contracts
+              like this one as a licensed derivatives or gambling product. This
+              product holds no such licence anywhere, so it does not serve
+              them. Tor exit nodes are blocked for the same reason.</li>
+          ) : (
+            // The whole restricted list is switched off on this build: a testnet
+            // demo whose tokens have no value, opened so it can be reviewed from
+            // anywhere. The sentence must say so, or the page would name a
+            // restriction the edge no longer enforces.
+            <li><b>Restricted jurisdictions</b> - none are enforced on this testnet
+              preview. Every jurisdiction on that list, Tor exit nodes included, has
+              been opened on this deployment so that the demo can be reviewed from
+              anywhere; the test tokens have no monetary value. Any deployment that
+              handles real funds applies the list in full.</li>
+          )}
         </ul>
         Both are enforced at the network edge; the <b>live, authoritative
         list is always at</b> <code>/api/geo/config</code> - check that, not

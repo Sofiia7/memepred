@@ -17,6 +17,11 @@
  * VITE_GEO_OPEN_COUNTRIES is the frontend half of the Worker's
  * GEO_OPEN_COUNTRIES for the same deployment: the same codes, on both sides, or
  * the page and the edge tell different stories. Unset means the full list.
+ *
+ * VITE_GEO_OPEN_ALL_RESTRICTED=1 is the frontend half of the Worker's
+ * GEO_OPEN_ALL_RESTRICTED: the whole restricted list is off on that deployment
+ * (a testnet demo), and the copy names no country as restricted. The OFAC
+ * countries stay blocked on both sides whatever is open.
  */
 
 /** Comprehensively sanctioned (OFAC). Never openable by configuration. */
@@ -46,10 +51,22 @@ export function parseOpenCountries(raw: string | null | undefined): Set<string> 
   )
 }
 
+/**
+ * Every restricted jurisdiction, the U.S. and Tor included: the set a build
+ * has opened when its whole restricted list is switched off. OFAC_CODES are
+ * never in it, so blockedCodes() keeps them.
+ */
+export function allRestrictedOpen(): Set<string> {
+  return new Set<string>(RESTRICTED_CODES)
+}
+
+/** Exactly "1" switches the whole restricted list off for this build; anything else does not. */
+export const OPEN_ALL_RESTRICTED: boolean = import.meta.env.VITE_GEO_OPEN_ALL_RESTRICTED === '1'
+
 /** The countries this build has opened. Read once, at build time. */
-export const OPEN_COUNTRIES: ReadonlySet<string> = parseOpenCountries(
-  import.meta.env.VITE_GEO_OPEN_COUNTRIES,
-)
+export const OPEN_COUNTRIES: ReadonlySet<string> = OPEN_ALL_RESTRICTED
+  ? allRestrictedOpen()
+  : parseOpenCountries(import.meta.env.VITE_GEO_OPEN_COUNTRIES)
 
 /** Every code this build blocks: the whole OFAC list plus the restricted ones not opened. */
 export function blockedCodes(open: ReadonlySet<string> = OPEN_COUNTRIES): string[] {

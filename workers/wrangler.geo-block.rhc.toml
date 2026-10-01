@@ -37,3 +37,15 @@ routes = [
 # build of this deployment, or the page copy and the edge will disagree.
 [vars]
 GEO_OPEN_COUNTRIES = "SG"
+
+# 2026-10-01, Sofia's decision for the buildathon: the whole restricted list is
+# off on THIS deployment, so a judge anywhere (the U.S. included) can open the
+# testnet demo. The stake is test WETH with no value. The four OFAC countries
+# stay blocked. The Base worker (wrangler.toml) has no such line and must never
+# get one: it handles real money. Keep it in step with
+# VITE_GEO_OPEN_ALL_RESTRICTED in the frontend build of this deployment.
+# Roll out with
+#   wrangler deploy -c wrangler.geo-block.rhc.toml
+# then check that https://api-rhc.flipthememe.com/api/geo/config lists only
+# CU, IR, KP and SY (the edge caches that answer for up to 10 minutes).
+GEO_OPEN_ALL_RESTRICTED = "1"

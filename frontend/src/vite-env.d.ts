@@ -30,6 +30,13 @@ interface ImportMetaEnv {
    * lib/restrictedRegions); unset keeps the full list.
    */
   readonly VITE_GEO_OPEN_COUNTRIES?: string
+  /**
+   * Exactly "1" switches the whole restricted list off for this build, the
+   * U.S. and Tor included: the frontend half of the Worker's
+   * GEO_OPEN_ALL_RESTRICTED, for a testnet demo only. The OFAC countries stay
+   * blocked. Takes precedence over VITE_GEO_OPEN_COUNTRIES.
+   */
+  readonly VITE_GEO_OPEN_ALL_RESTRICTED?: string
   /** Faucet link shown to a testnet wallet with no ETH. Defaults in lib/env. */
   readonly VITE_FAUCET_URL?: string
   /**
