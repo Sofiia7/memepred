@@ -9,8 +9,8 @@ import "../src/ReferralRegistry.sol";
  * @title  DeployPoolRounds
  * @notice Deploys PoolRounds (interface v3), the matched rounds of
  *         docs/rhc/POSITIVE-EV.md (candidate v2, third edition), next to the
- *         existing Robinhood Chain stack. NOT RUN: v2 is not decided
- *         (DECISIONS.md, 24) and this form has not been re-audited.
+ *         existing Robinhood Chain stack. Used for the Robinhood Chain testnet
+ *         deployment on 30 September 2026; see docs/rhc/DEPLOYMENTS.md.
  *
  * @dev    Same shape as DeployRhc.s.sol: deploy, wire, operational roles,
  *         handover; mainnet (4663) refuses to run without handover.

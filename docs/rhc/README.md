@@ -1,5 +1,7 @@
 # FlipTheMeme на Robinhood Chain
 
+Для жюри хакатона: [короткая английская страница проекта](../../README.md), затем [текст заявки](buildathon-application.md).
+
 Папка проекта. Всё, что относится к пивоту с Base на Robinhood Chain (chainId 4663),
 живёт здесь. Начато 2026-09-04.
 

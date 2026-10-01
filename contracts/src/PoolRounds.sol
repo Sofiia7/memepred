@@ -21,7 +21,8 @@ interface IPoolRoundReferrals {
 /**
  * @title  PoolRounds (interface v3)
  * @notice Matched rounds on Uniswap v3 pools, candidate v2 of docs/rhc/POSITIVE-EV.md
- *         (third edition). Not deployed, not audited in this form.
+ *         (third edition). Deployed on Robinhood Chain testnet; internally
+ *         reviewed and tested, without an external security audit.
  *
  * @dev    One contract for every pool and duration. A round is the pair
  *         (pool, duration T) and a window index k; it takes bets during

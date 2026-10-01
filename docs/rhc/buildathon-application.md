@@ -1,6 +1,6 @@
 # FlipTheMeme — Arbitrum Open House Singapore application
 
-Draft updated 2026-09-30 for the deployed **PoolRounds** testnet product. The public rounds release is live; the fresh-wallet browser check and video remain. Copy the English sections into the HackQuest project form, adapting to its actual fields. Check every link and the video before submission. This document does not record a HackQuest submission.
+Draft updated 2026-10-01 for the deployed **PoolRounds** testnet product. The public rounds release is live; the fresh-wallet browser check and video remain. Copy the English sections into the HackQuest project form, adapting to its actual fields. Check every link and the video before submission. This document does not record a HackQuest submission. A [one-page English entry point](../../README.md) is available for judges.
 
 The [published buildathon page](https://www.hackquest.io/hackathons/Arbitrum-Open-House-Singapore-Online-Buildathon) accepts an existing project deployed on an Arbitrum chain; Robinhood Chain is named as an example, and Arbitrum Sepolia establishes that testnet deployment can qualify. The page does not explicitly confirm whether **Robinhood Chain testnet** receives the Robinhood-reserved prize. Submission closes **4 October 2026, 23:59 Singapore time** (17:59 Budapest). Registration was completed 11 September. The proposed track is **Promising Products**.
 
@@ -10,11 +10,11 @@ FlipTheMeme
 
 ## One-liner
 
-Short, transparent UP/DOWN rounds on Robinhood Chain memecoins. Traders stake test WETH on opposite sides; accepted stakes are matched one for one and settled from each token pool's on-chain time-weighted price.
+Short UP/DOWN rounds for people who enjoy outcome betting and want a market on the Robinhood Chain meme coin they actually follow. Traders use test WETH; matched stakes settle against that coin's on-chain pool price.
 
 ## What problem does it solve?
 
-Communities following newly graduated memecoins can take a bounded view on the next price move without buying the token itself. New tokens usually have no listed price feed. An ordinary spot quote can be manipulated at the instant of settlement, and an LP that fills every one-sided bet absorbs adverse selection. Our product uses the token's own v3 pool for a published price rule and accepts only equally backed UP and DOWN stakes. Users can see both sides' totals before betting. The size of an active round is constrained by the depth of its pool.
+People who enjoy Polymarket-style outcome bets often cannot find a short UP/DOWN market on the particular Robinhood Chain meme coin they follow. FlipTheMeme lets them take that view without buying or shorting the coin. Each eligible coin's own v3 pool supplies the price rule, so a separate listed price feed is not needed. The contract accepts equal stakes on both sides, shows the totals before a bet, and limits an active bank by pool depth. A round needs real opposing stakes to activate; that is the product's main liquidity constraint.
 
 ## How does the current product work?
 
@@ -32,7 +32,9 @@ Launchpad tokens on Robinhood Chain graduate into on-chain liquidity pools befor
 
 **On Robinhood Chain testnet, chain ID 46630:** `PoolRounds` at `0xe3620f0855c4dc1aace648cc8240a4fa89fd93c4` and its `ReferralRegistry` are deployed and source-verified. Three test pools for MOONCAT, PEPE, and FROGGO are listed. Their tokens and pools are **stand-ins**: there is no canonical Uniswap v3 deployment for this demo testnet, and the price is moved by a script. They reproduce the pool observations and liquidity-history calls that the round contract uses. Their artificial prices are never presented as organic market prices or user demand.
 
-The deployed keeper on the server settled and fixed strikes in an end-to-end testnet run. That run checked a winning round, a tie, a round with one side only, claims, fees and referral payments: **40 checks, zero failures**. The winning 0.02 WETH stake received 0.0392 WETH; a 0.01 WETH stake on a tie received 0.0099 WETH. Transaction hashes and observed timing are in [`measurements/rounds/e2e-testnet.log`](measurements/rounds/e2e-testnet.log). `/api/rounds/health` reports the current keeper state. Contract tests cover monetary invariants, fuzzing, deadline boundaries and oracle failure paths. The full Foundry suite had **646 passing tests on 30 September**; mainnet fork tests need `RHC_MAINNET_RPC`, so an offline green run by itself is not evidence those tests ran against live pools.
+The deployed keeper on the server settled and fixed strikes in an end-to-end testnet run. That run checked a winning round, a tie, a round with one side only, claims, fees and referral payments: **40 checks, zero failures**. The winning 0.02 WETH stake received 0.0392 WETH; a 0.01 WETH stake on a tie received 0.0099 WETH. Transaction hashes and observed timing are in [`measurements/rounds/e2e-testnet.log`](measurements/rounds/e2e-testnet.log). `/api/rounds/health` reports the current keeper state. Contract tests cover monetary invariants, fuzzing, deadline boundaries and oracle failure paths. The full Foundry suite had **646 passing tests on 30 September**; its older fork tests need `RHC_MAINNET_RPC`, so an offline green run by itself is not evidence they ran against live pools.
+
+On **1 October**, we separately ran the current PoolRounds code on a local fork of Robinhood Chain mainnet at block **77,215,106**. The canonical RMHT/WETH pool had about **93.5 WETH** depth against a **50 WETH** gate and **1,801** price observations against a **900** requirement. PoolRounds listed it, read its real v3 price history, settled a local tie and paid **0.0099 WETH** back to each simulated 0.01 WETH trader. [Test, raw output and limits](measurements/rounds/mainnet-fork-2026-10-01.md). All balances, bets and clock changes existed only in the fork; **there was no mainnet deployment or transaction**.
 
 The [public browser rounds screen](https://rhc.flipthememe.com/rounds) shows both sides' totals, a timeline from bets to exit, pool depth, the maximum bank, predicted accepted stake and payout, the refund fee and explicit acknowledgement before betting. It was checked publicly with three pools on 30 September. A fresh-wallet public-browser transaction and demo video remain the final acceptance check. The continuous orderbook markets are an **older, separate mode** that remains in the same app; they use a different contract, a per-match clock, optional LP fills and different fees. The figures and rules above belong to PoolRounds.
 
@@ -40,11 +42,11 @@ The [public browser rounds screen](https://rhc.flipthememe.com/rounds) shows bot
 
 The price rule and market capacity are tied to the same on-chain pool. A pool whose observation ring lacks sufficient history cannot safely serve a round. The contract requires depth and observation capacity at listing, uses a time window after betting closes to reduce the stale-entry advantage, and bounds the accepted bank by pool depth. The 1:1 matched-bank model does not require a house vault to take a side, so an active round's promised payouts fit inside what the traders deposited. This does **not** make pool manipulation impossible: the depth rule caps the payoff, and thin pools remain unsuitable.
 
-Before this design, we built continuous PvP orderbook markets with an optional LP vault. A 47-hour test of a **previous deployment** exercised 1,113 scripted orders and 278 matches. It measured settlement and monitoring reliability; those orders were generated by our own test scripts, **not real user traction**. Analysis of that design exposed an edge against the vault from stale entry TWAP, leading us to build the matched-bank rounds as the current candidate. This is the buildathon's substantive product change.
+Before this design, we built continuous PvP orderbook markets with an optional LP vault. A 47-hour test of a **previous deployment** exercised 1,113 scripted orders and 278 matches. It measured settlement and monitoring reliability; those orders were generated by our own test scripts, **not real user traction**. We then replayed **743,127 actual swaps across 15 mainnet pools**: a simulated fast trader won **89.4%** of decided 60-second matches against the old vault rule after a swap, because its entry strike still reflected earlier prices. That is a backtest result, **not actual trading profit**. [Method and findings](SHARP-EDGE.md). PoolRounds is our response: a future strike and a matched bank with no house LP to take the other side. It removes that measured vault exposure; skilled traders can still win against other players and pool manipulation remains a risk. This is the buildathon's substantive product change.
 
 ## Who is it for, and what have you learned about demand?
 
-The intended user is someone already following a specific liquid memecoin who wants a short, clearly capped directional position instead of owning it. The first distribution channel to test is that token's community, with a direct link to its pool's round and visible, verifiable outcomes. We have **no demonstrated organic user demand yet**. Volume and bets visible on the testnet were generated by development scripts and should be read as reliability tests. The next milestone is to observe whether real participants understand the strike timing, return for another round, and provide enough opposing flow to activate rounds without synthetic stakes.
+The intended user already likes Polymarket-style outcome betting and wants a fast wager on a specific Robinhood Chain meme coin that general prediction markets do not list. The first distribution channel to test is that coin's community, with a direct link to its round and visible, verifiable outcomes. We have **no demonstrated organic user demand yet**. Volume and bets visible on the testnet were generated by development scripts and should be read as reliability tests. The next milestone is to observe whether real participants understand the strike timing, return for another round, and provide enough opposing flow to activate rounds without synthetic stakes.
 
 ## Safety and limitations
 
@@ -52,7 +54,7 @@ The contracts have **not received an external security audit**. Each stake is ca
 
 ## What we built during the buildathon
 
-We adapted the existing engine to Robinhood Chain testnet, deployed and source-verified the first stack, ran a 47-hour scripted soak on an earlier deployment, measured the oracle and settlement gas, identified the vault's adverse-selection edge, designed and implemented PoolRounds with a 1:1 bank and post-close strike, deployed that contract and its keeper, completed a testnet end-to-end run, and published the browser interface. The continuous markets are retained separately for comparison. The remaining submission work is a fresh-wallet browser check and video.
+We first adapted the continuous-market engine to Robinhood Chain testnet and ran a 47-hour scripted reliability test. The swap backtest then revealed the fast-trader edge against its vault. We replaced that exposure with the 1:1 matched-bank PoolRounds design and a strike measured after betting closes. We deployed and source-verified it with a keeper, ran a testnet end-to-end cycle, published the browser interface, then checked its real-pool listing and oracle path on a mainnet fork. The continuous markets are retained separately for comparison. The remaining submission work is a fresh-wallet browser check and video.
 
 ## Team
 
@@ -63,17 +65,17 @@ Sofia — solo founder, product and engineering, with AI-assisted development an
 - Public demo: [rhc.flipthememe.com/rounds](https://rhc.flipthememe.com/rounds), live and checked with three pools on 30 September.
 - Verified current contract: [PoolRounds on the Robinhood Chain testnet explorer](https://explorer.testnet.chain.robinhood.com/address/0xe3620f0855c4dc1aace648cc8240a4fa89fd93c4).
 - Health status: [rounds keeper](https://api-rhc.flipthememe.com/api/rounds/health).
-- Repository: `https://github.com/Sofiia7/memepred` after the final branch is pushed and Sofia opens it before submission. Point judges to the `robinhood-chain` branch and `docs/rhc/README.md`.
+- Repository: `https://github.com/Sofiia7/memepred/tree/robinhood-chain` after Sofia opens it before submission. Point judges to the branch's root `README.md`.
 - Video: insert the final recording URL here after verifying it opens without the creator account.
 
 ## Demo video, about 3–4 minutes
 
 Recording plan and verified transaction links: [`ROUNDS-DEMO-RUNBOOK.md`](ROUNDS-DEMO-RUNBOOK.md).
 
-1. State the problem and show the testnet label, three round pools, visible UP/DOWN totals and depth limit. Say that the demo pools have scripted prices and activity is test traffic.
+1. State the problem plainly: outcome bettors want a quick UP/DOWN market on the Robinhood Chain meme coin they follow. Show the testnet label, three round pools, visible UP/DOWN totals and depth limit. Say that the demo pools have scripted prices and activity is test traffic.
 2. Open a round. Show the 5-minute betting window, pause, strike average and exit. Explain that the bet is on strike-to-exit, not on today's displayed spot price; show accepted stake, 1.96× payout and both refund cases.
 3. Use a prepared wallet and a prepared round to show the placed bet and a completed round, then Collect. Show the actual transaction in the explorer. Edit across the waiting interval and make the edit visible; do not imply the 20-minute result happened immediately.
-4. Show the verified contract, `/api/rounds/health` and a short screen of tests/measurements. End with the actual risks, and the next experiment with organic users.
+4. Show the verified contract, `/api/rounds/health` and the real-pool fork check. Explain the previous vault problem and the 1:1 change in one sentence. End with the actual risks and the next experiment with organic users.
 
 ## Submit checklist
 

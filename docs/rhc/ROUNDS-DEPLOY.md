@@ -1,8 +1,10 @@
 # Развёртывание раундов PoolRounds на тестнет Robinhood Chain (46630)
 
-Дата: 2026-09-30. **Подготовлено, не выполнено:** ни одной транзакции в тестнет, мейннет или Base не отправлено,
-сервер, DNS, Cloudflare и Vercel не трогались. Всё ниже отрепетировано на локальном anvil теми же скриптами и тем же
-`contracts/script/DeployPoolRounds.s.sol`, а тестнет прочитан только чтением (`measurements/rounds/testnet-gate.md`).
+Этот документ начинался 2026-09-30 как **подготовительный план**. Формулировки ниже о том, что ничего не было
+отправлено, относятся к первоначальной репетиции. Позже 30.09 контракт, стенд-ин пулы, кипер и сайт были
+развёрнуты на Robinhood Chain testnet; актуальные адреса и сквозной прогон — в [`DEPLOYMENTS.md`](DEPLOYMENTS.md),
+результат на настоящем пуле mainnet через локальный fork — в
+[`measurements/rounds/mainnet-fork-2026-10-01.md`](measurements/rounds/mainnet-fork-2026-10-01.md).
 
 Контракт: `contracts/src/PoolRounds.sol` в рабочей копии, с правками повторного аудита (`depthPerBank`, глубина окна из
 `secondsPerLiquidity`, `CARDINALITY_SLACK` 600, `keeperDeadlines`). **Он менялся во время этой работы** (sha256

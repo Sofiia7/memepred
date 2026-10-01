@@ -1,0 +1,20 @@
+Compiling 1 files with Solc 0.8.24
+Solc 0.8.24 finished in 2.15s
+Compiler run successful!
+2026-10-01T08:00:58.751667Z  WARN foundry_fork_db::cache: Failed to read cache file err=Os { code: 2, kind: NotFound, message: "Не удается найти указанный файл." } path="C:\\Users\\sofia\\.foundry\\cache\\rpc\\4663\\77215106"
+
+Ran 1 test for test/PoolRoundsMainnetFork.t.sol:PoolRoundsMainnetForkTest
+[PASS] test_RealPoolRoundReadsAndCollects() (gas: 735519)
+Logs:
+  fork block: 77215106
+  WETH depth: 93513564319882490993
+  observation cardinality: 1801
+  required WETH depth: 50000000000000000000
+  required cardinality: 900
+  real pool strike tick: 153999
+  real pool exit tick: 153999
+  fork-only tie payout to each player: 9900000000000000
+
+Suite result: ok. 1 passed; 0 failed; 0 skipped; finished in 3.97s (2.92s CPU time)
+
+Ran 1 test suite in 3.97s (3.97s CPU time): 1 tests passed, 0 failed, 0 skipped (1 total tests)
