@@ -382,6 +382,21 @@ set ROUNDS_ADDRESS=0x...
 scripts\node_modules\.bin\tsx scripts\rhc\rounds-deploy.mts pause --yes-testnet
 ```
 
+Порог банка без редеплоя (владелец, те же `.env` и `ROUNDS_ADDRESS`). `minBank` и `costAllowance` - единственные два параметра,
+которые меняются после развёртывания; действуют на раунды, открытые после транзакций. Команда читает текущие значения, считает
+`costAllowance`, при котором банк ровно такого размера проходит допуск (1% комиссии минус доля рефералов покрывает двойной
+бюджет), и без `--yes-testnet` ничего не отправляет:
+
+```
+cd /d C:\Server\memepred
+set ROUNDS_ADDRESS=0x...
+scripts\node_modules\.bin\tsx scripts\rhc\rounds-deploy.mts bank 0.01
+scripts\node_modules\.bin\tsx scripts\rhc\rounds-deploy.mts bank 0.01 --yes-testnet
+```
+
+При банке 0.01 ETH две минимальные ставки 0.005 с разных кошельков на разные стороны активируют раунд. Свой бюджет расхода
+задаётся `--cost <wei>`; команда откажет, если он больше того, что покрывает комиссия с такого банка.
+
 ## Чек-лист после развёртывания
 
 Чтение из cmd (`cast call`, ничего не отправляет); ожидаемое справа:

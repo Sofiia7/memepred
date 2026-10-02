@@ -10,6 +10,7 @@
  *   scripts\node_modules\.bin\tsx scripts\rhc\rounds-deploy.mts deploy --yes-testnet      forge script --broadcast --slow
  *   scripts\node_modules\.bin\tsx scripts\rhc\rounds-deploy.mts after                     what to paste where, from the last broadcast
  *   scripts\node_modules\.bin\tsx scripts\rhc\rounds-deploy.mts pause --yes-testnet       rollback: stop new bets on ROUNDS_ADDRESS
+ *   scripts\node_modules\.bin\tsx scripts\rhc\rounds-deploy.mts bank 0.01 --yes-testnet   owner: the bank a round needs to play, on ROUNDS_ADDRESS
  *
  * Refuses any chain but 46630 (4663 is refused by name). Values are never printed; addresses are.
  * Variables, from the shell first and then from the repo-root .env:
@@ -30,7 +31,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
-  createPublicClient, createWalletClient, defineChain, formatEther, formatGwei, http, parseAbi,
+  createPublicClient, createWalletClient, defineChain, formatEther, formatGwei, http, parseAbi, parseEther,
   type Address, type Hex,
 } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
@@ -40,7 +41,7 @@ import {
 } from './rounds-lib.mts'
 
 const argv = process.argv.slice(2)
-const positional = argv.filter((a, i) => !a.startsWith('--') && argv[i - 1] !== '--rpc' && argv[i - 1] !== '--env-file')
+const positional = argv.filter((a, i) => !a.startsWith('--') && argv[i - 1] !== '--rpc' && argv[i - 1] !== '--env-file' && argv[i - 1] !== '--cost')
 const cmd = positional[0] ?? 'plan'
 const opt = (f: string) => { const i = argv.indexOf(f); return i >= 0 ? argv[i + 1] : undefined }
 const YES = argv.includes('--yes-testnet')
@@ -76,7 +77,7 @@ function die(msg: string): never {
 }
 
 async function main() {
-  if (!['plan', 'standins', 'simulate', 'deploy', 'after', 'pause'].includes(cmd)) die(`unknown step "${cmd}": plan, standins, simulate, deploy, after or pause`)
+  if (!['plan', 'standins', 'simulate', 'deploy', 'after', 'pause', 'bank'].includes(cmd)) die(`unknown step "${cmd}": plan, standins, simulate, deploy, after, pause or bank`)
   if (!(RPC === TESTNET_RPC || isLocalUrl(RPC))) die(`RPC must be ${TESTNET_RPC} or a 127.0.0.1 anvil, got ${RPC}`)
   const chain = defineChain({ id: TESTNET_ID, name: 'Robinhood Chain Testnet', nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 }, rpcUrls: { default: { http: [RPC] } } })
   const pub = createPublicClient({ chain, transport: http(RPC) })
@@ -135,6 +136,64 @@ async function main() {
     const hash = await wallet.writeContract({ address: rounds, abi: PAUSE_ABI, functionName: 'pause' })
     const r = await pub.waitForTransactionReceipt({ hash, timeout: 180_000 })
     console.log(`\npause(): ${r.status}, gas ${r.gasUsed}, tx ${hash}; paused now ${await pub.readContract({ address: rounds, abi: PAUSE_ABI, functionName: 'paused' })}`)
+    return
+  }
+
+  if (cmd === 'bank') {
+    // The bank a round needs to play, in ETH (`bank 0.01`), and the per-round cost allowance it has to
+    // cover. These two are the only PoolRounds parameters the owner can change without a new deployment.
+    // They apply to rounds opened after the transactions: a round already open keeps the snapshot it
+    // took at its first bet. Pools already listed stay listed whatever the new bank.
+    const rounds = v.ROUNDS_ADDRESS as Address | undefined
+    if (!rounds) die('ROUNDS_ADDRESS is not set')
+    const want = positional[1]
+    if (!want) die('usage: bank <ETH, e.g. 0.01> [--cost <wei>] --yes-testnet')
+    const BANK_ABI = parseAbi([
+      'function owner() view returns (address)',
+      'function minStake() view returns (uint256)',
+      'function minBank() view returns (uint256)',
+      'function costAllowance() view returns (uint256)',
+      'function setMinBank(uint256 value)',
+      'function setCostAllowance(uint256 value)',
+    ])
+    const [owner, minStake, curBank, curCost] = await Promise.all([
+      pub.readContract({ address: rounds, abi: BANK_ABI, functionName: 'owner' }),
+      pub.readContract({ address: rounds, abi: BANK_ABI, functionName: 'minStake' }),
+      pub.readContract({ address: rounds, abi: BANK_ABI, functionName: 'minBank' }),
+      pub.readContract({ address: rounds, abi: BANK_ABI, functionName: 'costAllowance' }),
+    ])
+    if (owner.toLowerCase() !== deployer.toLowerCase()) die(`PoolRounds ${rounds} is owned by ${owner}, not by the deployer ${deployer}: setMinBank would revert`)
+    const newBank = parseEther(want)
+    // Bounds of PoolRounds (MIN_BANK_FLOOR..MIN_BANK_CEIL, COST_ALLOWANCE_FLOOR..COST_ALLOWANCE_CEIL): the setters revert outside them.
+    if (newBank < parseEther('0.001') || newBank > parseEther('10')) die(`${want} ETH is outside the contract's 0.001..10 ETH`)
+    // Admission (PoolRoundMath.isActive): on the smallest bank the 1% void fee, less the 10% referral
+    // share, must cover COVER (2) x costAllowance; otherwise a round of exactly this bank never plays.
+    const gross = (newBank * 100n) / 10_000n
+    const maxCost = (gross - (gross * 1000n) / 10_000n) / 2n
+    const costArg = opt('--cost')
+    const newCost = costArg ? BigInt(costArg) : curCost <= maxCost ? curCost : maxCost
+    if (newCost < 20_000_000_000_000n || newCost > 10_000_000_000_000_000n) die(`costAllowance ${newCost} wei is outside the contract's 2e13..1e16`)
+    if (newCost > maxCost) die(`costAllowance ${newCost} wei is more than ${maxCost}: a bank of exactly ${want} ETH would never activate`)
+    console.log(`\nPoolRounds ${rounds}: minBank ${formatEther(curBank)} -> ${formatEther(newBank)} ETH, costAllowance ${curCost} -> ${newCost} wei (${formatEther(newCost)} ETH per round, ${formatGwei(newCost / 1_000_000n)} gwei on the 1,000,000 gas budget)`)
+    console.log(`two minimum stakes of ${formatEther(minStake)} ETH make ${formatEther(minStake * 2n)}: ${minStake * 2n >= newBank ? 'they will play' : 'they will NOT play, the bank stays short'}`)
+    const steps: Array<{ fn: 'setMinBank' | 'setCostAllowance'; value: bigint }> = []
+    if (newBank !== curBank) steps.push({ fn: 'setMinBank', value: newBank })
+    if (newCost !== curCost) steps.push({ fn: 'setCostAllowance', value: newCost })
+    if (!steps.length) { console.log('nothing to change'); return }
+    if (!YES) die(`bank sends ${steps.length} transaction(s): add --yes-testnet`)
+    const wallet = createWalletClient({ account: privateKeyToAccount(key), chain, transport: http(RPC) })
+    for (const s of steps) {
+      await pub.simulateContract({ account: deployer, address: rounds, abi: BANK_ABI, functionName: s.fn, args: [s.value] })
+      const hash = await wallet.writeContract({ address: rounds, abi: BANK_ABI, functionName: s.fn, args: [s.value] })
+      const r = await pub.waitForTransactionReceipt({ hash, timeout: 180_000 })
+      console.log(`${s.fn}(${s.value}): ${r.status}, gas ${r.gasUsed}, tx ${hash}`)
+      if (r.status !== 'success') die(`${s.fn} reverted; the second value was not sent`)
+    }
+    const [bankNow, costNow] = await Promise.all([
+      pub.readContract({ address: rounds, abi: BANK_ABI, functionName: 'minBank' }),
+      pub.readContract({ address: rounds, abi: BANK_ABI, functionName: 'costAllowance' }),
+    ])
+    console.log(`now: minBank ${formatEther(bankNow)} ETH, costAllowance ${costNow} wei; applies to rounds opened from here on`)
     return
   }
 
