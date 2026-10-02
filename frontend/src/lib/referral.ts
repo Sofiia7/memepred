@@ -21,6 +21,16 @@ export function captureReferralCode(): void {
   const code = new URLSearchParams(window.location.search).get('ref')
   if (!code) return
 
+  // A challenge link (rounds/challenge.ts) names the referrer by address: nothing to resolve.
+  if (/^0x[0-9a-fA-F]{40}$/.test(code)) {
+    try {
+      localStorage.setItem(STORAGE_KEY, code)
+    } catch {
+      // a private window: the bet goes without a referrer
+    }
+    return
+  }
+
   const api = import.meta.env.VITE_API_URL
   if (!api) return
 

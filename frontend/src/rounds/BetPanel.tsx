@@ -24,6 +24,7 @@ import {
 } from './roundMath'
 import { sideCapMismatch, SIDE_RATIO, strikeAndExit } from './roundRules'
 import { RoundRulesBlock } from './RoundRulesBlock'
+import { ChallengeShare } from './ChallengeShare'
 import { RoundTimeline } from './RoundTimeline'
 import { betGate } from './betGate'
 import { MIN_SECONDS_TO_BET, useRoundTx } from './useRoundTx'
@@ -64,6 +65,8 @@ export interface BetPanelProps {
   alreadyIn: boolean
   /** The pool's depth and the largest bank a round of it may reach now (maxBankOf). */
   depth?: PoolDepth
+  /** A side chosen before the form opened (a challenge link offers the other side). */
+  presetSide?: RoundSide
 }
 
 /**
@@ -79,7 +82,7 @@ export function BetPanel(p: BetPanelProps) {
   const stakeId = useId()
   const c = p.constants
 
-  const [side, setSide] = useState<RoundSide | undefined>()
+  const [side, setSide] = useState<RoundSide | undefined>(p.presetSide)
   const [stakeInput, setStakeInput] = useState<string>(() =>
     c ? formatUnits(c.minStake * 2n <= c.maxStake ? c.minStake * 2n : c.minStake, 18) : '0.01',
   )
@@ -172,6 +175,9 @@ export function BetPanel(p: BetPanelProps) {
           <span>It is on chain. Your bets may take a moment to refresh.</span>
           <a href={`${TARGET_CHAIN.blockExplorers?.default.url}/tx/${tx.state.hash}`} target="_blank" rel="noopener noreferrer">View transaction</a>
         </div>
+      )}
+      {tx.state.step === 'done' && tx.state.hash && side && (
+        <ChallengeShare roundId={p.roundId} mySide={side} stake={stakeWei} symbol={p.pool.symbol} closeAt={p.times.closeAt} now={p.now} me={address} />
       )}
       <div className="rnd-bet-head">
         <b>{p.pool.symbol}</b> · {durationLabel(p.duration)} round · bets close {clockTime(p.times.closeAt)}{' '}

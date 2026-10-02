@@ -98,3 +98,13 @@
 .rnd-key{font-size:12px;line-height:1.5;color:var(--warn);border:1px solid rgba(255,181,71,.35);border-radius:8px;
   padding:9px 11px;margin:0 0 10px;background:rgba(255,181,71,.06)}
 .rnd-key b{font-weight:800}
+
+/* ── challenge: bring your own counterparty ───────── */
+.rnd-share{margin-top:10px;padding:10px 12px;border:1px dashed var(--line-2);border-radius:9px;background:var(--surface-2)}
+.rnd-share p{margin:0 0 8px;font-size:12px;line-height:1.5;color:var(--text-dim)}
+.rnd-share p b{color:#fff}
+.rnd-share-row{display:flex;gap:6px;flex-wrap:wrap}
+.rnd-share-row a.rnd-btn{display:inline-flex;align-items:center;text-decoration:none}
+.rnd-challenge{margin:0 0 12px;padding:12px;border:1px solid var(--base-blue-2);border-radius:9px;background:var(--surface-2);font-size:13px;line-height:1.5}
+.rnd-challenge b{color:#fff}
+.rnd-challenge.closed{border-color:var(--line-2)}

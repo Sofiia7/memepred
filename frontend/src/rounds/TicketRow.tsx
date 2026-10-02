@@ -1,11 +1,13 @@
 import { countdownFrom } from '../hooks/useNow'
 import { formatAmount } from '../lib/money'
-import { clockTime, percentOf, sideLabel } from './roundMath'
+import { clockTime, percentOf, sideLabel, type RoundSide } from './roundMath'
 import { describeTicket, outcomeLabel, refundReasonText, type TicketView } from './ticketState'
 import { OUTCOME_REFUND, OUTCOME_TIE } from './roundsClient'
 import type { MyBet } from './useRoundsData'
 import type { TxState } from './useRoundTx'
 import { ROUNDS_CONFIG } from './roundsAbi'
+import { ChallengeShare } from './ChallengeShare'
+import type { Address } from 'viem'
 
 const SYMBOL = ROUNDS_CONFIG.nativeEth ? 'ETH' : 'WETH'
 const amt = (v: bigint | undefined) => (v === undefined ? '-' : `${formatAmount(v, 18)} ${SYMBOL}`)
@@ -22,6 +24,8 @@ export interface TicketRowProps {
   ratio?: number
   /** The pool no longer takes new bets (delisted, for example below the depth gate). */
   poolDelisted?: boolean
+  /** The connected wallet, named as referrer in the challenge link of an open bet. */
+  me?: Address
   onClaim: (bet: MyBet) => void
 }
 
@@ -93,10 +97,13 @@ export function TicketRow(p: TicketRowProps) {
       )}
 
       {v.kind === 'open' && (
-        <div className="rnd-ticket-body">
-          Bets close at <b>{clockTime(times.closeAt)}</b> (in {countdownFrom(times.closeAt, p.now)}). Now UP {amt(up)}, DOWN{' '}
-          {amt(down)}: at these sums {matchedLine}. This changes until the close.
-        </div>
+        <>
+          <div className="rnd-ticket-body">
+            Bets close at <b>{clockTime(times.closeAt)}</b> (in {countdownFrom(times.closeAt, p.now)}). Now UP {amt(up)}, DOWN{' '}
+            {amt(down)}: at these sums {matchedLine}. This changes until the close.
+          </div>
+          <ChallengeShare roundId={p.bet.roundId} mySide={p.bet.ticket.side as RoundSide} stake={stake} symbol={p.symbol} closeAt={times.closeAt} now={p.now} me={p.me} />
+        </>
       )}
 
       {v.kind === 'closing' && <div className="rnd-ticket-body">Bets are closed. Reading the final sums…</div>}

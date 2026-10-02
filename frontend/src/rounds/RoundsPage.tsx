@@ -10,7 +10,8 @@ import { TARGET_CHAIN } from '../lib/chain'
 import { formatAmount } from '../lib/money'
 import { shortAddr } from '../lib/symbols'
 import { ROUNDS_CONFIG } from './roundsAbi'
-import { bpsToPct, currentIndex, durationLabel, roundIdOf, roundTimes, sideLabel } from './roundMath'
+import { bpsToPct, clockTime, currentIndex, durationLabel, roundIdOf, roundTimes, sideLabel, type RoundSide } from './roundMath'
+import { parseChallenge } from './challenge'
 import type { RoundsConstants, RoundState } from './roundsClient'
 import { urgency } from './ticketState'
 import { BetPanel } from './BetPanel'
@@ -54,7 +55,7 @@ const amt = (v: bigint) => `${formatAmount(v, 18)} ${SYMBOL}`
 function RoundsScreen() {
   const { address, isConnected } = useAccount()
   const { connectWallet } = useConnectWallet()
-  const { hash } = useLocation()
+  const { hash, search } = useLocation()
   const { now } = useChainClock()
   const constants = useRoundsConstants()
   const markets = useRoundMarkets()
@@ -62,6 +63,9 @@ function RoundsScreen() {
   const mine = useMyBets(address)
   const tx = useRoundTx()
   const [openKey, setOpenKey] = useState<string | null>(null)
+  // A challenge link: the round, the side on offer and the challenger (rounds/challenge.ts).
+  const challenge = useMemo(() => parseChallenge(search), [search])
+  const [seeded, setSeeded] = useState(false)
   const [actingId, setActingId] = useState<string | null>(null)
   const c = constants.data
   const ratio = c?.chainSideRatio ?? 1
@@ -84,6 +88,18 @@ function RoundsScreen() {
     if (!hash || !mine.data) return
     document.getElementById(hash.slice(1))?.scrollIntoView({ block: 'center' })
   }, [hash, mine.data])
+
+  // The challenged round's pool and length, if listed: its form opens with the offered side.
+  const challengeKey = challenge ? `${challenge.pool}:${challenge.duration}` : null
+  const challengeListed = !!challenge && (markets.data?.pools ?? []).some((p) => p.pool.toLowerCase() === challenge.pool.toLowerCase()) && (markets.data?.durations ?? []).includes(challenge.duration)
+  const challengeLive = !!challenge && currentIndex(now, challenge.duration) === challenge.index
+  useEffect(() => {
+    if (seeded || !challengeKey || !markets.data) return
+    setSeeded(true)
+    if (!challengeListed) return
+    setOpenKey(challengeKey)
+    setTimeout(() => document.getElementById(`pool-${challenge!.pool.toLowerCase()}`)?.scrollIntoView({ block: 'start' }), 50)
+  }, [seeded, challengeKey, challengeListed, markets.data, challenge])
 
   const onClaim = (b: MyBet) => {
     setActingId(`${b.contract}:${b.roundId}`)
@@ -113,6 +129,17 @@ function RoundsScreen() {
           New bets are paused. Collecting still works.
         </p>
       )}
+      {challenge && markets.data && (
+        <ChallengeBanner
+          symbol={symbolOf(challenge.pool)}
+          take={challenge.take}
+          listed={challengeListed}
+          live={challengeLive}
+          round={challengeLive ? current.data?.get(challenge.roundId.toString()) : undefined}
+          closeAt={challengeLive ? (current.data?.get(challenge.roundId.toString())?.times.closeAt ?? Number(challenge.index + 1n) * challenge.duration) : undefined}
+          now={now}
+        />
+      )}
       {constants.isError && <ApiError message="Couldn't read the rounds contract" onRetry={() => void constants.refetch()} />}
 
       {isConnected ? (
@@ -137,6 +164,7 @@ function RoundsScreen() {
                   ratio={ratio}
                   poolDelisted={delisted.has(poolOfRound(bet.roundId).toLowerCase())}
                   voidFeePct={c ? bpsToPct(c.voidFeeBps) : undefined}
+                  me={address}
                   onClaim={onClaim}
                 />
               )
@@ -174,6 +202,7 @@ function RoundsScreen() {
             constants={c}
             myRounds={myRounds}
             openKey={openKey}
+            presetSide={challengeListed && challenge && pool.pool.toLowerCase() === challenge.pool.toLowerCase() ? challenge.take : undefined}
             onToggle={(k) => setOpenKey((cur) => (cur === k ? null : k))}
           />
         ))}
@@ -190,12 +219,14 @@ function PoolCard(p: {
   constants?: RoundsConstants
   myRounds: Map<string, MyBet>
   openKey: string | null
+  /** The side a challenge link offers on this pool; the form opens with it chosen. */
+  presetSide?: RoundSide
   onToggle: (key: string) => void
 }) {
   const depth = usePoolDepth(p.pool.pool).data
   const thin = !!depth && !!p.constants && depth.depth < p.constants.gateDepth
   return (
-    <div className="rnd-pool">
+    <div className="rnd-pool" id={`pool-${p.pool.pool.toLowerCase()}`}>
       <div className="rnd-pool-head">
         <span className="rnd-pool-sym">{p.pool.symbol}</span>
         <span className="rnd-pool-addr">{shortAddr(p.pool.pool)}</span>
@@ -243,11 +274,49 @@ function PoolCard(p: {
                 constants={p.constants}
                 alreadyIn={alreadyIn}
                 depth={depth}
+                presetSide={p.presetSide}
               />
             )}
           </div>
         )
       })}
+    </div>
+  )
+}
+
+/**
+ * What a challenge link says on arrival: the round is still taking bets (take
+ * the offered side before the close), it has closed (the pool's next round is
+ * open, same side preselected), or the pool is not listed here.
+ */
+function ChallengeBanner(p: { symbol: string; take: RoundSide; listed: boolean; live: boolean; round?: RoundState; closeAt?: number; now: number }) {
+  const take = sideLabel(p.take)
+  const other = sideLabel(p.take === 1 ? 2 : 1)
+  if (!p.listed) {
+    return (
+      <div className="rnd-challenge closed" role="status">
+        You were challenged on <b>{p.symbol}</b>, but that pool does not take bets here. Pick another pool below.
+      </div>
+    )
+  }
+  if (!p.live) {
+    return (
+      <div className="rnd-challenge closed" role="status">
+        <b>You were challenged to take {take} on {p.symbol}</b>, but that round has closed. The next {p.symbol} round is
+        open below with {take} preselected.
+      </div>
+    )
+  }
+  const other_sum = p.round ? (p.take === 1 ? p.round.down : p.round.up) : undefined
+  return (
+    <div className="rnd-challenge" role="status">
+      <b>Someone bet {other} on {p.symbol} and dares you to take {take}.</b>{' '}
+      {other_sum !== undefined && other_sum > 0n ? `${amt(other_sum)} is on ${other} already. ` : ''}
+      {p.closeAt ? (
+        <>
+          Bets close at <b>{clockTime(p.closeAt)}</b> (in {countdownFrom(p.closeAt, p.now)}). The form below has {take} chosen.
+        </>
+      ) : null}
     </div>
   )
 }

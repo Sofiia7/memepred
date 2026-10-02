@@ -28,7 +28,9 @@ describe('while bets are open', () => {
     expect(body).toContain('Now UP 0.03 WETH, DOWN 0.02 WETH')
     expect(body).toMatch(/0\.013333\d* WETH of your stake plays \(66%\), 0\.00666\d* WETH comes back without a fee/)
     expect(body).toMatch(/This changes until the close/)
-    expect(screen.queryByRole('button')).toBeNull()
+    // nothing to collect yet; what the row offers is the challenge link for the other side
+    expect(screen.queryByRole('button', { name: /COLLECT/ })).toBeNull()
+    expect(screen.getByLabelText('Challenge a friend').textContent).toContain('Dare someone to take DOWN')
   })
 })
 
