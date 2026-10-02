@@ -141,7 +141,7 @@ export function outcomeLabel(outcome: number): string {
     case OUTCOME_DOWN:
       return 'DOWN won'
     case OUTCOME_TIE:
-      return 'Tie: the price did not move'
+      return 'Tie: the measured prices were equal'
     case OUTCOME_REFUND:
       return 'Refunded'
     default:

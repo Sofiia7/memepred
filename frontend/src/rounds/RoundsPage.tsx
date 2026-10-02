@@ -124,8 +124,9 @@ function RoundsScreen() {
         }
       />
       <p className="rnd-lead">
-        Pick a coin and bet UP or DOWN with test ETH. Both sides need enough stake for the round to play; otherwise you
-        can collect a full refund. The result uses prices measured after betting closes.
+        Pick a coin and bet UP or DOWN with test ETH. These test pools use scripted prices, not live market trades. Both
+        sides need enough stake for the round to play; otherwise you can collect a full refund. The result compares
+        prices measured after betting closes.
       </p>
 
       {c?.paused && (
