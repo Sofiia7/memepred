@@ -290,7 +290,10 @@ scripts\node_modules\.bin\tsx scripts\rhc\rounds-e2e.mts --testnet
 
 Без `--yes-testnet` только читает: цепочка 46630 (иначе отказ), что по адресу `PoolRounds`, WETH и казна, цена газа,
 адреса и балансы игроков (первые три ключа `.soak-wallets.json`; ключи не печатаются), какие пулы (три первых
-`PoolListed` от блока развёртывания или `ROUNDS_E2E_POOLS=win,tie,one`) и план. Потом:
+`PoolListed` от блока развёртывания или `ROUNDS_E2E_POOLS=win,tie,one`) и план. С деплоя 2 октября WETH это
+`TestWETH`, обеспеченный ETH один к одному и без `mint`: ставки скрипт заворачивает из ETH самих игроков, поэтому им
+нужен не только газ. При банке от 0.01: p1 ставит 0.01 + 0.005 + 0.005 = 0.02 ETH, p2 0.015 ETH, плюс 0.0002 на газ
+каждому; строка «needs» в плане считает это по контракту и по уже имеющемуся WETH. Пополнять с крана тестнета. Потом:
 
 ```
 scripts\node_modules\.bin\tsx scripts\rhc\rounds-e2e.mts --testnet --yes-testnet --log docs\rhc\measurements\rounds\e2e-testnet.log

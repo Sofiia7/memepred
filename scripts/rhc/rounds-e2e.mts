@@ -28,7 +28,8 @@
  *
  * --testnet  refuses any chain but 46630. Without --yes-testnet it only reads and prints the plan.
  *          With it: players are the first two keys of scripts/rhc/.soak-wallets.json, the referrer the
- *          third (values never printed); the stand-in WETH is minted; ONE price step is pushed on the
+ *          third (values never printed); the stand-in WETH is minted, or wrapped from each player's own
+ *          ETH when the WETH is deposit-backed (TestWETH); ONE price step is pushed on the
  *          winner pool (each step makes a stand-in pool dearer to read for good: DECISIONS.md 21).
  *          Needs ROUNDS_ADDRESS (the deployed PoolRounds) and ROUNDS_START_BLOCK; the pools are
  *          ROUNDS_E2E_POOLS=win,tie,one, or else the first three PoolListed from ROUNDS_START_BLOCK.
@@ -103,7 +104,19 @@ const WETH_ABI = parseAbi([
   'function balanceOf(address) view returns (uint256)',
   'function approve(address,uint256) returns (bool)',
   'function mint(address,uint256)',
+  'function deposit() payable',
 ])
+/** ETH a player keeps for gas on top of the stakes it may have to wrap. */
+const GAS_RESERVE = 2n * 10n ** 14n
+/** Whether the WETH is the mintable stand-in (MockWETH) or deposit-backed (TestWETH, no mint). */
+const canMintWeth = (weth: Address, from: Address) =>
+  pub.simulateContract({ account: from, address: weth, abi: WETH_ABI, functionName: 'mint', args: [from, 1n] } as any).then(() => true, () => false)
+/** The stakes of a cycle from the contract's own parameters: TIE at the smallest bank that activates, A at twice that, ONE as TIE. */
+function stakesFor(p: { minStake: bigint; maxStake: bigint; minBank: bigint }) {
+  const tieStake = p.minBank / 2n > p.minStake ? p.minBank / 2n : p.minStake
+  const winStake = tieStake * 2n <= p.maxStake ? tieStake * 2n : p.maxStake
+  return { tieStake, winStake, oneStake: tieStake }
+}
 const POOL_ABI = parseAbi([
   'function pushTick(uint32 startTs, int24 tick)',
   'function setCardinality(uint16 c, uint16 next)',
@@ -141,9 +154,9 @@ const read = <R = any,>(address: Address, abi: any, functionName: string, args: 
   pub.readContract({ address, abi, functionName, args } as any) as Promise<R>
 
 /** Send, wait, require success. Returns the receipt and the wall time. */
-async function send(a: Actor, address: Address, abi: any, functionName: string, args: unknown[] = []) {
+async function send(a: Actor, address: Address, abi: any, functionName: string, args: unknown[] = [], value?: bigint) {
   const s = Date.now()
-  const hash = await a.wallet.writeContract({ address, abi, functionName, args, chain, account: a.account } as any)
+  const hash = await a.wallet.writeContract({ address, abi, functionName, args, chain, account: a.account, ...(value !== undefined ? { value } : {}) } as any)
   const r = await pub.waitForTransactionReceipt({ hash, timeout: 180_000 })
   if (r.status !== 'success') throw new Error(`${a.name} ${functionName} reverted, tx ${hash}`)
   const b = await pub.getBlock({ blockNumber: r.blockNumber })
@@ -267,9 +280,7 @@ async function runCycle(ctx: Ctx) {
   }
 
   // Stakes: the tie round at the smallest bank that activates, the winner round at twice that.
-  const tieStake = p.minBank / 2n > p.minStake ? p.minBank / 2n : p.minStake
-  const winStake = tieStake * 2n <= p.maxStake ? tieStake * 2n : p.maxStake
-  const oneStake = tieStake
+  const { tieStake, winStake, oneStake } = stakesFor(p)
   const trapStake = ctx.trap ? tieStake : 0n
   const need1 = winStake + tieStake + oneStake + trapStake
   const need2 = winStake + tieStake + trapStake
@@ -280,10 +291,21 @@ async function runCycle(ctx: Ctx) {
 
   const bal = (a: Address) => read<bigint>(ctx.weth, WETH_ABI, 'balanceOf', [a])
   out('\n-- players')
+  const mintable = ctx.mintWeth ? await canMintWeth(ctx.weth, ctx.p1.account.address) : false
+  if (ctx.mintWeth) out(`  WETH ${ctx.weth}: ${mintable ? 'mintable stand-in' : 'deposit-backed, the stakes are wrapped from each player\'s own ETH'}`)
   for (const [a, need] of [[ctx.p1, need1], [ctx.p2, need2]] as const) {
-    if (ctx.mintWeth && (await bal(a.account.address)) < need) {
-      const s = await send(a, ctx.weth, WETH_ABI, 'mint', [a.account.address, need])
-      record({ what: 'mint stand-in WETH', who: a.name, gas: s.r.gasUsed, tx: s.hash, chainTs: s.ts, wallMs: s.ms, note: fmtEth(need) })
+    const have = await bal(a.account.address)
+    if (ctx.mintWeth && have < need) {
+      if (mintable) {
+        const s = await send(a, ctx.weth, WETH_ABI, 'mint', [a.account.address, need])
+        record({ what: 'mint stand-in WETH', who: a.name, gas: s.r.gasUsed, tx: s.hash, chainTs: s.ts, wallMs: s.ms, note: fmtEth(need) })
+      } else {
+        const short = need - have
+        const eth = await pub.getBalance({ address: a.account.address })
+        if (eth < short + GAS_RESERVE) throw new Error(`${a.name} ${a.account.address} has ${fmtEth(eth)} ETH and needs ${fmtEth(short + GAS_RESERVE)} (${fmtEth(short)} to wrap plus gas): top it up from the testnet faucet first`)
+        const s = await send(a, ctx.weth, WETH_ABI, 'deposit', [], short)
+        record({ what: 'wrap ETH into WETH', who: a.name, gas: s.r.gasUsed, tx: s.hash, chainTs: s.ts, wallMs: s.ms, note: fmtEth(short) })
+      }
     }
     const s = await send(a, ctx.weth, WETH_ABI, 'approve', [ctx.rounds, need])
     record({ what: 'approve exactly the stakes', who: a.name, gas: s.r.gasUsed, tx: s.hash, chainTs: s.ts, wallMs: s.ms, note: fmtEth(need) })
@@ -735,11 +757,20 @@ async function mainTestnet() {
   out(`WETH ${weth}, treasury ${treasury}, minCardinality ${minCard}`)
   const gasPrice = await pub.getGasPrice()
   out(`gas price ${formatGwei(gasPrice)} gwei`)
-  const minEth = { p1: 2n * 10n ** 14n, p2: 2n * 10n ** 14n, referrer: 5n * 10n ** 13n }
+  // What each player needs: gas, plus the stakes it will have to wrap when the WETH is deposit-backed (TestWETH).
+  const mintable = await canMintWeth(weth, p1.account.address)
+  const st = stakesFor({
+    minStake: await read<bigint>(rounds, R_ABI, 'minStake'), maxStake: await read<bigint>(rounds, R_ABI, 'maxStake'), minBank: await read<bigint>(rounds, R_ABI, 'minBank'),
+  })
+  const stakes = { p1: st.winStake + st.tieStake + st.oneStake, p2: st.winStake + st.tieStake, referrer: 0n }
+  out(`WETH is ${mintable ? 'a mintable stand-in' : 'deposit-backed: each player wraps its own ETH for the stakes'}; stakes A ${fmtEth(st.winStake)} each side, TIE ${fmtEth(st.tieStake)} each side, ONE ${fmtEth(st.oneStake)}`)
   let short = false
-  for (const [a, need] of [[p1, minEth.p1], [p2, minEth.p2], [ref, minEth.referrer]] as const) {
+  for (const [a, stake, gas] of [[p1, stakes.p1, GAS_RESERVE], [p2, stakes.p2, GAS_RESERVE], [ref, 0n, 5n * 10n ** 13n]] as const) {
     const b = await pub.getBalance({ address: a.account.address })
-    out(`  ${a.name} ${a.account.address}: ${fmtEth(b)} ETH (needs ${fmtEth(need)})`)
+    const w = stake > 0n ? await read<bigint>(weth, WETH_ABI, 'balanceOf', [a.account.address]) : 0n
+    const toWrap = mintable || stake <= w ? 0n : stake - w
+    const need = gas + toWrap
+    out(`  ${a.name} ${a.account.address}: ${fmtEth(b)} ETH${stake > 0n ? `, ${fmtEth(w)} WETH` : ''} (needs ${fmtEth(need)} ETH${toWrap > 0n ? `: ${fmtEth(toWrap)} to wrap plus gas` : ''})`)
     if (b < need) short = true
   }
   for (const [n, a] of [['win', poolList[0]], ['tie', poolList[1]], ['one', poolList[2]]] as const) {
@@ -755,10 +786,10 @@ async function mainTestnet() {
   } else {
     out('  keeper: external (the deployed keeper must be running with ROUNDS_ENABLED=true and this ROUNDS_ADDRESS)')
   }
-  out('plan: mint stand-in WETH to p1 and p2, approve, 5 bets in the next 300 s window (A 0.02 each side, TIE 0.01 each side, ONE 0.01 one side),')
+  out(`plan: ${mintable ? 'mint stand-in WETH to' : 'wrap ETH for'} p1 and p2, approve, 5 bets in the next 300 s window (A ${fmtEth(st.winStake)} each side, TIE ${fmtEth(st.tieStake)} each side, ONE ${fmtEth(st.oneStake)} one side),`)
   out('      claim ONE at closeAt, wait strikeEnd (+10 min) for fixStrike, ONE pushTick on the win pool, wait settleAt (+5 min) for settle,')
   out('      4 claims, claimReferral, withdrawFees if anything is left. About 25 minutes; about 2.5 million gas in total for the players and the push.')
-  if (short) throw new Error('a wallet is short of testnet ETH for gas: fund it first (see ROUNDS-DEPLOY.md)')
+  if (short) throw new Error('a wallet is short of testnet ETH (gas, and the stakes to wrap when the WETH is deposit-backed): fund it from the faucet first (see ROUNDS-DEPLOY.md)')
   if (!YES) {
     out('\nnothing sent. To run it: add --yes-testnet')
     return
@@ -808,5 +839,11 @@ main()
   // exitCode, not process.exit: on Windows exiting under open sockets can abort Node with a libuv
   // assertion. The unref'd timer below ends a process that something still holds open.
   .then(() => { const ok = checks.length === 0 || report(); closeProxy?.(); anvil?.kill(); process.exitCode = ok ? 0 : 1 })
-  .catch((e) => { out(`\nERROR: ${String(e?.shortMessage ?? e?.message ?? e).split('\n')[0]}`); if (checks.length) report(); closeProxy?.(); anvil?.kill(); process.exitCode = 1 })
+  .catch((e) => {
+    const msg = String(e?.shortMessage ?? e?.message ?? e).split('\n')[0]
+    out(`\nERROR: ${msg}`)
+    // an aborted run is a failed run: the report must not say ALL CHECKS PASSED on the checks made before the error
+    if (checks.length) { checks.push({ ok: false, what: `run aborted: ${msg}` }); report() }
+    closeProxy?.(); anvil?.kill(); process.exitCode = 1
+  })
   .finally(() => { setTimeout(() => process.exit(), 15_000).unref() })
