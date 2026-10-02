@@ -130,3 +130,30 @@
 .rnd-chart-nowline{stroke:var(--base-blue-2);stroke-width:1;stroke-dasharray:2 3}
 .rnd-chart-cross{stroke:var(--text-faint);stroke-width:1}
 .rnd-chart-note{margin:6px 0 0;font-size:12px;line-height:1.5;color:var(--text-dim)}
+
+/* ── the pool card sells the round ─────────────────── */
+.rnd-pool-head{align-items:center}
+.rnd-pool-move{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.04em;color:var(--text-dim);margin-left:auto}
+.rnd-pool-move.up{color:var(--up)}
+.rnd-pool-move.down{color:var(--down)}
+.rnd-spark{width:84px;height:24px;flex:0 0 auto}
+.rnd-spark-line{fill:none;stroke:var(--text-dim);stroke-width:1.5;stroke-linejoin:round}
+.rnd-spark-dot{fill:var(--text-dim)}
+.rnd-spark-dot.up{fill:var(--up)}
+.rnd-spark-dot.down{fill:var(--down)}
+.rnd-round-live{align-items:stretch}
+.rnd-count-row{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.rnd-count{font-family:var(--mono);font-size:28px;font-weight:800;letter-spacing:.02em;color:#fff;line-height:1;font-variant-numeric:tabular-nums}
+.rnd-count.soon{color:var(--down);animation:rnd-pulse 1s ease-in-out infinite}
+@keyframes rnd-pulse{0%,100%{opacity:1}50%{opacity:.45}}
+.rnd-count-label{font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--text-dim)}
+.rnd-progress{height:3px;margin:6px 0;border-radius:2px;background:var(--line-2);overflow:hidden}
+.rnd-progress span{display:block;height:100%;background:var(--up);transition:width 1s linear}
+.rnd-round-hint{font-size:12px;line-height:1.4;color:var(--text);margin-top:3px}
+.rnd-side-btns{display:flex;flex-direction:column;gap:6px;justify-content:center}
+.rnd-go{min-width:84px;min-height:40px;padding:0 14px;border-radius:8px;font-family:var(--mono);font-size:13px;font-weight:800;letter-spacing:.1em;border:1px solid transparent}
+.rnd-go.up{background:var(--up);color:#000}
+.rnd-go.down{background:var(--down);color:#fff}
+.rnd-go:hover{filter:brightness(1.08)}
+.rnd-go.on{box-shadow:0 0 0 2px #fff inset}
+@media (max-width:480px){.rnd-side-btns{flex-direction:row}.rnd-count{font-size:24px}}

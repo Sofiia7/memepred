@@ -10,7 +10,9 @@ import { TARGET_CHAIN } from '../lib/chain'
 import { formatAmount } from '../lib/money'
 import { shortAddr } from '../lib/symbols'
 import { ROUNDS_CONFIG } from './roundsAbi'
-import { bpsToPct, clockTime, currentIndex, durationLabel, roundIdOf, roundTimes, sideLabel, type RoundSide } from './roundMath'
+import { acceptedBank, bpsToPct, clockTime, currentIndex, durationLabel, formatMultiplier, roundIdOf, roundTimes, SIDE_DOWN, SIDE_UP, sideLabel, winMultiplier, type RoundSide } from './roundMath'
+import { fmtPct, pctFromTicks, type TickSample } from './strikeMath'
+import { usePoolTicks } from './usePoolTicks'
 import { parseChallenge } from './challenge'
 import type { RoundsConstants, RoundState } from './roundsClient'
 import { urgency } from './ticketState'
@@ -124,9 +126,10 @@ function RoundsScreen() {
         }
       />
       <p className="rnd-lead">
-        Pick a coin and bet UP or DOWN with test ETH. These test pools use scripted prices, not live market trades. Both
-        sides need enough stake for the round to play; otherwise you can collect a full refund. The result compares
-        prices measured after betting closes.
+        Call the next move of a meme coin: UP or DOWN, a new round every 5 minutes, the winning side takes{' '}
+        {c ? formatMultiplier(winMultiplier(c.normalFeeBps)) : '1.96x'}. Both sides must be in for a round to play; if not,
+        every stake comes back. The result compares prices measured after betting closes.
+        {TARGET_CHAIN.testnet ? ' Test ETH; these test pools move on scripted prices.' : ''}
       </p>
 
       {c?.paused && (
@@ -231,11 +234,19 @@ function PoolCard(p: {
 }) {
   const depth = usePoolDepth(p.pool.pool).data
   const thin = !!depth && !!p.constants && depth.depth < p.constants.gateDepth
+  const ticks = usePoolTicks(p.pool.pool, p.pool.wethIsToken0, p.now)
+  const move = moveOver(ticks, p.now, 300)
+  const moveTone = move === null ? '' : move > 0 ? 'up' : move < 0 ? 'down' : ''
+  const mult = p.constants ? formatMultiplier(winMultiplier(p.constants.normalFeeBps)) : undefined
+  const [chosen, setChosen] = useState<RoundSide | undefined>()
   return (
     <div className="rnd-pool" id={`pool-${p.pool.pool.toLowerCase()}`}>
       <div className="rnd-pool-head">
         <span className="rnd-pool-sym">{p.pool.symbol}</span>
-        <span className="rnd-pool-addr">{shortAddr(p.pool.pool)}</span>
+        <span className={'rnd-pool-move ' + moveTone} aria-label="Price move over the last 5 minutes">
+          {move === null ? (ticks.length ? 'price steady' : 'reading price…') : `${fmtPct(move)} · 5 min`}
+        </span>
+        <Sparkline ticks={ticks} now={p.now} />
       </div>
       {thin && <div className="rnd-round-sub rnd-tone-bad">Pool liquidity is too low for new bets</div>}
       {p.durations.map((d) => {
@@ -248,28 +259,69 @@ function PoolCard(p: {
         const open = p.openKey === key
         const myBet = p.myRounds.get(roundId.toString())
         const alreadyIn = !!myBet
+        const left = times.closeAt - p.now
+        const soon = left <= 60
+        const progress = Math.min(100, Math.max(0, ((p.now - times.openAt) / d) * 100))
+        const up = round?.up ?? 0n
+        const down = round?.down ?? 0n
+        const hint = !round
+          ? 'reading the book…'
+          : up === 0n && down === 0n
+            ? 'Nobody in yet. The first bet sets the pace.'
+            : up === 0n
+              ? `DOWN is in, UP is empty: take UP and the round plays.`
+              : down === 0n
+                ? `UP is in, DOWN is empty: take DOWN and the round plays.`
+                : `${amt(acceptedBank(up, down, p.constants?.chainSideRatio ?? 1))} matched${mult ? `, ${mult} to the winning side` : ''}.`
+        const choose = (side: RoundSide) => {
+          setChosen(side)
+          if (!open) p.onToggle(key)
+        }
+        const preset = chosen ?? p.presetSide
         return (
           <div key={d}>
-            <div className="rnd-round">
+            <div className="rnd-round rnd-round-live">
               <div className="rnd-round-main">
-                <div className="rnd-round-top">
-                  <span className="rnd-dur">{durationLabel(d)} round</span>
-                  <span>bets close in {countdownFrom(times.closeAt, p.now)}</span>
+                <div className="rnd-count-row">
+                  <span className={'rnd-count' + (soon ? ' soon' : '')} aria-label="Bets close in">
+                    {countdownFrom(times.closeAt, p.now)}
+                  </span>
+                  <span className="rnd-count-label">
+                    to close · {durationLabel(d)} round{mult ? ` · pays ${mult}` : ''}
+                  </span>
+                </div>
+                <div className="rnd-progress" aria-hidden="true">
+                  <span style={{ width: `${progress}%` }} />
                 </div>
                 <div className="rnd-round-sub">
-                  {round ? `UP ${amt(round.up)} · DOWN ${amt(round.down)}` : 'reading…'}
+                  {round ? `UP ${amt(up)} · DOWN ${amt(down)}` : 'reading…'}
                   {myBet ? ` · YOUR ${sideLabel(myBet.ticket.side)} ${amt(myBet.ticket.stake)}` : ''}
                 </div>
+                <div className="rnd-round-hint">{hint}</div>
               </div>
-              <button className={'rnd-btn' + (open ? ' ghost' : '')} aria-expanded={open} onClick={() => p.onToggle(key)}>
-                {open ? 'CLOSE' : alreadyIn ? 'YOUR BET' : 'BET'}
-              </button>
+              <div className="rnd-side-btns">
+                {alreadyIn ? (
+                  <button className={'rnd-btn' + (open ? ' ghost' : '')} aria-expanded={open} onClick={() => p.onToggle(key)}>
+                    {open ? 'CLOSE' : 'YOUR BET'}
+                  </button>
+                ) : (
+                  <>
+                    <button type="button" className={'rnd-go up' + (open && preset === SIDE_UP ? ' on' : '')} aria-pressed={open && preset === SIDE_UP} onClick={() => choose(SIDE_UP)}>
+                      UP
+                    </button>
+                    <button type="button" className={'rnd-go down' + (open && preset === SIDE_DOWN ? ' on' : '')} aria-pressed={open && preset === SIDE_DOWN} onClick={() => choose(SIDE_DOWN)}>
+                      DOWN
+                    </button>
+                  </>
+                )}
+              </div>
             </div>
             {open && (
-              // Keyed by round: when the window rolls over, the form starts clean. Its confirmation
-              // names this round's strike and exit times, so it must not carry over to the next one.
+              // Keyed by round and chosen side: when the window rolls over, the form starts clean, and a
+              // side picked on the card opens the form with it. Its confirmation names this round's
+              // strike and exit times, so it must not carry over to the next one.
               <BetPanel
-                key={roundId.toString()}
+                key={`${roundId.toString()}:${preset ?? ''}`}
                 pool={p.pool}
                 duration={d}
                 roundId={roundId}
@@ -280,13 +332,45 @@ function PoolCard(p: {
                 constants={p.constants}
                 alreadyIn={alreadyIn}
                 depth={depth}
-                presetSide={p.presetSide}
+                presetSide={preset}
               />
             )}
           </div>
         )
       })}
     </div>
+  )
+}
+
+/** Percent move from the sample `window` seconds ago (or the earliest, when the series is younger) to the latest. */
+function moveOver(ticks: TickSample[], now: number, window: number): number | null {
+  if (ticks.length < 2) return null
+  const latest = ticks[ticks.length - 1]
+  let from = ticks[0]
+  for (const s of ticks) if (s.t <= now - window) from = s
+  return pctFromTicks(latest.tick, from.tick)
+}
+
+/** The last ten minutes of the pool's price as a small line, the latest point marked. */
+function Sparkline(p: { ticks: TickSample[]; now: number }) {
+  const w = 84
+  const h = 24
+  const pts = p.ticks.filter((s) => s.t >= p.now - 600)
+  if (pts.length < 2) return <svg className="rnd-spark" viewBox={`0 0 ${w} ${h}`} aria-hidden="true" />
+  const base = pts[0].tick
+  const ys = pts.map((s) => pctFromTicks(s.tick, base))
+  const lo = Math.min(...ys), hi = Math.max(...ys)
+  const span = Math.max(hi - lo, 0.05)
+  const t0 = pts[0].t, t1 = Math.max(pts[pts.length - 1].t, t0 + 1)
+  const X = (t: number) => 2 + ((t - t0) / (t1 - t0)) * (w - 8)
+  const Y = (v: number) => 3 + ((hi - v) / span) * (h - 6)
+  const d = pts.map((s, i) => `${i ? 'L' : 'M'}${X(s.t).toFixed(1)},${Y(ys[i]).toFixed(1)}`).join(' ')
+  const last = ys[ys.length - 1]
+  return (
+    <svg className="rnd-spark" viewBox={`0 0 ${w} ${h}`} aria-hidden="true">
+      <path d={d} className="rnd-spark-line" />
+      <circle cx={X(pts[pts.length - 1].t)} cy={Y(last)} r="2.5" className={'rnd-spark-dot ' + (last > 0 ? 'up' : last < 0 ? 'down' : '')} />
+    </svg>
   )
 }
 
