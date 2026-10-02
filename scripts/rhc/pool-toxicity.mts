@@ -23,6 +23,9 @@
 // Options: --cache DIR (default <os tmp>/flipthememe-sharp-edge), --head BLOCK, --days N,
 //          --only-old (sections 1-9 only), --no-search (skip sections 13-14 and 17),
 //          --skip-stage4 (development: sections 15-17 without 10-14)
+//   node scripts/rhc/pool-toxicity.mts --house-only --json docs/rhc/measurements/house-fill/summary.json
+//          section 18 only: the house fills the missing side of a round (ROUNDS: pause 300 s, bank from 0.01);
+//          sections 1-17 and their summary.json are not touched
 import { readFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -34,6 +37,7 @@ const CACHE = arg('cache', join(tmpdir(), 'flipthememe-sharp-edge'))
 const HEAD = Number(arg('head', 75769939)) // the pinned head of SHARP-EDGE.md
 const DAYS = Number(arg('days', 14))
 const QUICK = argv.includes('--quick')
+const HOUSE_ONLY = argv.includes('--house-only') // section 18 only (the house fills the missing side); its own summary file
 const t0Run = Date.now()
 
 // ── Round rules (docs/rhc/POSITIVE-EV.md, "Предложенные правила") ─────────────
@@ -526,6 +530,8 @@ function run(label, over) {
   return cv
 }
 
+const demandScenarios = []
+if (!HOUSE_ONLY) {
 say('## 1. Базовая конфигурация и деньги проекта')
 {
   const c = mk({})
@@ -604,7 +610,6 @@ say()
 // ── Rounds per day for a 0.03 ETH mean bank ──
 say('## 9. Сколько раундов в сутки на пул даёт средний принятый банк 0.03 ETH (только поток обычных игроков, 80:20)')
 say(`${padE('ставок в час на пул', 20)} ${[60, 300, 900, 1800, 3600, 7200].map((T) => pad(`${T} с`, 18)).join(' ')}`)
-const demandScenarios = []
 for (const perHour of [2, 5, 10, 30, 100, 300]) {
   const cells = [60, 300, 900, 1800, 3600, 7200].map((T) => {
     const f = flowOnly(T, perHour / 3600, 5, 4000, 4)
@@ -617,6 +622,7 @@ for (const perHour of [2, 5, 10, 30, 100, 300]) {
 say('ячейка: средний принятый банк активного раунда (ETH) x активных раундов в сутки на пул')
 say()
 console.error(`[stage 1-9] ${((Date.now() - t0Run) / 1000).toFixed(0)} s`)
+}
 
 // ════════════════════════════════════════════════════════════════════════════
 // Stage 4: sections 10-14. Everything above is unchanged; POSITIVE-EV.md reads its numbers.
@@ -810,7 +816,9 @@ function revEv(Uo, Do, Zo, bu, bd, ub, pU, pD, pT, ru) {
 }
 // the (a) bot at the last second of the window: stake X on side sd, expected over the hidden split of the commitments
 function evBook(X, S, O, ru, pw, pl, pt) {
-  const own = S + X, aOwn = Math.min(own, ru.c * O), aOpp = Math.min(O, ru.c * own), B = aOwn + aOpp
+  const own = S + X
+  if (ru.house && own > O) O += Math.min(ru.house.cap, own - O) // section 18: the bot expects the house to fill the other side up to its cap per round
+  const aOwn = Math.min(own, ru.c * O), aOpp = Math.min(O, ru.c * own), B = aOwn + aOpp
   if (aOwn <= 0 || aOpp <= 0 || B < ru.bmin - 1e-12) return 0
   // stage 5, fill 'time': inside a side earlier stakes are filled first, the bot (last) gets only what is left
   if (ru.fill === 'time') return Math.max(0, aOwn - Math.min(S, aOwn)) * (pw * (((1 - ru.f) * B) / aOwn - 1) - pl - ru.ft * pt)
@@ -861,8 +869,9 @@ for (const k of [0.125, 0.25, 0.5, 1, 2]) for (const w of [0.5, 1]) POLS.push({ 
 for (const gate of [false, true]) for (const k of [0.25, 0.5, 1, 2]) for (const w of [0.5, 1]) POLS.push({ id: `b${gate ? 'g' : ''} k${k} w${w}`, kind: 'b', gate, k, w, burn: true })
 for (const gate of [false, true]) for (const k of [0.25, 0.5, 1]) POLS.push({ id: `c${gate ? 'g' : ''} k${k} w1`, kind: 'c', gate, k, w: 1, burn: true })
 const POL_SPECS = POLS.map((pol) => ({ kind: 'pol', pol }))
-const newAcc = () => ({ win: 0, act: 0, ties: 0, bank: 0, fee: 0, rev: 0, ordNet: 0, ordAcc: 0, ordCom: 0, botNet: 0, botAcc: 0, botCommit: 0, burn: 0, burnRounds: 0, botRounds: 0, un: 0, cons: 0, minC: Infinity, cl: new Map() })
-function clAdd(a, ck, i, v) { let x = a.cl.get(ck); if (!x) { x = new Float64Array(5); a.cl.set(ck, x) } x[i] += v } // windows, ordinary net, ordinary accepted, project net, bot net
+const newAcc = () => ({ win: 0, act: 0, ties: 0, bank: 0, fee: 0, rev: 0, ordNet: 0, ordAcc: 0, ordCom: 0, botNet: 0, botAcc: 0, botCommit: 0, burn: 0, burnRounds: 0, botRounds: 0, un: 0, cons: 0, minC: Infinity, cl: new Map(),
+  houseNet: 0, houseStake: 0, houseAcc: 0, houseRounds: 0, houseMade: 0, hd: new Map() }) // the house of section 18: its money, and what it has spent per pool-day
+function clAdd(a, ck, i, v) { let x = a.cl.get(ck); if (!x) { x = new Float64Array(6); a.cl.set(ck, x) } x[i] += v } // windows, ordinary net, ordinary accepted, project net, bot net, house net
 const SCR = new Float64Array(8)
 // stage 5: the same accounting when a side is filled in time order (ordinary stakes first, the bot last); the
 // prize and the burned pool are shared per accepted unit
@@ -912,13 +921,33 @@ function realizeTime(a, ck, fl, bu, bd, ub, commit, oc, ru) {
   }
 }
 function realize(a, ck, fl, bu, bd, ub, commit, oc, ru) {
-  if (ru.fill === 'time') return realizeTime(a, ck, fl, bu, bd, ub, commit, oc, ru)
-  const U = fl.Uo + bu, D = fl.Do + bd
+  if (ru.fill === 'time') {
+    if (ru.house) throw new Error('the house fill (section 18) is modeled only with the pro rata fill')
+    return realizeTime(a, ck, fl, bu, bd, ub, commit, oc, ru)
+  }
+  let U = fl.Uo + bu, D = fl.Do + bd
+  // Section 18, the house: after the close it adds to the short side what is missing, never more than its cap per
+  // round and what is left of its budget for this pool-day, and only when the round plays because of it. From then
+  // on it is a participant like any other: accepted pro rata, paid or refunded by the same rules.
+  let hU = 0, hD = 0
+  if (ru.house) {
+    const spent = a.hd.get(ck) ?? 0, left = Math.max(0, ru.house.day - spent), gap = U - D
+    if (gap > 0) hD = Math.min(gap, ru.house.cap, left); else if (gap < 0) hU = Math.min(-gap, ru.house.cap, left)
+    const U2 = U + hU, D2 = D + hD
+    const plays = U2 > 0 && D2 > 0 && Math.min(U2, ru.c * D2) + Math.min(D2, ru.c * U2) >= ru.bmin - 1e-12
+    if (hU + hD > 0 && plays) {
+      const played = U > 0 && D > 0 && Math.min(U, ru.c * D) + Math.min(D, ru.c * U) >= ru.bmin - 1e-12
+      if (!played) a.houseMade++
+      a.hd.set(ck, spent + hU + hD)
+      U = U2; D = D2
+    } else { hU = 0; hD = 0 }
+  }
   const act = crPay(U, D, ru.phi * (ub + fl.Zo), oc, ru, SCR)
   const rU = SCR[1], rD = SCR[2], fee = SCR[3]
   const botRec = (bu > 0 ? (rU * bu) / U : 0) + (bd > 0 ? (rD * bd) / D : 0) + (1 - ru.phi) * ub
   const ordRec = (fl.Uo > 0 ? (rU * fl.Uo) / U : 0) + (fl.Do > 0 ? (rD * fl.Do) / D : 0) + (1 - ru.phi) * fl.Zo
-  a.cons = Math.max(a.cons, Math.abs(ordRec + botRec + fee + SCR[4] - fl.V - commit)) // money is conserved
+  const houseRec = (hU > 0 ? (rU * hU) / U : 0) + (hD > 0 ? (rD * hD) / D : 0)
+  a.cons = Math.max(a.cons, Math.abs(ordRec + botRec + houseRec + fee + SCR[4] - fl.V - commit - hU - hD)) // money is conserved
   a.un += SCR[4]
   const on = ordRec - fl.V
   let oa = fl.Zo // an unrevealed ordinary stake counts as played: its owner lost the burned part
@@ -928,6 +957,7 @@ function realize(a, ck, fl, bu, bd, ub, commit, oc, ru) {
     if (oc !== 1 && oc !== -1) a.ties++
     oa += (fl.Uo > 0 ? (aU * fl.Uo) / U : 0) + (fl.Do > 0 ? (aD * fl.Do) / D : 0)
     a.botAcc += (bu > 0 ? (aU * bu) / U : 0) + (bd > 0 ? (aD * bd) / D : 0)
+    a.houseAcc += (hU > 0 ? (aU * hU) / U : 0) + (hD > 0 ? (aD * hD) / D : 0)
     clAdd(a, ck, 3, net)
   }
   a.ordNet += on; a.ordAcc += oa; a.ordCom += fl.V
@@ -937,6 +967,11 @@ function realize(a, ck, fl, bu, bd, ub, commit, oc, ru) {
     a.botNet += bn; a.botCommit += commit; a.botRounds++
     clAdd(a, ck, 4, bn)
     if (ub > 0) { a.burn += ru.phi * ub; a.burnRounds++ }
+  }
+  if (hU + hD > 0) {
+    const hn = houseRec - hU - hD
+    a.houseNet += hn; a.houseStake += hU + hD; a.houseRounds++
+    clAdd(a, ck, 5, hn)
   }
 }
 // a bot without any price forecast: the pooled first-week rates, the same for both sides
@@ -975,7 +1010,7 @@ function passCR(T, R, ru, flows, specs, aCache = null, blind = false, mode5 = {}
       if (w === 0 && sp.kind !== 'pol' && !both) continue
       const a = A[si][w]
       a.win++; clAdd(a, ck, 0, 1)
-      if (fl.V <= 0) continue // nobody committed: nothing to play
+      if (fl.V <= 0 && !ru.house) continue // nobody committed: nothing to play (against the house a bot may play alone)
       if (sp.kind === 'none' || (sp.q !== undefined && part >= sp.q)) { realize(a, ck, fl, 0, 0, 0, 0, oc, ru); continue }
       if (sp.kind === 'opt') { const [sd, x] = getA(); realize(a, ck, fl, sd > 0 ? x : 0, sd < 0 ? x : 0, 0, x, oc, ru); continue }
       if (sp.kind === 'two') { const x = Math.max(MIN_STAKE, sp.k * fl.V); realize(a, ck, fl, x, x, 0, 2 * x, oc, ru); continue }
@@ -1025,8 +1060,12 @@ function clRatio(a, iNum, iDen, pick) {
 }
 const H1 = (k) => k % 1000 < HALF_DAY % 1000
 function crStats(a, T) {
-  const k = 86400 / T, o = clRatio(a, 1, 2), rv = clRatio(a, 3, 0), bt = clRatio(a, 4, 0)
+  const k = 86400 / T, o = clRatio(a, 1, 2), rv = clRatio(a, 3, 0), bt = clRatio(a, 4, 0), hs = clRatio(a, 5, 0)
   return {
+    // section 18, the house: its net per pool-day (with the pool x day error), its return per accepted unit, its share of the
+    // bank, what it stakes per pool-day, and the rounds per day that play only because of it
+    houseDay: hs.r * k, houseDaySe: hs.se * k, houseRet: a.houseAcc ? a.houseNet / a.houseAcc : NaN, houseShare: a.bank ? a.houseAcc / a.bank : 0,
+    houseStakeDay: (a.houseStake / a.win) * k, houseRoundsPerDay: (a.houseRounds / a.win) * k, houseMadeRoundsPerDay: (a.houseMade / a.win) * k,
     rounds: a.win, activeShare: a.act / a.win, activeRoundsPerDay: (a.act / a.win) * k, meanBank: a.bank / a.act,
     tieShare: a.ties / a.act, feePct: a.fee / a.bank, retainedPct: (a.fee * (1 - REF_SHARE)) / a.bank,
     revDay: rv.r * k, revDaySe: rv.se * k, ordRet: o.r, ordSe: o.se, ordRetPerCommitted: a.ordNet / a.ordCom,
@@ -1088,7 +1127,8 @@ function worstUpTo25(cv) {
 }
 // the fields of a result kept in summary.json (the full set is in the objects, the file stays small)
 const BRIEF = ['rounds', 'activeShare', 'activeRoundsPerDay', 'meanBank', 'tieShare', 'retainedPct', 'revDay', 'revDaySe', 'ordRet', 'ordSe', 'ordRetH1', 'ordRetH2',
-  'ordRetPerCommitted', 'botShare', 'botRet', 'botDay', 'botDaySe', 'burnShare', 'unallocated', 'cons', 'minContribution']
+  'ordRetPerCommitted', 'botShare', 'botRet', 'botDay', 'botDaySe', 'burnShare', 'unallocated', 'cons', 'minContribution',
+  'houseDay', 'houseDaySe', 'houseRet', 'houseShare', 'houseStakeDay', 'houseRoundsPerDay', 'houseMadeRoundsPerDay']
 const strip = (s) => { const o = {}; for (const k of BRIEF) if (typeof s[k] === 'number' || s[k] === null) o[k] = s[k]; return o }
 const HEAD4 = `${padE('мера', 60)} ${pad('без бота', 8)} ${pad('монополист: доля, обычн., бот', 29)} ${pad('двустор. k0.25', 15)} ${pad('боты 25%', 13)} ${pad('худшая при доле бота до 25%', 36)}`
 function row4(label, cv) {
@@ -1132,7 +1172,7 @@ function selectiveOf(A, T) {
   return { a: st(ia), noBurn: nb && { ...nb, deltaVsA: dNb.d, deltaVsASe: dNb.se }, burn: bb && { ...bb, deltaVsNoBurn: dB.d, deltaVsNoBurnSe: dB.se }, chosen: st(iall), upTo25: st(i25) }
 }
 
-if (!ONLY_OLD && !SKIP4) {
+if (!ONLY_OLD && !SKIP4 && !HOUSE_ONLY) {
   // ════════════════════════════════════════════════════════════════════════════
   say('## 10. Реальный спрос 2-30 ставок в час на пул: меры защиты и commit-reveal (E2, S6, кап 80:20, комиссия 2% / 1%, банк от 0.01 ETH)')
   say('Отличия от разделов 1-9: бот выбирает любую сторону (в том числе против своего прогноза, если множитель это окупает); поток задан числом ставок в час, а не целевым банком; раунды оставляют место для окна раскрытия до 300 с.')
@@ -1379,6 +1419,7 @@ if (!ONLY_OLD) {
   const dLoss = (p) => `${p.d <= 0 ? '+' : '-'}${(100 * Math.abs(p.d)).toFixed(1)} ± ${(100 * p.se).toFixed(1)}` // loss of the first minus the second
 
   // ════════════════════════════════════════════════════════════════════════════
+  if (!HOUSE_ONLY) {
   say('## 15. Кап 1:1 (50:50): видимая книга против commit-reveal (E2, S6, комиссия 2% / 1%, банк от 0.01 ETH)')
   say('Кап 1:1: с каждой стороны принимается min(UP, DOWN), лишнее возвращается пропорционально, выплата всем 1.96x.')
   say('Видимая книга: без commit-reveal, бот ставит в последнюю секунду окна и видит стороны всех ставок; страйк E2 сразу после закрытия или через паузу 120 / 300 с (без шага раскрытия).')
@@ -1446,8 +1487,9 @@ if (!ONLY_OLD) {
   say()
   stage5.strikeWindow = strikeWindow
   console.error(`[section 16] ${((Date.now() - t0Run) / 1000).toFixed(0)} s`)
+  }
 
-  if (!NO_SEARCH) {
+  if (!NO_SEARCH && !HOUSE_ONLY) {
     // ════════════════════════════════════════════════════════════════════════════
     const MODES = { vis: { label: 'видимая', R: 0, vis: true }, visGap: { label: 'видимая, пауза 300 с', R: 300, vis: true }, cr: { label: 'commit-reveal R 300', R: 300, vis: false },
       visT: { label: 'видимая, очередь', R: 0, vis: true, fill: 'time' }, visGapT: { label: 'видимая, пауза 300 с, очередь', R: 300, vis: true, fill: 'time' } }
@@ -1499,9 +1541,68 @@ if (!ONLY_OLD) {
     stage5.capOneSelected = selected
     console.error(`[section 17] ${((Date.now() - t0Run) / 1000).toFixed(0)} s`)
   }
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // Section 18: the house fills the missing side. Rules of the testnet of 2 October: cap 1:1, visible book, pause
+  // 300 s before the strike, fee 2% / 1%, bank from 0.01 ETH. After the close the house adds to the short side what
+  // is missing, up to a cap per round and a budget per pool-day, only when the round plays because of it. The bots
+  // are the ones of sections 15-17, and the S6 monopolist knows the house will fill it; in an empty round it plays
+  // alone against the house. Measured: rounds that play, the ordinary player's loss, the house's money, the project's.
+  say('## 18. Дом добирает недостающую сторону (кап 1:1, видимая книга, пауза 300 с, комиссия 2% / 1%, банк от 0.01 ETH)')
+  say('После закрытия приёма дом ставит на меньшую сторону недостающее: не больше капа на раунд и остатка бюджета на пул в сутки, и только если раунд от этого играет. Дальше дом - участник как все: принимается пропорционально, платит и получает по тем же правилам.')
+  say('Бот знает о доме: в его ожидании встречная сторона уже дополнена домом до капа; пустой раунд он может сыграть один против дома. Бот S6 выучен на первой неделе, числа - вторая неделя; ошибки по блокам пул x сутки.')
+  say(`Колонки: активных раундов в сутки на пул без дома -> с домом (в скобках те, что играют только благодаря дому); потеря обычного игрока без бота, при монополисте и худшая при доле бота до 25% (с домом доля бота в мелком раунде обычно больше 25%, тогда это число без бота); результат дома в мETH на пул в сутки: без бота, при монополисте (его доля банка), худший по всем семействам ботов (какое семейство, его доля), при боте без прогноза; доход проекта после газа с домом, $ в сутки (ETH = $${ETH_USD}).`)
+  const HOUSE_T = 300, HOUSE_R = 300, HOUSE_BMIN = 0.01
+  const HG = QUICK ? { W: [60], perHour: [2, 5], cap: [0.01], day: [0.1] } : { W: [60, 300], perHour: [1, 2, 5, 10], cap: [0.01, 0.02], day: [0.1, 0.5, Infinity] }
+  const dayLabel = (d) => (Number.isFinite(d) ? String(d) : 'без лимита')
+  const hm = (r) => `${mEth(r.houseDay, 2)} ${Number.isFinite(r.houseDaySe) ? '±' + mEth(r.houseDaySe, 2) : ''}`
+  // the house's worst pool-day result over every bot family and point. No share limit here: the house is matched
+  // with whatever bot turns up, and once the house fills the small rounds a bot's share of the bank is large anyway.
+  const houseWorst = (cv) => {
+    let w = { houseDay: cv.none.houseDay, houseDaySe: cv.none.houseDaySe, src: 'без бота', share: 0 }
+    for (const [src, pts] of [['монополист', cv.optQ], ['боты по доле', cv.forced], ['двусторонний k0.25', cv.two[0.25]], ['двусторонний k1', cv.two[1]]]) {
+      for (const p of pts) if (p.houseDay < w.houseDay) w = { houseDay: p.houseDay, houseDaySe: p.houseDaySe, src, share: p.botShare }
+    }
+    return w
+  }
+  say(`${padE('W, спрос, кап/раунд, бюджет/сут', 36)} ${pad('раундов/сут', 26)} ${pad('игрок б/бота', 12)} ${pad('игрок: монополист', 17)} ${pad('игрок при 25%', 14)} ${pad('дом: без бота', 16)} ${pad('дом: монополист', 26)} ${pad('дом: худший бот', 40)} ${pad('дом: без прогн.', 16)} ${pad('проект/сут', 11)}`)
+  const houseCells = []
+  for (const W of HG.W) for (const perHour of HG.perHour) {
+    const lam = perHour / 3600, level = 1000 + perHour
+    const fl = flowsVisible(HOUSE_T, lam, level, 'uniform')
+    const ru0 = { ...RU1, bmin: HOUSE_BMIN, fill: 'prorata' }
+    const base = crCurve(HOUSE_T, HOUSE_R, ru0, fl, [], false, { W })
+    const wb = worstUpTo25(base)
+    say(`${padE(`W ${W}, ${perHour}/ч, без дома`, 36)} ${pad(base.none.activeRoundsPerDay.toFixed(2), 26)} ${pad(pct(-base.none.ordRet), 12)} ${pad(lossPm(base.opt.ordRet, base.opt.ordSe), 17)} ${pad(lossPm(wb.ordRet, wb.ordSe), 14)} ${pad('-', 16)} ${pad('-', 26)} ${pad('-', 40)} ${pad('-', 16)} ${pad(usd(base.none.revDay), 11)}`)
+    for (const cap of HG.cap) for (const day of HG.day) {
+      const ru = { ...ru0, house: { cap, day } }
+      const cv = crCurve(HOUSE_T, HOUSE_R, ru, fl, [], false, { W }), cvB = crCurve(HOUSE_T, HOUSE_R, ru, fl, [], true, { W })
+      const w = worstUpTo25(cv), hw = houseWorst(cv)
+      say(`${padE(`W ${W}, ${perHour}/ч, ${cap}, ${dayLabel(day)}`, 36)} ${pad(`${base.none.activeRoundsPerDay.toFixed(2)} -> ${cv.none.activeRoundsPerDay.toFixed(2)} (${cv.none.houseMadeRoundsPerDay.toFixed(2)})`, 26)} ${pad(pct(-cv.none.ordRet), 12)} ${pad(lossPm(cv.opt.ordRet, cv.opt.ordSe), 17)} ${pad(lossPm(w.ordRet, w.ordSe), 14)} ${pad(hm(cv.none), 16)} ${pad(`${hm(cv.opt)} (${pct(cv.opt.botShare, 0)})`, 26)} ${pad(`${hm(hw)} (${hw.src} ${pct(hw.share, 0)})`, 40)} ${pad(hm(cvB.opt), 16)} ${pad(usd(cv.none.revDay), 11)}`)
+      houseCells.push({ W, betsPerHour: perHour, capPerRound: cap, budgetPerPoolDay: Number.isFinite(day) ? day : null,
+        base: strip(base.none), baseWorst25: wb, none: strip(cv.none), opt: strip(cv.opt), bots25: strip(cv.forced[2]), worst25: w,
+        houseWorst: hw, blindOpt: strip(cvB.opt), twoSidedK1: strip(cv.two[1][2]) })
+    }
+    say()
+  }
+  say('Чтение: «дом: ...» - деньги дома за сутки на один пул после выплат, минус - дом теряет; бюджет на сутки ограничивает именно это. «раундов/сут» - сколько раундов играет; в скобках те, что без дома не состоялись бы. Доход проекта считает комиссию и с денег дома: это перекладывание из одного кармана в другой, вычитать при оценке.')
+  say()
+  stage5.house = { T: HOUSE_T, pause: HOUSE_R, bmin: HOUSE_BMIN, fee: FEE, tieFee: FEE_TIE, grid: { W: HG.W, betsPerHour: HG.perHour, capPerRound: HG.cap, budgetPerPoolDay: HG.day.map((d) => (Number.isFinite(d) ? d : null)) }, cells: houseCells }
+  console.error(`[section 18] ${((Date.now() - t0Run) / 1000).toFixed(0)} s`)
 }
 console.error(`[done] ${((Date.now() - t0Run) / 1000).toFixed(0)} s`)
-if (argv.includes('--json')) {
+if (argv.includes('--json') && HOUSE_ONLY) {
+  // section 18 alone: its own file, the summary of sections 1-17 is not touched
+  const { writeFileSync, mkdirSync } = await import('node:fs')
+  const f = arg('json', 'docs/rhc/measurements/house-fill/summary.json')
+  mkdirSync(join(f, '..'), { recursive: true })
+  const r6 = (v) => (typeof v === 'number' ? (Number.isFinite(v) ? Number(v.toPrecision(6)) : null)
+    : Array.isArray(v) ? v.map(r6) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, r6(x)])) : v)
+  writeFileSync(f, JSON.stringify({ schema: 1, head: HEAD, days: DAYS, quick: QUICK, ...r6({
+    source: 'Section 18: historical price series of the sharp-edge cache; synthetic ordinary flow in bets per hour per pool; visible 1:1 book, pause 300 s, strike window W; the house fills the short side after the close up to a cap per round and a budget per pool-day; bots of sections 15-17 (S6 trained on the first week, scored on the second, aware of the house). Money in ETH per pool per day; errors by pool x day blocks.',
+    constants: { ethUsd: ETH_USD, gasGwei: GAS_GWEI, costEthPerActivatedRound: COST, referralShareOfFee: REF_SHARE, minStake: MIN_STAKE, stakeMix: MIX },
+    ...stage5.house }) }, null, 2) + '\n')
+} else if (argv.includes('--json')) {
   const { writeFileSync, mkdirSync } = await import('node:fs')
   const f = arg('json', 'docs/rhc/measurements/pool-toxicity/summary.json')
   mkdirSync(join(f, '..'), { recursive: true })
