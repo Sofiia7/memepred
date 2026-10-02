@@ -534,7 +534,9 @@ contract PoolRounds is Ownable2Step, Pausable, ReentrancyGuard {
                 IWrappedEther(address(weth)).withdraw(payout);
                 (bool sent,) = payable(msg.sender).call{value: payout}("");
                 require(sent, "ETH payout failed");
-            } else weth.safeTransfer(msg.sender, payout);
+            } else {
+                weth.safeTransfer(msg.sender, payout);
+            }
         }
         emit Claimed(roundId, msg.sender, payout, referrer, referralShare);
     }

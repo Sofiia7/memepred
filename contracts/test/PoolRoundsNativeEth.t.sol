@@ -25,12 +25,22 @@ contract PoolRoundsNativeEthTest is Test {
         pool.setLiquidity(1000 ether);
         pool.setCardinality(900, 900);
         factory.register(address(weth), token, 3000, address(pool));
-        rounds = new PoolRounds(PoolRounds.Params({
-            weth: address(weth), v3Factory: address(factory), referralRegistry: address(0),
-            treasury: address(this), maxSideRatio: 1, strikePause: 300,
-            strikeWindow: 300, depthPerBank: 2500, minStake: 0.005 ether,
-            maxStake: 0.04 ether, minBank: 0.02 ether, costAllowance: 69_692e9
-        }));
+        rounds = new PoolRounds(
+            PoolRounds.Params({
+                weth: address(weth),
+                v3Factory: address(factory),
+                referralRegistry: address(0),
+                treasury: address(this),
+                maxSideRatio: 1,
+                strikePause: 300,
+                strikeWindow: 300,
+                depthPerBank: 2500,
+                minStake: 0.005 ether,
+                maxStake: 0.04 ether,
+                minBank: 0.02 ether,
+                costAllowance: 69_692e9
+            })
+        );
         rounds.setDuration(300, true);
         rounds.listPool(address(pool));
         vm.deal(alice, 1 ether);
