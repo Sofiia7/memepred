@@ -21,6 +21,9 @@ import { Chev } from './icons'
 import { ChainMark } from './ChainMark'
 import { PreSignRules } from './PreSignRules'
 import type { PickedBet } from './MarketCard'
+import { ROUNDS_ENABLED } from '../../rounds/flag'
+
+const LEGACY_TESTNET = IS_POOL_BACKED && !!TARGET_CHAIN.testnet && ROUNDS_ENABLED
 
 const STAKE_CHIPS = IS_POOL_BACKED ? [0.005, 0.01, 0.02, 0.04] : [5, 10, 25, 100]
 
@@ -318,7 +321,7 @@ export function Composer({ picked, onClear }: { picked: PickedBet | null; onClea
               Get test ETH
             </a>
           )}
-          {insufficientWeth && (
+          {insufficientWeth && !LEGACY_TESTNET && (
             <button className="chip wrap-btn" disabled={wrapping || notEnoughEth} onClick={handleWrap}>
               {wrapping ? 'WRAPPING…' : `WRAP ${formatAmount(wrapShortfall, 18)} ETH`}
             </button>
@@ -338,7 +341,7 @@ export function Composer({ picked, onClear }: { picked: PickedBet | null; onClea
       )}
       {wrapError && <div className="composer-note">{wrapError}</div>}
       {IS_POOL_BACKED && (
-        <div className="stake-hint">Wrap ETH to WETH, approve, then bet: up to 3 wallet confirmations.</div>
+        <div className="stake-hint">{LEGACY_TESTNET ? 'This legacy fixture WETH cannot be unwrapped. Use Rounds for a direct ETH bet.' : 'Wrap ETH to WETH, approve, then bet: up to 3 wallet confirmations.'}</div>
       )}
 
       <div className="chips">

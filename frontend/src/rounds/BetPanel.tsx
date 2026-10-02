@@ -27,10 +27,13 @@ import { RoundRulesBlock } from './RoundRulesBlock'
 import { RoundTimeline } from './RoundTimeline'
 import { betGate } from './betGate'
 import { MIN_SECONDS_TO_BET, useRoundTx } from './useRoundTx'
+import { ROUNDS_CONFIG } from './roundsAbi'
+import { GAS_RESERVE_WEI } from '../lib/rules'
+import { FAUCET_URL } from '../lib/env'
 import type { RoundPool } from './useRoundsData'
 import type { PoolDepth, RoundsConstants, RoundState } from './roundsClient'
 
-const SYMBOL = 'WETH'
+const SYMBOL = ROUNDS_CONFIG.nativeEth ? 'ETH' : 'WETH'
 const amt = (v: bigint) => `${formatAmount(v, 18)} ${SYMBOL}`
 
 function safeParse(raw: string): bigint {
@@ -100,8 +103,10 @@ export function BetPanel(p: BetPanelProps) {
     query: { enabled: !!c && !!address, refetchInterval: 15_000 },
   })
   const { data: eth } = useBalance({ address, chainId: TARGET_CHAIN_ID, query: { enabled: !!address } })
-  const insufficientWeth = wethBalance !== undefined && wethBalance < stakeWei
-  const shortfall = insufficientWeth ? stakeWei - (wethBalance ?? 0n) : 0n
+  const insufficientWeth = ROUNDS_CONFIG.nativeEth
+    ? eth !== undefined && eth.value < stakeWei + GAS_RESERVE_WEI
+    : wethBalance !== undefined && wethBalance < stakeWei
+  const shortfall = !ROUNDS_CONFIG.nativeEth && insufficientWeth ? stakeWei - (wethBalance ?? 0n) : 0n
   const ethTooLow = shortfall > 0n && eth !== undefined && eth.value < shortfall
 
   const secondsLeft = p.times.closeAt - p.now
@@ -130,6 +135,7 @@ export function BetPanel(p: BetPanelProps) {
     stakeOk,
     limitsText,
     insufficientWeth,
+    nativeEth: ROUNDS_CONFIG.nativeEth,
     poolTooThin,
     depthBlocked,
     acknowledged: ack,
@@ -238,9 +244,14 @@ export function BetPanel(p: BetPanelProps) {
       {isConnected && (
         <div className="stake-hint wallet-lines">
           <span>
-            {SYMBOL} {wethBalance !== undefined ? formatAmount(wethBalance, 18) : '…'} · ETH {eth ? formatAmount(eth.value, 18) : '…'}
+            {ROUNDS_CONFIG.nativeEth
+              ? `ETH ${eth ? formatAmount(eth.value, 18) : '…'}`
+              : `WETH ${wethBalance !== undefined ? formatAmount(wethBalance, 18) : '…'} · ETH ${eth ? formatAmount(eth.value, 18) : '…'}`}
           </span>
-          {insufficientWeth && c && (
+          {ROUNDS_CONFIG.nativeEth && insufficientWeth && TARGET_CHAIN.testnet && (
+            <a className="faucet-link" href={FAUCET_URL} target="_blank" rel="noopener noreferrer">Get test ETH</a>
+          )}
+          {!ROUNDS_CONFIG.nativeEth && insufficientWeth && c && (
             <button className="chip wrap-btn" disabled={locked || ethTooLow} onClick={() => void tx.wrap(c.weth, shortfall)}>
               {tx.state.step === 'wrapping' ? 'WRAPPING…' : `WRAP ${formatAmount(shortfall, 18)} ETH`}
             </button>
@@ -263,6 +274,7 @@ export function BetPanel(p: BetPanelProps) {
           symbol={SYMBOL}
           spreadGuardPct={PRICE_JUMP_REFUND_PCT}
           testnet={!!TARGET_CHAIN.testnet}
+          nativeEth={ROUNDS_CONFIG.nativeEth}
         />
       )}
 
@@ -293,8 +305,9 @@ export function BetPanel(p: BetPanelProps) {
       </button>
 
       <div className="rnd-steps">
-        An approval of exactly this stake, then the bet: up to 2 wallet prompts, plus a wrap if you hold no WETH. After
-        the result: collect.
+        {ROUNDS_CONFIG.nativeEth
+          ? 'One wallet confirmation stakes ETH. The contract wraps it internally; after the result, collect ETH.'
+          : 'An approval of exactly this stake, then the bet: up to 2 wallet prompts, plus a wrap if you hold no WETH. After the result: collect.'}
       </div>
 
       {tx.state.step === 'error' && (

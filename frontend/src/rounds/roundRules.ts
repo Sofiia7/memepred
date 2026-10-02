@@ -40,6 +40,7 @@ export interface RulesInput {
   /** Exit spread guard, percent (PoolOracleResolver.MAX_SPREAD_BPS). */
   spreadGuardPct: number
   testnet: boolean
+  nativeEth?: boolean
 }
 
 export interface RoundRuleLine {
@@ -127,7 +128,7 @@ export function roundRules(i: RulesInput): RoundRuleLine[] {
       title: 'Fees and gas',
       text:
         `${fee} of the matched bank when there is a winner; ${voidFee} of it on a tie or when the price cannot be ` +
-        'read, and the rest comes back. Gas for the approval, the bet and collecting is yours.',
+        `read, and the rest comes back. Gas for ${i.nativeEth ? 'the bet and collecting' : 'the approval, the bet and collecting'} is yours.`,
     },
     {
       id: 'price',

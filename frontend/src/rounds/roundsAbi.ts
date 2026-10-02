@@ -21,7 +21,9 @@ export const POOL_ROUNDS_ABI = [
   {"type":"function","name":"SETTLE_GRACE","inputs":[],"outputs":[{"name":"","type":"uint256","internalType":"uint256"}],"stateMutability":"view"},
   {"type":"function","name":"VOID_FEE_BPS","inputs":[],"outputs":[{"name":"","type":"uint256","internalType":"uint256"}],"stateMutability":"view"},
   {"type":"function","name":"bet","inputs":[{"name":"roundId","type":"uint256","internalType":"uint256"},{"name":"stake","type":"uint256","internalType":"uint256"},{"name":"side","type":"uint8","internalType":"enum PoolRounds.Side"},{"name":"referrer","type":"address","internalType":"address"}],"outputs":[],"stateMutability":"nonpayable"},
+  {"type":"function","name":"betWithEth","inputs":[{"name":"roundId","type":"uint256","internalType":"uint256"},{"name":"side","type":"uint8","internalType":"enum PoolRounds.Side"},{"name":"referrer","type":"address","internalType":"address"}],"outputs":[],"stateMutability":"payable"},
   {"type":"function","name":"claim","inputs":[{"name":"roundId","type":"uint256","internalType":"uint256"}],"outputs":[{"name":"payout","type":"uint256","internalType":"uint256"}],"stateMutability":"nonpayable"},
+  {"type":"function","name":"claimAsEth","inputs":[{"name":"roundId","type":"uint256","internalType":"uint256"}],"outputs":[{"name":"payout","type":"uint256","internalType":"uint256"}],"stateMutability":"nonpayable"},
   {"type":"function","name":"costAllowance","inputs":[],"outputs":[{"name":"","type":"uint256","internalType":"uint256"}],"stateMutability":"view"},
   {"type":"function","name":"depthPerBank","inputs":[],"outputs":[{"name":"","type":"uint256","internalType":"uint256"}],"stateMutability":"view"},
   {"type":"function","name":"durationEnabled","inputs":[{"name":"","type":"uint256","internalType":"uint256"}],"outputs":[{"name":"","type":"bool","internalType":"bool"}],"stateMutability":"view"},
@@ -102,6 +104,7 @@ export const POOL_ROUNDS_ABI = [
  */
 export interface RoundsConfig {
   enabled: boolean
+  nativeEth: boolean
   address?: Address
   deployBlock: bigint
   durations: number[]
@@ -122,6 +125,7 @@ export function readRoundsConfig(env: EnvLike): RoundsConfig {
   const problems: string[] = []
   // Exactly "1", untrimmed: the same rule as flag.ts, which decides whether the route exists.
   const enabled = env.VITE_ROUNDS_ENABLED === '1'
+  const nativeEth = env.VITE_ROUNDS_NATIVE_ETH === '1'
 
   let address: Address | undefined
   const rawAddress = str(env.VITE_POOL_ROUNDS_ADDRESS)
@@ -147,7 +151,7 @@ export function readRoundsConfig(env: EnvLike): RoundsConfig {
     else problems.push('VITE_ROUNDS_DURATIONS (comma-separated seconds, e.g. 300,900)')
   }
 
-  return { enabled, address, deployBlock, durations, problems }
+  return { enabled, nativeEth, address, deployBlock, durations, problems }
 }
 
 export const ROUNDS_CONFIG: RoundsConfig = readRoundsConfig(import.meta.env as unknown as EnvLike)

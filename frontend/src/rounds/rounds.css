@@ -68,7 +68,7 @@
 .rnd-timeline{margin:0 0 10px;padding:10px 12px;border:1px solid var(--line-2);border-radius:9px;background:var(--surface-2)}
 .rnd-tl-bar{position:relative;display:flex;gap:2px;height:10px;border-radius:5px;overflow:visible;margin:2px 0 10px}
 .rnd-tl-seg{height:100%;border-radius:3px;background:var(--surface-3);opacity:.9}
-.rnd-tl-betting{background:rgba(77,141,255,.45)}
+.rnd-tl-betting{background:var(--up-strong)}
 .rnd-tl-pause{background:rgba(255,255,255,.12)}
 .rnd-tl-strike{background:rgba(255,181,71,.55)}
 .rnd-tl-exit{background:rgba(180,140,255,.45)}

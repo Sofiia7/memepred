@@ -22,6 +22,7 @@ export interface BetGateInput {
   /** e.g. "0.005-0.04 WETH" */
   limitsText: string
   insufficientWeth: boolean
+  nativeEth?: boolean
   /** The pool is below the depth gate right now: the contract refuses every bet (PoolTooThin). */
   poolTooThin: boolean
   /** This stake would raise the round's bank past what the pool's depth backs (BankTooLargeForPool). */
@@ -54,7 +55,7 @@ export function betGate(i: BetGateInput): BetGate {
   if (!i.side) return { disabled: true, label: 'PICK UP OR DOWN' }
   if (!i.stakeOk) return { disabled: true, label: `STAKE ${i.limitsText}` }
   if (i.depthBlocked) return { disabled: true, label: 'POOL DEPTH LIMITS THIS ROUND - LOWER THE STAKE' }
-  if (i.insufficientWeth) return { disabled: true, label: `NOT ENOUGH ${i.symbol} - WRAP FIRST` }
+  if (i.insufficientWeth) return { disabled: true, label: i.nativeEth ? 'NOT ENOUGH ETH FOR STAKE AND GAS' : `NOT ENOUGH ${i.symbol} - WRAP FIRST` }
   if (!i.acknowledged) return { disabled: true, label: 'CONFIRM WHAT YOU BET ON FIRST' }
   return { disabled: false, label: `BET ${i.stakeText} ${i.symbol} ${i.side}` }
 }

@@ -30,6 +30,7 @@ import { MAX_BET, CURRENCY_SYMBOL, IS_POOL_BACKED } from '../lib/contracts'
 import { PRICE_JUMP_REFUND_PCT, REFUND_GRACE_HOURS } from '../lib/rules'
 import { restrictedNames } from '../lib/restrictedRegions'
 import { NetworkPill } from './ui/NetworkPill'
+import { ROUNDS_CONFIG } from '../rounds/roundsAbi'
 
 const ACK_KEY = 'ftm_risk_ack_v1'
 
@@ -72,11 +73,13 @@ function readAck(): boolean {
 }
 
 export function RiskStrip() {
+  const { pathname } = useLocation()
+  const symbol = ROUNDS_CONFIG.nativeEth && isRoundsRoute(pathname) ? 'ETH' : CURRENCY_SYMBOL
   return (
     <div className="risk-strip" role="note">
       <b>UNAUDITED</b>
       <span className="sep">·</span>
-      <span>max bet {MAX_BET} {CURRENCY_SYMBOL}</span>
+      <span>max bet {MAX_BET} {symbol}</span>
       <span className="sep">·</span>
       <Link to="/terms">why</Link>
     </div>
@@ -88,6 +91,7 @@ export function RiskGate({ children }: { children: React.ReactNode }) {
   // already accepted it and there is no blank frame while waiting to find out.
   const [acked, setAcked] = useState<boolean>(readAck)
   const { pathname } = useLocation()
+  const symbol = ROUNDS_CONFIG.nativeEth && isRoundsRoute(pathname) ? 'ETH' : CURRENCY_SYMBOL
 
   if (acked || isReadableBeforeAck(pathname)) return <>{children}</>
 
@@ -101,7 +105,7 @@ export function RiskGate({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="risk-gate">
+    <div className={'risk-gate' + (IS_POOL_BACKED ? ' rhc' : '')}>
       <div className="risk-gate-card">
         {/* The gate covers the shell, so it carries the network label itself. */}
         <NetworkPill />
@@ -116,11 +120,11 @@ export function RiskGate({ children }: { children: React.ReactNode }) {
           <li>
             <b>The smart contracts have not been audited.</b> No independent
             security firm has reviewed the code holding the money. A bug could
-            mean deposited {CURRENCY_SYMBOL} is lost permanently - there is no
+            mean deposited {symbol} is lost permanently - there is no
             insurance, no reversal, and no support desk that can get it back.
           </li>
           <li>
-            <b>That's why bets are capped at {MAX_BET} {CURRENCY_SYMBOL}.</b> The cap
+            <b>That's why bets are capped at {MAX_BET} {symbol}.</b> The cap
             is enforced by the contract itself, not by this interface. It
             exists so the worst case stays a size you chose to risk. Treat it
             as the ceiling it is, not as a per-bet limit to place ten of.

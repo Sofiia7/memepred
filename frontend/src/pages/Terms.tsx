@@ -6,6 +6,7 @@ import { MAX_BET, CURRENCY_SYMBOL, SETTLE_GRACE_SEC, MATCH_TIMEOUT_SEC } from '.
 import { PRICE_JUMP_REFUND_PCT } from '../lib/rules'
 import { joinList, restrictedNames } from '../lib/restrictedRegions'
 import { ROUNDS_ENABLED } from '../rounds/flag'
+import { ROUNDS_CONFIG } from '../rounds/roundsAbi'
 
 const SETTLE_GRACE_HOURS = SETTLE_GRACE_SEC / 3600
 const MATCH_TIMEOUT_MINUTES = MATCH_TIMEOUT_SEC / 60
@@ -35,7 +36,7 @@ export function TermsPage() {
       </div>
 
       <h3 className="terms-h">Terms of Service</h3>
-      <div className="terms-meta">Last updated: {showRounds ? '2026-09-30' : '2026-09-29'}</div>
+      <div className="terms-meta">Last updated: {ROUNDS_CONFIG.nativeEth ? '2026-10-02' : showRounds ? '2026-09-30' : '2026-09-29'}</div>
 
       <Section n="1" title="Who runs this">
         FlipTheMeme is built and operated by an individual developer, not a
@@ -85,7 +86,7 @@ export function TermsPage() {
       {showRounds && (
         <Section n="2a" title="Rounds on Robinhood Chain testnet">
           <p>
-            Rounds are a separate testnet contract. Each wallet may place one UP or DOWN stake of 0.005-0.04 WETH in a
+            Rounds are a separate testnet contract. Each wallet may place one UP or DOWN stake of 0.005-0.04 {ROUNDS_CONFIG.nativeEth ? 'ETH' : 'WETH'} in a
             round. Both sides' totals are public. Only equal amounts from the two sides play; each side's excess is
             returned without a fee. A round needs both sides and a matched bank of at least 0.02 WETH. If it does not
             activate, every stake is returned in full after bets close.
@@ -97,7 +98,7 @@ export function TermsPage() {
             keeps 2% of the matched bank when there is a winner. On a tie or when an active round cannot be priced, it
             keeps 1% of the matched bank and returns the rest. If settlement is not completed within 24 hours of its due
             time, the round can be refunded with that 1% fee. You must call Collect for winnings and refunds; nothing is
-            sent automatically. Gas for the approval, bet and collection is paid separately.
+            sent automatically. {ROUNDS_CONFIG.nativeEth ? 'The contract wraps ETH when you bet and unwraps the payout when you collect. Each action needs one wallet confirmation; gas is paid separately.' : 'Gas for the approval, bet and collection is paid separately.'}
           </p>
           <p>
             A pool must clear the contract's depth gate, and the round's bank is limited by that pool's depth. The rule

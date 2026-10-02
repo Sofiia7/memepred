@@ -28,7 +28,7 @@ describe('POOL_ROUNDS_ABI', () => {
 
   it('has the calls and events the adapter relies on', () => {
     const names = new Set((POOL_ROUNDS_ABI as readonly Item[]).map((e) => e.name))
-    for (const n of ['bet', 'claim', 'ticketOf', 'roundTimes', 'roundView', 'previewClaim', 'minStake', 'maxStake', 'maxSideRatio', 'costAllowance', 'strikePause', 'strikeWindow', 'Bet', 'Claimed', 'PoolListed', 'DurationSet']) {
+    for (const n of ['bet', 'betWithEth', 'claim', 'claimAsEth', 'ticketOf', 'roundTimes', 'roundView', 'previewClaim', 'minStake', 'maxStake', 'maxSideRatio', 'costAllowance', 'strikePause', 'strikeWindow', 'Bet', 'Claimed', 'PoolListed', 'DurationSet']) {
       expect(names.has(n)).toBe(true)
     }
   })
@@ -48,6 +48,12 @@ describe('readRoundsConfig', () => {
     expect(readRoundsConfig({}).enabled).toBe(false)
     for (const v of ['0', 'true', ' 1', '1 ', '﻿1', 'yes']) expect(readRoundsConfig({ VITE_ROUNDS_ENABLED: v }).enabled).toBe(false)
     expect(readRoundsConfig({ VITE_ROUNDS_ENABLED: '1', VITE_POOL_ROUNDS_ADDRESS: ADDR }).enabled).toBe(true)
+  })
+
+  it('enables native ETH only when explicitly selected for the new deployment', () => {
+    expect(readRoundsConfig({}).nativeEth).toBe(false)
+    expect(readRoundsConfig({ VITE_ROUNDS_NATIVE_ETH: '1' }).nativeEth).toBe(true)
+    expect(readRoundsConfig({ VITE_ROUNDS_NATIVE_ETH: 'true' }).nativeEth).toBe(false)
   })
 
   it('needs an address only when on, and checksums it', () => {

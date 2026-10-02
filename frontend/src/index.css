@@ -513,3 +513,81 @@ input[type=number]{-moz-appearance:textfield}
 .rules-list{list-style:none;padding:0 12px 10px;display:flex;flex-direction:column;gap:8px;max-height:min(176px,26vh);overflow-y:auto;overscroll-behavior:contain}
 .rules-list li{font-size:12px;line-height:1.5;color:var(--text-dim)}
 .rules-list li b{color:var(--text);font-weight:700}
+
+/* Robinhood Chain has its own identity. Keep the Base deployment untouched. */
+.app.rhc{
+  --base-blue:#c8ff00;
+  --base-blue-2:#c8ff00;
+  --base-blue-hover:#aee000;
+  --up:#c8ff00;
+  --up-soft:rgba(200,255,0,.12);
+  --up-strong:rgba(200,255,0,.22);
+  --testnet:#d9ff63;
+  --text-faint:#85868a;
+  --surface:rgba(25,27,22,.82);
+  --surface-solid:#11130e;
+  --surface-2:rgba(34,37,29,.9);
+  --surface-3:rgba(50,54,39,.85);
+  --bg:#080a06;
+}
+.app.rhc::before{background:radial-gradient(600px 320px at 65% 0%,rgba(200,255,0,.07),transparent 72%)}
+.app.rhc .logo .sq::after{background:#101309}
+.app.rhc .connect:not(.ghost),.app.rhc .cta:not(:disabled),.app.rhc .rnd-btn:not(:disabled):not(.ghost),
+.app.rhc .seg button.on,.app.rhc .ftab.on,.app.rhc .g-cta,.app.rhc .osc-btn{color:#101309}
+.app.rhc .connect .chainmark,.app.rhc .cta:not(:disabled) .chainmark{background:#101309}
+.app.rhc .screen-title .ico,.app.rhc .tf-tab.on,.app.rhc .chip.sel,
+.app.rhc .genesis-hero,.app.rhc .how-step-n,.app.rhc .terms-section code{background:rgba(200,255,0,.13)}
+.app.rhc .screen-title .ico{color:var(--up)}
+.app.rhc .ud .b-up{border-color:rgba(200,255,0,.25)}
+.app.rhc .icon-default{background:linear-gradient(135deg,#e5ff74,#a7d900);color:#101309}
+.app.rhc .mkt-hint::before{background:var(--up)}
+.app.rhc .net-pill{background:rgba(200,255,0,.09);border-color:rgba(200,255,0,.3)}
+.app.rhc .wrap-btn{border-color:var(--up);color:var(--up);background:var(--up-soft)}
+.app.rhc .wrap-btn:hover{background:var(--up-strong)}
+
+/* On a phone the composer and bottom navigation remain touch-friendly. */
+.markets-layout{padding-bottom:280px}
+.legacy-notice{font-size:13px;line-height:1.5;color:var(--warn);padding:12px 14px;border:1px solid rgba(255,181,71,.35);border-radius:10px;margin-bottom:16px;background:rgba(255,181,71,.06)}
+.legacy-notice a{color:var(--up);text-decoration:underline;text-underline-offset:2px}
+
+@media (min-width:900px){
+  .risk-gate.rhc{align-items:flex-start;padding:52px 32px}
+  .risk-gate.rhc .risk-gate-card{max-width:960px}
+  .risk-gate.rhc .risk-gate-card h2{font-size:32px}
+  .risk-gate.rhc .risk-points{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:stretch}
+  .risk-gate.rhc .risk-points li{font-size:14px;padding:18px}
+  .risk-gate.rhc .risk-accept{max-width:420px}
+}
+
+@media (min-width:900px){
+  .app.rhc{max-width:none;width:100%;min-height:100vh;height:auto;max-height:none;margin:0;border:0;border-radius:0;box-shadow:none;overflow:visible}
+  .app.rhc .app-top{display:flex;align-items:center;justify-content:space-between;gap:32px;padding:16px max(32px,calc((100vw - 1320px)/2));border-bottom:1px solid var(--line-2)}
+  .app.rhc .app-head{padding:0;flex:0 0 auto}
+  .app.rhc .logo{font-size:17px}
+  .app.rhc .logo .sq{width:24px;height:24px}
+  .app.rhc .tabnav{position:static;left:auto;right:auto;bottom:auto;transform:none;width:auto;max-width:none;height:auto;padding:0;border:0;background:none;backdrop-filter:none;display:flex;gap:6px}
+  .app.rhc .tabnav a{min-height:42px;padding:0 14px;flex-direction:row;gap:8px;border-radius:8px;color:var(--text-dim)}
+  .app.rhc .tabnav a:hover{background:var(--surface-2);color:#fff}
+  .app.rhc .tabnav a.on{background:var(--up-soft);color:var(--up)}
+  .app.rhc .tabnav .tab-ico{width:18px;height:18px}
+  .app.rhc .net-row{padding:12px 32px 0}
+  .app.rhc .app-body{width:min(100%,1320px);margin:0 auto;overflow:visible;padding:32px 32px 60px;flex:1}
+  .app.rhc .screen-title{margin:0 0 24px}
+  .app.rhc .screen-title h2{font-size:30px}
+  .app.rhc .screen-title .ico{width:42px;height:42px}
+  .app.rhc .stats{grid-template-columns:repeat(2,minmax(0,220px));gap:12px;margin-bottom:24px}
+  .app.rhc .stat{padding:16px}
+  .app.rhc .stat .v{font-size:21px}
+  .app.rhc .markets-layout{display:grid;grid-template-columns:minmax(0,1fr) minmax(340px,420px);align-items:start;gap:24px;padding:0}
+  .app.rhc .markets-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}
+  .app.rhc .market{margin:0}
+  .app.rhc .composer{position:sticky;left:auto;right:auto;bottom:auto;top:18px;transform:none;width:100%;max-width:none;max-height:none;overflow:visible;padding:20px;border:1px solid var(--line-2);border-radius:14px;background:var(--surface-solid);backdrop-filter:none}
+  .app.rhc .composer.empty{padding:24px}
+  .app.rhc .rnd-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:14px}
+  .app.rhc .rnd-pool,.app.rhc .rnd-ticket{padding:18px}
+  .app.rhc .rnd-pool:has(.rnd-bet){grid-column:1/-1}
+  .app.rhc .rnd-pool:has(.rnd-bet) .rnd-bet{max-width:760px}
+  .app.rhc .rnd-lead{font-size:15px;max-width:900px;margin-bottom:24px}
+  .app.rhc .rnd-section{font-size:12px;margin:26px 0 12px}
+  .app.rhc .app-foot{justify-content:flex-start;margin-top:48px}
+}

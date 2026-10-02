@@ -2,11 +2,11 @@
 
 [![CI](https://github.com/Sofiia7/memepred/actions/workflows/ci.yml/badge.svg?branch=robinhood-chain)](https://github.com/Sofiia7/memepred/actions/workflows/ci.yml)
 
-FlipTheMeme is for people who enjoy betting on outcomes but cannot find a short market for the specific meme coin they follow. They pick UP or DOWN without buying the coin. The coin's own on-chain pool supplies the price, so no listed price feed is needed. The current product is a **Robinhood Chain testnet prototype** using test WETH.
+FlipTheMeme is for people who enjoy betting on outcomes but cannot find a short market for the specific meme coin they follow. They pick UP or DOWN without buying the coin. The coin's own on-chain pool supplies the price, so no listed price feed is needed. The current product is a **Robinhood Chain testnet prototype**: players stake and collect test ETH directly, while the contract uses a redeemable WETH internally.
 
-[Try the public rounds demo](https://rhc.flipthememe.com/rounds) · [Verified PoolRounds contract](https://explorer.testnet.chain.robinhood.com/address/0xe3620f0855c4dc1aace648cc8240a4fa89fd93c4) · [Keeper health](https://api-rhc.flipthememe.com/api/rounds/health) · [Buildathon application text](docs/rhc/buildathon-application.md) · [Demo recording plan](docs/rhc/ROUNDS-DEMO-RUNBOOK.md)
+[Try the public rounds demo](https://rhc.flipthememe.com/rounds) · [Verified PoolRounds contract](https://explorer.testnet.chain.robinhood.com/address/0xb70fa41f1ad30235ff580c33e76f3490272bcd97) · [Keeper health](https://api-rhc.flipthememe.com/api/rounds/health) · [Buildathon application text](docs/rhc/buildathon-application.md) · [Demo recording plan](docs/rhc/ROUNDS-DEMO-RUNBOOK.md)
 
-For this hackathon entry, use the **Rounds** tab at the demo link above. Looking needs no wallet. Betting needs test ETH from the faucet the site links to; the form wraps it into test WETH.
+For this hackathon entry, use **Rounds** at the demo link above. Looking needs no wallet. Betting needs test ETH from the linked faucet; one transaction wraps and stakes it inside the contract, without a swap or token approval. Collect returns ETH. The legacy Markets tab retains its earlier, non-redeemable fixture WETH and is labeled accordingly.
 
 <table>
   <tr>
@@ -15,13 +15,13 @@ For this hackathon entry, use the **Rounds** tab at the demo link above. Looking
   </tr>
 </table>
 
-<sub>The rounds screen: the bet form with both sides' totals, the timeline from bets to exit and the payout estimate; a decided round ready to collect. Captured on a local stand running the same code as the public site.</sub>
+<sub>Earlier local screenshots of the rounds interface. The current public site has a desktop layout, Robinhood Chain colors and direct ETH staking.</sub>
 
 ## One round in 30 seconds
 
-1. Traders stake 0.005–0.04 test WETH on UP or DOWN during a five-minute betting window. The contract accepts equal amounts on both sides. Unmatched stake is returned without a fee; a round without enough opposing stake does not activate and refunds everyone in full.
+1. Traders stake 0.005–0.04 test ETH on UP or DOWN during a five-minute betting window. The contract wraps ETH internally into a redeemable WETH and accepts equal amounts on both sides. Unmatched stake is returned without a fee; a round without enough opposing stake does not activate and refunds everyone in full.
 2. After betting closes there is a five-minute pause. The strike is averaged over the next five minutes from the coin's v3 pool, then compared with an exit price five minutes later. The bet is on the move **from that future strike**, not the displayed price when the trader clicks.
-3. A winner collects 1.96× the accepted stake. The contract keeps 2% of the matched bank on a win. A tie or an unpriceable active round returns matched stakes minus 1%. Players call **Collect**; payouts are not pushed automatically.
+3. A winner collects 1.96× the accepted stake. The contract keeps 2% of the matched bank on a win. A tie or an unpriceable active round returns matched stakes minus 1%. Players call **Collect** to receive ETH; payouts are not pushed automatically.
 
 The pool must pass depth and price-history checks. The accepted bank is also limited by the pool's WETH depth. These checks reduce the amount exposed to price manipulation; they cannot make a thin coin safe.
 
@@ -36,7 +36,7 @@ The pool must pass depth and price-history checks. The accepted bank is also lim
 
 ```mermaid
 flowchart LR
-  W["Trader wallet"] -- "bet() · claim()" --> R["PoolRounds.sol<br/>one contract for every pool and duration"]
+  W["Trader wallet"] -- "betWithEth() · claimAsEth()" --> R["PoolRounds.sol<br/>one contract for every pool and duration"]
   R -- "observe() · slot0() · liquidity()" --> P["The coin's Uniswap v3 pool<br/>strike and exit TWAPs, window depth"]
   K["Rounds keeper<br/>backend/src/rounds"] -- "fixStrike() · settle()<br/>within the deadlines the contract reports" --> R
   UI["/rounds screen<br/>frontend/src/rounds"] -- "reads rounds, tickets, depth" --> R
@@ -50,11 +50,11 @@ The contract is the whole product on-chain: the keeper only calls two functions 
 
 | Check | What it establishes |
 |---|---|
-| [Testnet end-to-end run](docs/rhc/measurements/rounds/e2e-testnet.log) | Deployed keeper, win, tie, inactive refund, claims, fees and referrals: 40 checks, zero failures. These are development-script transactions. |
+| [Testnet end-to-end run](docs/rhc/measurements/rounds/e2e-testnet.log) | On the earlier WETH-only contract: deployed keeper, win, tie, inactive refund, claims, fees and referrals: 40 checks, zero failures. These are development-script transactions, not a live ETH wager on the new contract. |
 | [Real-pool mainnet fork](docs/rhc/measurements/rounds/mainnet-fork-2026-10-01.md) | The current PoolRounds code listed the canonical RMHT/WETH pool at block 77,215,106 (about 93.5 WETH of depth against the 50 WETH gate, 1,801 observations against 900), read its real observations and paid a tie. In a second test, a locally simulated swap through that real pool moved its price; PoolRounds settled UP and paid the winner. |
-| [Foundry suite](contracts/test) | Reference vectors against an independent money model, fuzzing, invariants, deadline boundaries, adversarial oracle and settlement paths from two internal review passes. The full suite had 646 passing tests on 30 September ([raw log](docs/rhc/measurements/rounds/forge-test-all.log)); the live fork test runs only when `RHC_MAINNET_RPC` is set. CI runs contracts, backend, frontend and workers on every push. |
+| [Foundry suite](contracts/test) | Reference vectors against an independent money model, fuzzing, invariants, deadline boundaries, adversarial oracle and settlement paths from two internal review passes. New native ETH tests cover deposit, settlement payout and invalid stakes. The full suite passes on 2 October; the [30 September raw log](docs/rhc/measurements/rounds/forge-test-all.log) predates this change. The live fork test runs only when `RHC_MAINNET_RPC` is set. |
 
-The three public testnet pools are **stand-ins with scripted prices** because the demo testnet lacks a canonical Uniswap v3 deployment. Their prices and transactions do not show organic user demand. The contract has **no external security audit**. The mainnet fork uses real pool code and state, but its balances, stakes, price-moving swap and clock changes are local; it is not a mainnet deployment or a live wager. Price manipulation on a thin pool stays possible: the depth rule caps what it can win per round, it does not remove it. No claim of real user traction is made.
+The three public testnet pools are **stand-ins with scripted prices** because the demo testnet lacks a canonical Uniswap v3 deployment. Their prices and transactions do not show organic user demand. The contract has **no external security audit**. The new ETH-in/ETH-out path passed Foundry tests and its testnet WETH passed a live deposit/withdraw check; a complete fresh-wallet browser wager and settlement on this new deployment have not yet been recorded. The mainnet fork uses real pool code and state, but its balances, stakes, price-moving swap and clock changes are local; it is not a mainnet deployment or a live wager. Price manipulation on a thin pool stays possible: the depth rule caps what it can win per round, it does not remove it. No claim of real user traction is made.
 
 To reproduce the real-pool check from `contracts/` with Foundry installed:
 

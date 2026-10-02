@@ -116,6 +116,7 @@ export interface WriteRequest {
   abi: Abi
   functionName: string
   args: readonly unknown[]
+  value?: bigint
 }
 
 export interface RoundsClient {
@@ -132,7 +133,9 @@ export interface RoundsClient {
   /** RoundSettled.reason of a settled round, or undefined if the event is not found. */
   settleReason(roundId: bigint): Promise<number | undefined>
   betRequest(roundId: bigint, side: RoundSide, stake: bigint, referrer: Address): WriteRequest
+  betWithEthRequest(roundId: bigint, side: RoundSide, stake: bigint, referrer: Address): WriteRequest
   claimRequest(roundId: bigint): WriteRequest
+  claimAsEthRequest(roundId: bigint): WriteRequest
 }
 
 // ── the adapter for PoolRounds interface v3 ─────────────────────────────────
@@ -343,8 +346,16 @@ export function createRoundsClient(client: PublicClient, address: Address, fromB
       return { address, abi: ABI, functionName: 'bet', args: [roundId, stake, side, referrer] }
     },
 
+    betWithEthRequest(roundId, side, stake, referrer) {
+      return { address, abi: ABI, functionName: 'betWithEth', args: [roundId, side, referrer], value: stake }
+    },
+
     claimRequest(roundId) {
       return { address, abi: ABI, functionName: 'claim', args: [roundId] }
+    },
+
+    claimAsEthRequest(roundId) {
+      return { address, abi: ABI, functionName: 'claimAsEth', args: [roundId] }
     },
   }
 }

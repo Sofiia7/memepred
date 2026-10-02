@@ -5,8 +5,9 @@ import { describeTicket, outcomeLabel, refundReasonText, type TicketView } from 
 import { OUTCOME_REFUND, OUTCOME_TIE } from './roundsClient'
 import type { MyBet } from './useRoundsData'
 import type { TxState } from './useRoundTx'
+import { ROUNDS_CONFIG } from './roundsAbi'
 
-const SYMBOL = 'WETH'
+const SYMBOL = ROUNDS_CONFIG.nativeEth ? 'ETH' : 'WETH'
 const amt = (v: bigint | undefined) => (v === undefined ? '-' : `${formatAmount(v, 18)} ${SYMBOL}`)
 
 export interface TicketRowProps {

@@ -6,11 +6,15 @@ import { WalletPicker } from './WalletPicker'
 import { NetworkPill } from './NetworkPill'
 import { WrongNetworkBanner, DeploymentBanner } from './NetworkStatus'
 import { RiskStrip } from '../RiskDisclosure'
+import { IS_POOL_BACKED } from '../../lib/chain'
 
 export function AppShell({ children }: { children: ReactNode }) {
   return (
-    <div className="app">
-      <AppHead />
+    <div className={'app' + (IS_POOL_BACKED ? ' rhc' : '')}>
+      <div className="app-top">
+        <AppHead />
+        <TabNav />
+      </div>
       <NetworkPill />
       <RiskStrip />
       <WrongNetworkBanner />
@@ -23,7 +27,6 @@ export function AppShell({ children }: { children: ReactNode }) {
           <Link to="/terms">Terms</Link>
         </div>
       </div>
-      <TabNav />
       <WalletPicker />
     </div>
   )

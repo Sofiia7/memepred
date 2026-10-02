@@ -8,6 +8,10 @@ import { MarketCardUI, type PickedBet } from '../components/ui/MarketCard'
 import { Composer } from '../components/ui/Composer'
 import { ApiError } from '../components/ui/ApiError'
 import { shortMarketHint } from '../lib/marketHint'
+import { TARGET_CHAIN } from '../lib/chain'
+import { ROUNDS_ENABLED } from '../rounds/flag'
+import { ROUNDS_CONFIG } from '../rounds/roundsAbi'
+import { Link } from 'react-router-dom'
 
 /**
  * The key a market is grouped under.
@@ -69,17 +73,23 @@ export function Markets() {
   return (
     <>
       <ScreenTitle
-        title="Live markets"
+        title={TARGET_CHAIN.testnet && ROUNDS_ENABLED && IS_POOL_BACKED ? 'Legacy markets' : 'Live markets'}
         live
         liveLabel={freshness.label}
         liveColor={freshness.color}
         icon={
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-            <circle cx="12" cy="12" r="9" stroke="#4d8dff" strokeWidth="2" />
-            <circle cx="12" cy="12" r="3" fill="#4d8dff" />
+            <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2" />
+            <circle cx="12" cy="12" r="3" fill="currentColor" />
           </svg>
         }
       />
+
+      {TARGET_CHAIN.testnet && ROUNDS_ENABLED && IS_POOL_BACKED && (
+        <p className="legacy-notice" role="note">
+          This older testnet market uses a fixture WETH that cannot be unwrapped. For the current demo, <Link to="/rounds">{ROUNDS_CONFIG.nativeEth ? 'bet and collect directly in test ETH on Rounds' : 'use Rounds'}</Link>.
+        </p>
+      )}
 
       <StatStrip
         items={[
@@ -96,6 +106,8 @@ export function Markets() {
         <div className={'mkt-hint' + (hint.slow ? ' mkt-hint-slow' : '')}>{hint.text}</div>
       )}
 
+      <div className="markets-layout">
+      <div className="markets-list">
       {groupKeys.map((key) => {
         const group = groups[key]
         const displaySymbol = group[0]?.feedSymbol || 'UNKNOWN'
@@ -119,9 +131,9 @@ export function Markets() {
         )
       })}
 
-      <div style={{ height: 280 }} />
-
+      </div>
       <Composer picked={picked} onClear={() => setPicked(null)} />
+      </div>
     </>
   )
 }

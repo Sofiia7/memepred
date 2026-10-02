@@ -10,10 +10,13 @@ import { TICKET_NONE } from './roundsClient'
 import type { RoundSide } from './roundMath'
 import { explainRoundError } from './roundErrors'
 import { useRoundsClient, type MyBet } from './useRoundsData'
+import { ROUNDS_CONFIG } from './roundsAbi'
+import { GAS_RESERVE_WEI } from '../lib/rules'
 
 /**
- * The player's transactions: a bet (with an approval of exactly its stake),
- * collecting, and wrapping ETH into the WETH a stake is made of.
+ * The player's transactions: direct ETH staking and collection on the current
+ * RHC deployment, or exact-stake WETH approval, betting and collection on an
+ * older deployment.
  *
  * Every flow freezes what it is about before its first await, as usePlaceBet
  * does (audit U01): a prop that changes while the wallet is open cannot change
@@ -107,30 +110,36 @@ export function useRoundTx() {
         const ticket = await rounds.ticket(snap.roundId, snap.player)
         if (ticket.status !== TICKET_NONE) throw new Error('You already have a bet in this round: one per wallet per round.')
 
-        const balance = (await client.readContract({ address: snap.weth, abi: ERC20_ABI, functionName: 'balanceOf', args: [snap.player] })) as bigint
-        if (balance < snap.stake) throw new Error('Not enough WETH for this stake. Wrap some ETH first.')
-        const allowance = (await client.readContract({
-          address: snap.weth,
-          abi: ERC20_ABI,
-          functionName: 'allowance',
-          args: [snap.player, snap.contract],
-        })) as bigint
-        if (allowance < snap.stake) {
-          setState({ step: 'approving' })
-          // Exactly this stake, never an unlimited approval (as usePlaceBet).
-          const approveHash = await writeContractAsync({
+        if (ROUNDS_CONFIG.nativeEth) {
+          const balance = await client.getBalance({ address: snap.player })
+          if (balance < snap.stake + GAS_RESERVE_WEI) throw new Error('Not enough ETH for this stake and gas. Get test ETH from the faucet.')
+        } else {
+          const balance = (await client.readContract({ address: snap.weth, abi: ERC20_ABI, functionName: 'balanceOf', args: [snap.player] })) as bigint
+          if (balance < snap.stake) throw new Error('Not enough WETH for this stake. Wrap some ETH first.')
+          const allowance = (await client.readContract({
             address: snap.weth,
             abi: ERC20_ABI,
-            functionName: 'approve',
-            args: [snap.contract, snap.stake],
-            account: snap.player,
-            chainId: snap.chainId,
-          })
-          await waitOk(approveHash, 'The WETH approval')
+            functionName: 'allowance',
+            args: [snap.player, snap.contract],
+          })) as bigint
+          if (allowance < snap.stake) {
+            setState({ step: 'approving' })
+            const approveHash = await writeContractAsync({
+              address: snap.weth,
+              abi: ERC20_ABI,
+              functionName: 'approve',
+              args: [snap.contract, snap.stake],
+              account: snap.player,
+              chainId: snap.chainId,
+            })
+            await waitOk(approveHash, 'The WETH approval')
+          }
         }
 
         setState({ step: 'betting' })
-        const req = rounds.betRequest(snap.roundId, snap.side, snap.stake, safeReferrer(snap.player))
+        const req = ROUNDS_CONFIG.nativeEth
+          ? rounds.betWithEthRequest(snap.roundId, snap.side, snap.stake, safeReferrer(snap.player))
+          : rounds.betRequest(snap.roundId, snap.side, snap.stake, safeReferrer(snap.player))
         const hash = await writeContractAsync({ ...req, account: snap.player, chainId: snap.chainId } as never)
         setState({ step: 'betting', hash })
         await waitOk(hash, 'The bet')
@@ -147,10 +156,11 @@ export function useRoundTx() {
         const chain = await ensureChain()
         if (!chain.ok) throw new Error(chain.error)
         setState({ step: 'claiming' })
-        const hash = await writeContractAsync({ ...rounds.claimRequest(roundId), account: address, chainId: TARGET_CHAIN_ID } as never)
+        const req = ROUNDS_CONFIG.nativeEth ? rounds.claimAsEthRequest(roundId) : rounds.claimRequest(roundId)
+        const hash = await writeContractAsync({ ...req, account: address, chainId: TARGET_CHAIN_ID } as never)
         setState({ step: 'claiming', hash })
         await waitOk(hash, 'Collecting')
-        return { step: 'done', hash, note: 'Collected.' }
+        return { step: 'done', hash, note: ROUNDS_CONFIG.nativeEth ? 'Collected as ETH.' : 'Collected.' }
       }),
     [address, rounds, ensureChain, run, waitOk, writeContractAsync],
   )

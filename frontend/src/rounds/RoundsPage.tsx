@@ -98,8 +98,8 @@ function RoundsScreen() {
         liveLabel={TARGET_CHAIN.testnet ? 'testnet preview' : 'preview'}
         icon={
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <circle cx="12" cy="12" r="8" stroke="#4d8dff" strokeWidth="2" />
-            <path d="M12 7v5l3 2" stroke="#4d8dff" strokeWidth="2" strokeLinecap="round" />
+            <circle cx="12" cy="12" r="8" stroke="currentColor" strokeWidth="2" />
+            <path d="M12 7v5l3 2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
           </svg>
         }
       />

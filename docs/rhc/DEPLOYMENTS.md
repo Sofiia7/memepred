@@ -1,5 +1,21 @@
 # Адреса развёрнутого
 
+## Robinhood Chain testnet, direct ETH Rounds, 2026-10-02 (CURRENT)
+
+The current [public Rounds site](https://rhc.flipthememe.com/rounds) stakes test ETH in one `betWithEth` transaction and pays native ETH through `claimAsEth`. The contract wraps and unwraps internally. The earlier mintable `MockWETH` cannot be withdrawn; the legacy markets and the 30 September Rounds run below remain historical evidence, not the current staking path.
+
+| Component | Address / detail |
+|---|---|
+| [PoolRounds](https://explorer.testnet.chain.robinhood.com/address/0xb70fa41f1ad30235ff580c33e76f3490272bcd97) | `0xb70fa41f1ad30235ff580c33e76f3490272bcd97`, block 127475141, source verified; commit `1547088` |
+| [TestWETH](https://explorer.testnet.chain.robinhood.com/address/0x702431c8ef4e21fc4180c8395a4b0f3464b7d5a3) | `0x702431c8ef4e21fc4180c8395a4b0f3464b7d5a3`, backed 1:1 by deposits, source verified; live 1-wei [deposit](https://explorer.testnet.chain.robinhood.com/tx/0xa7d4eb61f0e8b8bab6059d1c804dcb335695078987433ecf79e3321e32f3dfed) and [withdraw](https://explorer.testnet.chain.robinhood.com/tx/0x68bbbf9535c31cacf24f02b201db7a3fef55f7998817ccf0228b5f3c41e55c44) passed |
+| ReferralRegistry | `0xbd68ee0f3c7ef3bc8df701e1557895526358c6a7` |
+| Stand-in factory | `0x297d37ae9ef9747b2f040ddfb16cb694bb73034b` |
+| MOONCAT pool | `0x923a9486cd5cfa7a2929af09ee3082c9b411c37c` |
+| PEPE pool | `0x5daf9bbd4a52d90a963e5f4e9a9c7df56673d25c` |
+| FROGGO pool | `0xa8b93b1c1e89ad2f1fe127efd37cc30e28d8f7b4` |
+
+The three stand-in pools have 1,000 WETH of declared depth and passed the listing gate and observation-history checks before deployment. The nine PoolRounds deployment transactions used 6,412,818 gas; the broadcast record is `contracts/broadcast/DeployPoolRounds.s.sol/46630/run-latest.json`. The RHC keeper and backend now use `ROUNDS_ADDRESS=0xb70fa41f1ad30235ff580c33e76f3490272bcd97` and `ROUNDS_START_BLOCK=127475141`; `/api/rounds/health` returned `ok`, three listed pools, caught up, no warnings after restart. The public site's `/rounds` page showed the same three pools and the direct-ETH form on 2 October. The new native entry/exit path passed Foundry tests; a complete browser-wallet bet and collection on this new deployment has **not** been recorded yet.
+
 ## Robinhood Chain testnet, PoolRounds (раунды), деплой 2026-09-30
 
 Дополнение к стеку ниже, не замена: рынки, API и демо от 29.09 не тронуты. Развёрнуто `contracts/script/DeployPoolRounds.s.sol`

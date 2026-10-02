@@ -43,7 +43,8 @@ export function App() {
       <RiskGate>
       <AppShell>
         <Routes>
-          <Route path="/" element={<Markets />} />
+          <Route path="/" element={ROUNDS_ENABLED && IS_POOL_BACKED ? <Navigate to="/rounds" replace /> : <Markets />} />
+          {ROUNDS_ENABLED && IS_POOL_BACKED && <Route path="/markets" element={<Markets />} />}
           <Route path="/pools" element={<Pools />} />
           <Route path="/market/:address" element={<Market />} />
           <Route path="/order/:address/:orderId" element={<OrderPage />} />

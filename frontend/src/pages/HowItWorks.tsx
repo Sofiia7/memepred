@@ -5,6 +5,7 @@ import { MAX_BET, MIN_BET, CURRENCY_SYMBOL, MATCH_TIMEOUT_SEC, SETTLE_GRACE_SEC 
 import { IS_POOL_BACKED } from '../lib/chain'
 import { PRICE_JUMP_REFUND_PCT } from '../lib/rules'
 import { ROUNDS_ENABLED } from '../rounds/flag'
+import { ROUNDS_CONFIG } from '../rounds/roundsAbi'
 
 // Read from the contract mirrors rather than retyped, like Terms does.
 const MATCH_TIMEOUT_MIN = MATCH_TIMEOUT_SEC / 60
@@ -46,7 +47,7 @@ export function HowItWorksPage() {
             A winning side receives 1.96 times its matched stake, plus any unmatched part. The fee is 2% of the matched
             bank on a result. A tie or an unpriceable active round returns the matched stakes minus 1%. You must press
             Collect to receive winnings or refunds. The contract's pool-depth rule limits the bank, but price manipulation
-            remains possible. These are testnet pools with scripted prices and test WETH only.
+            remains possible. These are testnet pools with scripted prices. {ROUNDS_CONFIG.nativeEth ? 'You stake and collect test ETH directly; the contract handles WETH internally.' : 'The stake is test WETH only.'}
           </p>
           <div className="b-title">Continuous markets</div>
         </>
