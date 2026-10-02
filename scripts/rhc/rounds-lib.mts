@@ -11,7 +11,7 @@ import { spawn } from 'node:child_process'
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve as resolvePath } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import type { Address, Hex } from 'viem'
+import { getAddress, type Address, type Hex } from 'viem'
 
 const here = dirname(fileURLToPath(import.meta.url))
 export const ROOT = resolvePath(here, '../..')
@@ -152,11 +152,15 @@ export async function loadKeeperCode(rpcUrl: string, keeperKey: Hex): Promise<Ke
  * a temporary file and a rename.
  */
 export class FileRoundsStore {
-  private s: { cursor: string | null; open: string[]; spent: Record<string, string>; log: Array<[number, string, string]>; snapshot: unknown }
+  private s: { cursor: string | null; open: string[]; spent: Record<string, string>; log: Array<[number, string, string]>; snapshot: unknown;
+    pools: string[]; days: Record<string, string> }
   constructor(private file: string) {
     this.s = existsSync(file)
       ? JSON.parse(readFileSync(file, 'utf8'))
-      : { cursor: null, open: [], spent: {}, log: [], snapshot: null }
+      : { cursor: null, open: [], spent: {}, log: [], snapshot: null, pools: [], days: {} }
+    // a state file written before the pool check and the daily budgets existed
+    this.s.pools ??= []
+    this.s.days ??= {}
   }
   private save() {
     mkdirSync(dirname(this.file), { recursive: true })
@@ -183,6 +187,20 @@ export class FileRoundsStore {
     this.save()
   }
   async spentSince(sinceMs: number) { return this.s.log.filter((e) => e[0] >= sinceMs).reduce((a, e) => a + BigInt(e[1]), 0n) }
+  // the pool check (backend/src/rounds/store.ts RoundsStore): pools the contract lists, lower-case in the file
+  async listedPools() { return this.s.pools.map((p) => getAddress(p)) }
+  async addPools(pools: Address[]) { const set = new Set(this.s.pools); for (const p of pools) set.add(p.toLowerCase()); this.s.pools = [...set]; this.save() }
+  async removePools(pools: Address[]) { const drop = new Set(pools.map((p) => p.toLowerCase())); this.s.pools = this.s.pools.filter((p) => !drop.has(p)); this.save() }
+  // wei spent on one kind of routine work per UTC day; days older than a week are dropped
+  async getDaySpent(kind: string, day: string) { return BigInt(this.s.days[`${kind}:${day}`] ?? '0') }
+  async addDaySpent(kind: string, day: string, delta: bigint) {
+    const k = `${kind}:${day}`, next = BigInt(this.s.days[k] ?? '0') + delta
+    this.s.days[k] = next.toString()
+    const keep = new Date(Date.now() - 7 * 86400_000).toISOString().slice(0, 10)
+    for (const key of Object.keys(this.s.days)) if (key.slice(key.indexOf(':') + 1) < keep) delete this.s.days[key]
+    this.save()
+    return next
+  }
   async publish(snapshot: unknown) { this.s.snapshot = snapshot; this.save() }
 }
 
