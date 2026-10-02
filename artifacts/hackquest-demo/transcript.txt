@@ -16,7 +16,7 @@ Any excess comes back without a fee. If there is too little opposing stake, ever
 
 A round first takes bets for five minutes, then waits through a five-minute pause.
 
-The strike is averaged over the next five minutes. The exit is measured five minutes later.
+The strike is averaged over the next minute. The exit is measured five minutes later.
 
 Your bet is on the move from that future strike to the exit, not on the price when you click.
 
@@ -30,11 +30,11 @@ After settlement, the player's ticket shows the result and a Collect button.
 
 A winning ticket can be collected in ETH. This screen illustrates the result flow.
 
-The previous WETH-only contract completed a real testnet run with the live keeper.
+A development script completed 40 checks on the current testnet contract with the live keeper.
 
-An UP stake of 0.02 WETH met an equal DOWN stake. The winner collected 0.0392 WETH.
+An UP stake of 0.005 WETH met an equal DOWN stake. The winner collected 0.0098 WETH.
 
-The same run checked a tie and a one-sided round. Both returned the amounts specified by the contract.
+The same run checked a tie and a one-sided refund. The script used WETH directly; the public interface uses ETH.
 
 We also tested the round logic against a canonical pool on a local fork of Robinhood Chain mainnet.
 
@@ -46,7 +46,7 @@ The contract settled UP and paid the winner. That swap was local simulation, not
 
 Only matched trader stakes fund payouts. Pool depth limits how large a round can be.
 
-The new ETH path passed contract tests, but a complete live wager on this deployment is still unrecorded.
+The direct ETH path passed contract tests. A complete browser-wallet wager is still unrecorded.
 
 This is an unaudited testnet prototype. Its development transactions do not prove user demand.
 

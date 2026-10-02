@@ -53,22 +53,22 @@ LINES = [
     Line("match", "Both sides' totals are visible. Only equal stakes on UP and DOWN actually play."),
     Line("match", "Any excess comes back without a fee. If there is too little opposing stake, everyone gets a full refund."),
     Line("timeline", "A round first takes bets for five minutes, then waits through a five-minute pause."),
-    Line("timeline", "The strike is averaged over the next five minutes. The exit is measured five minutes later."),
+    Line("timeline", "The strike is averaged over the next minute. The exit is measured five minutes later."),
     Line("timeline", "Your bet is on the move from that future strike to the exit, not on the price when you click."),
     Line("bet", "For example, a matched stake of 0.01 ETH would collect 0.0196 ETH if it wins."),
     Line("bet", "The contract keeps two percent of the matched bank on a win. A tie or an unpriceable active round returns stakes minus one percent."),
     Line("bet", "The trader confirms the future strike rule and places the bet in one wallet transaction. No swap or token approval."),
     Line("winner", "After settlement, the player's ticket shows the result and a Collect button."),
     Line("winner", "A winning ticket can be collected in ETH. This screen illustrates the result flow."),
-    Line("receipts", "The previous WETH-only contract completed a real testnet run with the live keeper."),
-    Line("receipts", "An UP stake of 0.02 WETH met an equal DOWN stake. The winner collected 0.0392 WETH."),
-    Line("receipts", "The same run checked a tie and a one-sided round. Both returned the amounts specified by the contract."),
+    Line("receipts", "A development script completed 40 checks on the current testnet contract with the live keeper."),
+    Line("receipts", "An UP stake of 0.005 WETH met an equal DOWN stake. The winner collected 0.0098 WETH."),
+    Line("receipts", "The same run checked a tie and a one-sided refund. The script used WETH directly; the public interface uses ETH."),
     Line("fork", "We also tested the round logic against a canonical pool on a local fork of Robinhood Chain mainnet."),
     Line("fork", "The real pool had about 93.5 WETH of depth and enough price history to pass the listing gates."),
     Line("fork", "At an unchanged price, the round tied. Then a simulated swap inside the fork moved the pool's price."),
     Line("fork", "The contract settled UP and paid the winner. That swap was local simulation, not a mainnet trade."),
     Line("end", "Only matched trader stakes fund payouts. Pool depth limits how large a round can be."),
-    Line("end", "The new ETH path passed contract tests, but a complete live wager on this deployment is still unrecorded."),
+    Line("end", "The direct ETH path passed contract tests. A complete browser-wallet wager is still unrecorded."),
     Line("end", "This is an unaudited testnet prototype. Its development transactions do not prove user demand."),
     Line("end", "Try the public Rounds preview, inspect the verified contract, and reproduce the fork test. The links are below."),
 ]
@@ -154,12 +154,12 @@ def scene_content(canvas: Image.Image, scene: str):
         d.text((340, 501), "0.02 ETH excess comes back", font=font(28), fill=MUTED)
     elif scene == "timeline":
         d.text((83, 124), "THE FUTURE STRIKE", font=font(49, True), fill=WHITE)
-        for i, (label, time) in enumerate((("BET", "5 min"), ("PAUSE", "5 min"), ("STRIKE", "5 min"), ("EXIT", "5 min"))):
+        for i, (label, time) in enumerate((("BET", "5 min"), ("PAUSE", "5 min"), ("STRIKE", "1 min"), ("EXIT", "5 min"))):
             x = 82 + i * 294
             box(d, (x, 239, x + 265, 401), outline=BLUE if i == 2 else EDGE)
             d.text((x + 20, 275), label, font=font(30, True), fill=BLUE if i == 2 else WHITE)
             d.text((x + 20, 337), time, font=font(26), fill=MUTED)
-        text_block(d, (84, 475), "Bet on the move after betting closes, not the price when you click.", 28, 1080, MUTED)
+        text_block(d, (84, 475), "Result around 16 minutes after opening. The current price does not count.", 28, 1080, MUTED)
     elif scene == "bet":
         d.text((82, 124), "ONE WALLET CONFIRMATION", font=font(45, True), fill=WHITE)
         box(d, (83, 216, 1192, 450), outline=BLUE)
@@ -177,17 +177,17 @@ def scene_content(canvas: Image.Image, scene: str):
         d.text((857, 321), "COLLECT", font=font(37, True), fill=BG)
         d.text((88, 520), "Illustration of the result flow; no new live winning ticket claimed.", font=font(23), fill=GOLD)
     elif scene == "receipts":
-        d.text((81, 115), "PREVIOUS TESTNET CONTRACT", font=font(43, True), fill=WHITE)
+        d.text((81, 115), "CURRENT TESTNET CONTRACT", font=font(43, True), fill=WHITE)
         for i, (lab, value, color) in enumerate([
-            ("UP stake", "0.02 WETH", BLUE),
-            ("DOWN stake", "0.02 WETH", PINK),
-            ("Winner collected", "0.0392 WETH", PURPLE),
+            ("UP stake", "0.005 WETH", BLUE),
+            ("DOWN stake", "0.005 WETH", PINK),
+            ("Winner collected", "0.0098 WETH", PURPLE),
         ]):
             y = 207 + i * 124
             box(d, (81, y, 1190, y + 104), fill=PANEL, outline=color)
             d.text((111, y + 27), lab, font=font(30), fill=MUTED)
             d.text((620, y + 22), value, font=font(40, True), fill=WHITE)
-        d.text((90, 593), "Historical WETH-only run · development transactions · live keeper", font=font(22), fill=GOLD)
+        d.text((90, 593), "Current contract · scripted WETH transactions · live keeper", font=font(22), fill=GOLD)
     elif scene == "fork":
         d.text((78, 115), "REAL POOL. LOCAL FORK.", font=font(45, True), fill=WHITE)
         for i, (lab, value) in enumerate([
@@ -238,7 +238,7 @@ def render_slide(line: Line, index: int) -> Path:
 
 
 async def synthesize(index: int, line: Line, sem: asyncio.Semaphore) -> Path:
-    path = HERE / "voice-eth" / f"{index:02d}.mp3"
+    path = HERE / "voice-current" / f"{index:02d}.mp3"
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.exists() and path.stat().st_size > 1000:
         return path
@@ -305,15 +305,14 @@ def main() -> None:
     (HERE / "description.md").write_text(
         "FlipTheMeme — Robinhood Chain testnet Rounds demo.\n\n"
         "Public demo: https://rhc.flipthememe.com/rounds\n"
-        "Current verified contract: https://explorer.testnet.chain.robinhood.com/address/0xb70fa41f1ad30235ff580c33e76f3490272bcd97\n"
+        "Current verified contract: https://explorer.testnet.chain.robinhood.com/address/0x1e928adc9de612b08f78824417d4f5ef354c66d7\n"
         "Keeper health: https://api-rhc.flipthememe.com/api/rounds/health\n"
-        "Historical WETH-only run (previous contract): https://explorer.testnet.chain.robinhood.com/address/0xe3620f0855c4dc1aace648cc8240a4fa89fd93c4\n"
-        "Historical winning claim: https://explorer.testnet.chain.robinhood.com/tx/0x2007ba3cc065ca7f3cf8d21aa631e65d6579a4d7608376484bc22cea8e7705e2\n"
-        "Fork test: https://github.com/Sofiia7/memepred/blob/robinhood-chain/docs/rhc/measurements/rounds/mainnet-fork-2026-10-01.md\n"
-        "Source repository: https://github.com/Sofiia7/memepred/tree/robinhood-chain (public after opening)\n\n"
+        "Current-contract scripted testnet run: https://github.com/Sofiia7/memepred/blob/claude/charming-mayer-zc0oov/docs/rhc/measurements/rounds/e2e-testnet-60s.log\n"
+        "Fork test: https://github.com/Sofiia7/memepred/blob/claude/charming-mayer-zc0oov/docs/rhc/measurements/rounds/mainnet-fork-2026-10-01.md\n"
+        "Source repository: https://github.com/Sofiia7/memepred/tree/claude/charming-mayer-zc0oov (public after opening)\n\n"
         "Product-flow screens in this video are illustrations, not recorded browser transactions. "
-        "The historical testnet transactions used a previous WETH-only contract and were generated by a development script. "
-        "The new ETH path passed Foundry tests and the deployed TestWETH passed a deposit/withdraw check; a complete live round on this deployment is not recorded here. "
+        "The current-contract testnet transactions were generated by a development script through its WETH entry path. "
+        "The direct ETH path passed Foundry tests and the deployed TestWETH passed a deposit/withdraw check; a complete browser-wallet ETH round is not recorded here. "
         "The fork swap was simulated locally. No organic user demand or mainnet betting is claimed.\n",
         encoding="utf-8",
     )
