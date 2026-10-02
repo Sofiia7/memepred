@@ -138,7 +138,7 @@ scripts\node_modules\.bin\tsx scripts\rhc\rounds-deploy.mts deploy --yes-testnet
 
 `forge script ... --broadcast --slow` только против `https://rpc.testnet.chain.robinhood.com` (другую цепочку скрипт не
 примет, 4663 отвергает явно). Порядок, как в скрипте: новый `ReferralRegistry`, `PoolRounds` (кап 1, пауза 300, окно
-страйка 300, `depthPerBank` 2500, ставка 0.005-0.04, `minBank` 0.02, `costAllowance` 69 692 gwei), связка реестра
+страйка 60 (с 2 октября; до этого 300), `depthPerBank` 2500, ставка 0.005-0.04, `minBank` 0.02, `costAllowance` 69 692 gwei), связка реестра
 `setMarketFactory(PoolRounds)` и `authorizeMarket(PoolRounds)`, длительность 300 с, `listPool` для каждого пула из
 `ROUNDS_POOLS`, `setPauser(KEEPER_ADDRESS)`. Права мультисигу на тестнете не передаются (`RHC_HANDOVER` не задан).
 9 транзакций.
@@ -154,6 +154,31 @@ scripts\node_modules\.bin\tsx scripts\rhc\rounds-deploy.mts deploy --yes-testnet
 
 Запись forge о развёртывании: `contracts\broadcast\DeployPoolRounds.s.sol\46630\run-latest.json`. Если скрипт упал
 посередине, сначала посмотреть туда (что уже отправлено), а не запускать заново.
+
+### Редеплой 2 октября: окно страйка 60 с и банк 0.01 на тех же стенд-инах
+
+Решение Софии 2 октября: результат через 11 минут после закрытия вместо 15. Окно страйка неизменяемо, поэтому нужен
+новый `PoolRounds`; стенд-ин пулы, фабрика и `TestWETH` деплоя 2 октября переиспользуются (их гейт от окна не зависит:
+кольцо `max(60, 300) + 600` = 900, как раньше). Порог банка задаётся сразу, чтобы не повторять `bank`:
+
+```
+cd /d C:\Server\memepred
+set RHC_WETH_ADDRESS=0x702431c8ef4e21fc4180c8395a4b0f3464b7d5a3
+set ROUNDS_V3_FACTORY_ADDRESS=0x297d37ae9ef9747b2f040ddfb16cb694bb73034b
+set ROUNDS_POOLS=0x923a9486cd5cfa7a2929af09ee3082c9b411c37c,0x5daf9bbd4a52d90a963e5f4e9a9c7df56673d25c,0xa8b93b1c1e89ad2f1fe127efd37cc30e28d8f7b4
+set ROUNDS_MIN_BANK=10000000000000000
+set ROUNDS_COST_ALLOWANCE=45000000000000
+scripts\node_modules\.bin\tsx scripts\rhc\rounds-deploy.mts plan
+scripts\node_modules\.bin\tsx scripts\rhc\rounds-deploy.mts simulate
+scripts\node_modules\.bin\tsx scripts\rhc\rounds-deploy.mts deploy --yes-testnet
+scripts\node_modules\.bin\tsx scripts\rhc\rounds-deploy.mts after
+```
+
+`ROUNDS_STRIKE_WINDOW` задавать не нужно: 60 теперь значение скрипта по умолчанию; `plan` печатает его в строке
+`parameters`. Старый контракт `0xb70f...bcd9` не трогать: открытые на нём раунды дорабатывают, кипер его обслуживает,
+пока в `.env.rhc` стоит его адрес; выплаты по нему забираются и после переключения. Дальше шаги 5-9 как обычно:
+верификация, `ROUNDS_ADDRESS` и `ROUNDS_START_BLOCK` у кипера, сквозная проверка, сборка сайта с новым адресом и
+блоком, запись в `DEPLOYMENTS.md`.
 
 ## Шаг 5. Верификация исходников на обозревателе
 

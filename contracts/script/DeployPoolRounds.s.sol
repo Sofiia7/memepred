@@ -37,7 +37,10 @@ import "../src/ReferralRegistry.sol";
  *                                  skewed book without any forecast (re-audit V3-6). The contract itself
  *                                  still accepts 1..4 so that the reference can be checked at both caps.
  *           ROUNDS_STRIKE_PAUSE    300 s between the close of betting and the strike window (rule 4)
- *           ROUNDS_STRIKE_WINDOW   300 s averaged for the strike (rule 4)
+ *           ROUNDS_STRIKE_WINDOW   60 s averaged for the strike. POSITIVE-EV.md rule 4 measured 300 s; the
+ *                                  owner chose 60 on 2 October 2026 so that the result comes 11 minutes after
+ *                                  the close instead of 15 (section 16 of pool-toxicity: the ordinary player
+ *                                  loses 7.2% instead of 4.3% at 2 bets per hour, 3.3% instead of 2.2% at 5)
  *           ROUNDS_DEPTH_PER_BANK  2500: a round's accepted bank <= pool WETH depth / 2500 (re-audit V3-1);
  *                                  with ROUNDS_MIN_BANK 0.02 a pool needs 50 WETH of depth to be listed
  *           ROUNDS_MIN_STAKE       0.005 WETH, the current MIN_BET
@@ -83,7 +86,7 @@ contract DeployPoolRounds is Script {
 
         e.maxSideRatio = vm.envOr("ROUNDS_MAX_SIDE_RATIO", uint256(1));
         e.strikePause = vm.envOr("ROUNDS_STRIKE_PAUSE", uint256(300));
-        e.strikeWindow = vm.envOr("ROUNDS_STRIKE_WINDOW", uint256(300));
+        e.strikeWindow = vm.envOr("ROUNDS_STRIKE_WINDOW", uint256(60));
         e.depthPerBank = vm.envOr("ROUNDS_DEPTH_PER_BANK", uint256(2500));
         e.minStake = vm.envOr("ROUNDS_MIN_STAKE", uint256(0.005 ether));
         e.maxStake = vm.envOr("ROUNDS_MAX_STAKE", uint256(0.04 ether));
