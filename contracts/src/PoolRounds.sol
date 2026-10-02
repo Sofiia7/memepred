@@ -18,6 +18,11 @@ interface IPoolRoundReferrals {
     function register(address referee, address referrer) external;
 }
 
+interface IWrappedEther {
+    function deposit() external payable;
+    function withdraw(uint256 amount) external;
+}
+
 /**
  * @title  PoolRounds (interface v3)
  * @notice Matched rounds on Uniswap v3 pools, candidate v2 of docs/rhc/POSITIVE-EV.md
@@ -419,6 +424,16 @@ contract PoolRounds is Ownable2Step, Pausable, ReentrancyGuard {
      *         limited: its excess comes back without a fee.
      */
     function bet(uint256 roundId, uint256 stake, Side side, address referrer) external nonReentrant whenNotPaused {
+        _bet(roundId, stake, side, referrer, false);
+    }
+
+    /// @notice Place a bet using native ETH. It is wrapped into the pool's WETH
+    ///         inside this transaction, so the player needs no separate wrap or approval.
+    function betWithEth(uint256 roundId, Side side, address referrer) external payable nonReentrant whenNotPaused {
+        _bet(roundId, msg.value, side, referrer, true);
+    }
+
+    function _bet(uint256 roundId, uint256 stake, Side side, address referrer, bool nativeEth) internal {
         (address pool, uint256 duration, uint256 index) = decodeRoundId(roundId);
         PoolConfig memory cfg = pools[pool];
         if (!cfg.listed) revert PoolNotListed(pool);
@@ -451,7 +466,8 @@ contract PoolRounds is Ownable2Step, Pausable, ReentrancyGuard {
         t.side = uint8(side);
         t.status = uint8(TicketStatus.PLACED);
 
-        weth.safeTransferFrom(msg.sender, address(this), stake);
+        if (nativeEth) IWrappedEther(address(weth)).deposit{value: stake}();
+        else weth.safeTransferFrom(msg.sender, address(this), stake);
 
         if (referrer != address(0) && address(referralRegistry) != address(0)) {
             try referralRegistry.register(msg.sender, referrer) {} catch {}
@@ -490,6 +506,16 @@ contract PoolRounds is Ownable2Step, Pausable, ReentrancyGuard {
      *         never hold a claim hostage. Not pausable.
      */
     function claim(uint256 roundId) external nonReentrant returns (uint256 payout) {
+        return _claim(roundId, false);
+    }
+
+    /// @notice Collect a payout as native ETH. The WETH configured for this
+    ///         deployment must support withdraw(uint256) and be fully backed.
+    function claimAsEth(uint256 roundId) external nonReentrant returns (uint256 payout) {
+        return _claim(roundId, true);
+    }
+
+    function _claim(uint256 roundId, bool nativeEth) internal returns (uint256 payout) {
         Ticket storage t = _tickets[roundId][msg.sender];
         _requirePlaced(roundId, msg.sender, t.status);
 
@@ -503,8 +529,18 @@ contract PoolRounds is Ownable2Step, Pausable, ReentrancyGuard {
             if (referrer != address(0)) referralOwed[referrer] += referralShare;
             else feesAccrued += referralShare;
         }
-        if (payout > 0) weth.safeTransfer(msg.sender, payout);
+        if (payout > 0) {
+            if (nativeEth) {
+                IWrappedEther(address(weth)).withdraw(payout);
+                (bool sent,) = payable(msg.sender).call{value: payout}("");
+                require(sent, "ETH payout failed");
+            } else weth.safeTransfer(msg.sender, payout);
+        }
         emit Claimed(roundId, msg.sender, payout, referrer, referralShare);
+    }
+
+    receive() external payable {
+        require(msg.sender == address(weth), "Only WETH may send ETH");
     }
 
     function _requirePlaced(uint256 roundId, address player, uint8 status) internal pure {
