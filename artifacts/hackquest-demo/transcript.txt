@@ -1,0 +1,53 @@
+There is a meme coin on Robinhood Chain you follow, but no short prediction market for it.
+
+FlipTheMeme gives you an UP or DOWN round on that coin, without buying it.
+
+The current product is a Robinhood Chain testnet prototype. Players stake and collect test ETH.
+
+Its three public demonstration pools have scripted prices. The public preview link is in the description.
+
+The public desktop preview shows three listed pools and a direct ETH betting flow.
+
+Each pool shows its depth and the largest matched bank a round can accept.
+
+Both sides' totals are visible. Only equal stakes on UP and DOWN actually play.
+
+Any excess comes back without a fee. If there is too little opposing stake, everyone gets a full refund.
+
+A round first takes bets for five minutes, then waits through a five-minute pause.
+
+The strike is averaged over the next five minutes. The exit is measured five minutes later.
+
+Your bet is on the move from that future strike to the exit, not on the price when you click.
+
+For example, a matched stake of 0.01 ETH would collect 0.0196 ETH if it wins.
+
+The contract keeps two percent of the matched bank on a win. A tie or an unpriceable active round returns stakes minus one percent.
+
+The trader confirms the future strike rule and places the bet in one wallet transaction. No swap or token approval.
+
+After settlement, the player's ticket shows the result and a Collect button.
+
+A winning ticket can be collected in ETH. This screen illustrates the result flow.
+
+The previous WETH-only contract completed a real testnet run with the live keeper.
+
+An UP stake of 0.02 WETH met an equal DOWN stake. The winner collected 0.0392 WETH.
+
+The same run checked a tie and a one-sided round. Both returned the amounts specified by the contract.
+
+We also tested the round logic against a canonical pool on a local fork of Robinhood Chain mainnet.
+
+The real pool had about 93.5 WETH of depth and enough price history to pass the listing gates.
+
+At an unchanged price, the round tied. Then a simulated swap inside the fork moved the pool's price.
+
+The contract settled UP and paid the winner. That swap was local simulation, not a mainnet trade.
+
+Only matched trader stakes fund payouts. Pool depth limits how large a round can be.
+
+The new ETH path passed contract tests, but a complete live wager on this deployment is still unrecorded.
+
+This is an unaudited testnet prototype. Its development transactions do not prove user demand.
+
+Try the public Rounds preview, inspect the verified contract, and reproduce the fork test. The links are below.
