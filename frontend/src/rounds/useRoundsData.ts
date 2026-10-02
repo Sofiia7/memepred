@@ -48,6 +48,8 @@ const SYMBOL_ABI = [{ type: 'function', name: 'symbol', stateMutability: 'view',
 export interface RoundPool {
   pool: Address
   symbol: string
+  /** Which side of the pair is WETH: UP means the coin dearer in WETH, a lower tick when WETH is token0. */
+  wethIsToken0?: boolean
 }
 
 export interface RoundMarkets {
@@ -91,6 +93,7 @@ export function useRoundMarkets() {
       const pools = await Promise.all(
         scan.pools.map(async (p) => ({
           pool: p.pool,
+          wethIsToken0: p.wethIsToken0,
           symbol: names.get(p.pool.toLowerCase()) ?? (await tokenSymbol(client as PublicClient, p.pool, p.wethIsToken0)),
         })),
       )
@@ -98,6 +101,7 @@ export function useRoundMarkets() {
       const delisted = await Promise.all(
         scan.delisted.map(async (p) => ({
           pool: p.pool,
+          wethIsToken0: p.wethIsToken0,
           symbol: names.get(p.pool.toLowerCase()) ?? (await tokenSymbol(client as PublicClient, p.pool, p.wethIsToken0)),
         })),
       )

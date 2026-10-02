@@ -75,6 +75,10 @@ function RoundsScreen() {
     [markets.data],
   )
   const delisted = useMemo(() => new Set((markets.data?.delisted ?? []).map((p) => p.pool.toLowerCase())), [markets.data])
+  const orientation = useMemo(
+    () => new Map([...(markets.data?.pools ?? []), ...(markets.data?.delisted ?? [])].filter((p) => p.wethIsToken0 !== undefined).map((p) => [p.pool.toLowerCase(), p.wethIsToken0 as boolean])),
+    [markets.data],
+  )
   const symbolOf = (pool: Address) => symbols.get(pool.toLowerCase()) ?? shortAddr(pool)
 
   const bets = useMemo(() => {
@@ -165,6 +169,7 @@ function RoundsScreen() {
                   poolDelisted={delisted.has(poolOfRound(bet.roundId).toLowerCase())}
                   voidFeePct={c ? bpsToPct(c.voidFeeBps) : undefined}
                   me={address}
+                  wethIsToken0={orientation.get(poolOfRound(bet.roundId).toLowerCase())}
                   onClaim={onClaim}
                 />
               )

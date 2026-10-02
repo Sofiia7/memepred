@@ -78,6 +78,10 @@ export interface RoundState {
   bookFinal: boolean
   activated: boolean
   outcome: number
+  /** The strike is fixed: entryTick is the strike; exitTick is set once settled with a price. Ticks as the pool reports them. */
+  strikeFixed: boolean
+  entryTick: number
+  exitTick: number
   /** RoundSettled.reason for a settled round, when it was looked up (REASON_*). */
   reason?: number
 }
@@ -173,6 +177,8 @@ interface RawRoundView {
   activated: boolean
   strikeFixed: boolean
   outcome: number
+  entryTick: number
+  exitTick: number
 }
 
 export function toTimes(t: RawTimes): RoundTimes {
@@ -291,6 +297,9 @@ export function createRoundsClient(client: PublicClient, address: Address, fromB
         bookFinal: v.bookClosed,
         activated: v.activated,
         outcome: Number(v.outcome),
+        strikeFixed: v.strikeFixed,
+        entryTick: Number(v.entryTick),
+        exitTick: Number(v.exitTick),
       }
     },
 

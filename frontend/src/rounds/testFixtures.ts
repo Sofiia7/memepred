@@ -5,6 +5,8 @@ import type { MyBet } from './useRoundsData'
 /** Shared by the rounds component tests; not imported by the app. */
 export const T_POOL = '0x52908400098527886E0F7030069857D2E4169EE7' as const
 export const T_PLAYER = '0x70997970C51812dc3A010C7d01b50e0d17dc79C8' as const
+/** The rounds contract a fixture bet belongs to (MyBet.contract). */
+export const T_CONTRACT = '0x1e928adc9de612b08f78824417d4f5ef354c66d7' as const
 export const T_INDEX = 6_000_000n
 /** 300 s round, 300 s pause, 300 s strike window. */
 export const T_TIMES = roundTimes(300, T_INDEX, 300, 300)
@@ -46,6 +48,9 @@ export function makeRound(over: Partial<RoundState> = {}): RoundState {
     bookFinal: false,
     activated: false,
     outcome: 0,
+    strikeFixed: false,
+    entryTick: 0,
+    exitTick: 0,
     ...over,
   }
 }
@@ -53,6 +58,7 @@ export function makeRound(over: Partial<RoundState> = {}): RoundState {
 /** Default: 0.02 WETH on UP in a round with UP 0.03 (this bet included) and DOWN 0.02. */
 export function makeBet(over: Partial<MyBet> = {}, round: Partial<RoundState> = {}): MyBet {
   return {
+    contract: T_CONTRACT,
     roundId: T_ROUND_ID,
     round: makeRound(round),
     ticket: { stake: milli(20), side: SIDE_UP, status: TICKET_PLACED },

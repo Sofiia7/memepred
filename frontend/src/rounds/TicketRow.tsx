@@ -7,6 +7,7 @@ import type { MyBet } from './useRoundsData'
 import type { TxState } from './useRoundTx'
 import { ROUNDS_CONFIG } from './roundsAbi'
 import { ChallengeShare } from './ChallengeShare'
+import { StrikeChart } from './StrikeChart'
 import type { Address } from 'viem'
 
 const SYMBOL = ROUNDS_CONFIG.nativeEth ? 'ETH' : 'WETH'
@@ -26,6 +27,8 @@ export interface TicketRowProps {
   poolDelisted?: boolean
   /** The connected wallet, named as referrer in the challenge link of an open bet. */
   me?: Address
+  /** The pool's orientation; with it the row shows the price against the strike. */
+  wethIsToken0?: boolean
   onClaim: (bet: MyBet) => void
 }
 
@@ -88,7 +91,7 @@ export function TicketRow(p: TicketRowProps) {
         <span className={'rnd-ticket-state ' + label.tone}>{label.text}</span>
       </div>
 
-      {p.bet.contract.toLowerCase() !== ROUNDS_CONFIG.address?.toLowerCase() && (
+      {!!ROUNDS_CONFIG.address && p.bet.contract.toLowerCase() !== ROUNDS_CONFIG.address.toLowerCase() && (
         <div className="rnd-ticket-body rnd-tone-warn">
           Previous contract: this bet cannot match bets on the current contract. Any refund or payout remains here and can
           be collected separately.{' '}
@@ -167,6 +170,21 @@ export function TicketRow(p: TicketRowProps) {
         <div className="rnd-ticket-body">
           {outcome ? `${outcomeLabel(outcome)}. ` : ''}Collected{v.payout !== undefined ? ` ${amt(v.payout)}` : ''}.
         </div>
+      )}
+
+      {p.wethIsToken0 !== undefined && v.kind !== 'claimed' && v.kind !== 'refund' && v.kind !== 'none' && (
+        <StrikeChart
+          pool={p.bet.round.pool}
+          wethIsToken0={p.wethIsToken0}
+          symbol={p.symbol}
+          times={times}
+          now={p.now}
+          strikeFixed={p.bet.round.strikeFixed}
+          entryTick={p.bet.round.entryTick}
+          exitTick={p.bet.round.exitTick}
+          outcome={outcome}
+          mySide={side}
+        />
       )}
 
       {p.poolDelisted && v.kind !== 'claimed' && v.kind !== 'lost' && (
