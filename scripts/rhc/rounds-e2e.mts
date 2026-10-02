@@ -29,7 +29,8 @@
  * --testnet  refuses any chain but 46630. Without --yes-testnet it only reads and prints the plan.
  *          With it: players are the first two keys of scripts/rhc/.soak-wallets.json, the referrer the
  *          third (values never printed); the stand-in WETH is minted, or wrapped from each player's own
- *          ETH when the WETH is deposit-backed (TestWETH); ONE price step is pushed on the
+ *          ETH when the WETH is deposit-backed (TestWETH; --min-stakes keeps every stake at the minimum and
+ *          --fund-from-deployer tops a short player up from PRIVATE_KEY); ONE price step is pushed on the
  *          winner pool (each step makes a stand-in pool dearer to read for good: DECISIONS.md 21).
  *          Needs ROUNDS_ADDRESS (the deployed PoolRounds) and ROUNDS_START_BLOCK; the pools are
  *          ROUNDS_E2E_POOLS=win,tie,one, or else the first three PoolListed from ROUNDS_START_BLOCK.
@@ -108,13 +109,17 @@ const WETH_ABI = parseAbi([
 ])
 /** ETH a player keeps for gas on top of the stakes it may have to wrap. */
 const GAS_RESERVE = 2n * 10n ** 14n
+/** --min-stakes: every stake at the contract's minimum (the winner round at the smallest bank that activates, not twice it). */
+const MIN_STAKES = argv.includes('--min-stakes')
+/** --fund-from-deployer (testnet, with --yes-testnet): a player short of ETH is topped up from PRIVATE_KEY before anything else. */
+const FUND = argv.includes('--fund-from-deployer')
 /** Whether the WETH is the mintable stand-in (MockWETH) or deposit-backed (TestWETH, no mint). */
 const canMintWeth = (weth: Address, from: Address) =>
   pub.simulateContract({ account: from, address: weth, abi: WETH_ABI, functionName: 'mint', args: [from, 1n] } as any).then(() => true, () => false)
 /** The stakes of a cycle from the contract's own parameters: TIE at the smallest bank that activates, A at twice that, ONE as TIE. */
 function stakesFor(p: { minStake: bigint; maxStake: bigint; minBank: bigint }) {
   const tieStake = p.minBank / 2n > p.minStake ? p.minBank / 2n : p.minStake
-  const winStake = tieStake * 2n <= p.maxStake ? tieStake * 2n : p.maxStake
+  const winStake = MIN_STAKES ? tieStake : tieStake * 2n <= p.maxStake ? tieStake * 2n : p.maxStake
   return { tieStake, winStake, oneStake: tieStake }
 }
 const POOL_ABI = parseAbi([
@@ -765,13 +770,34 @@ async function mainTestnet() {
   const stakes = { p1: st.winStake + st.tieStake + st.oneStake, p2: st.winStake + st.tieStake, referrer: 0n }
   out(`WETH is ${mintable ? 'a mintable stand-in' : 'deposit-backed: each player wraps its own ETH for the stakes'}; stakes A ${fmtEth(st.winStake)} each side, TIE ${fmtEth(st.tieStake)} each side, ONE ${fmtEth(st.oneStake)}`)
   let short = false
+  const topUps: Array<{ a: Actor; wei: bigint }> = []
   for (const [a, stake, gas] of [[p1, stakes.p1, GAS_RESERVE], [p2, stakes.p2, GAS_RESERVE], [ref, 0n, 5n * 10n ** 13n]] as const) {
     const b = await pub.getBalance({ address: a.account.address })
     const w = stake > 0n ? await read<bigint>(weth, WETH_ABI, 'balanceOf', [a.account.address]) : 0n
     const toWrap = mintable || stake <= w ? 0n : stake - w
     const need = gas + toWrap
     out(`  ${a.name} ${a.account.address}: ${fmtEth(b)} ETH${stake > 0n ? `, ${fmtEth(w)} WETH` : ''} (needs ${fmtEth(need)} ETH${toWrap > 0n ? `: ${fmtEth(toWrap)} to wrap plus gas` : ''})`)
-    if (b < need) short = true
+    if (b < need) { short = true; topUps.push({ a, wei: need - b }) }
+  }
+  if (short && FUND) {
+    // The deployer (PRIVATE_KEY) covers the shortfall. It is also the local keeper's wallet: this runs before any
+    // bet, while the keeper has nothing to send, so the two do not meet on a nonce. The deployer keeps GAS_RESERVE.
+    const dk = asKey(readEnvNames(['PRIVATE_KEY']).PRIVATE_KEY, 'PRIVATE_KEY')
+    const deployer = privateKeyToAccount(dk)
+    const total = topUps.reduce((x, t) => x + t.wei, 0n)
+    const db = await pub.getBalance({ address: deployer.address })
+    out(`  deployer ${deployer.address}: ${fmtEth(db)} ETH; top-ups needed ${fmtEth(total)} (${topUps.map((t) => `${t.a.name} ${fmtEth(t.wei)}`).join(', ')})`)
+    if (db < total + GAS_RESERVE) throw new Error(`the deployer cannot cover ${fmtEth(total)} and keep ${fmtEth(GAS_RESERVE)} for the keeper`)
+    if (YES) {
+      const dw = createWalletClient({ account: deployer, chain, transport: http(rpcUrl) })
+      for (const t of topUps) {
+        const hash = await dw.sendTransaction({ to: t.a.account.address, value: t.wei, chain, account: deployer } as any)
+        const rc = await pub.waitForTransactionReceipt({ hash, timeout: 180_000 })
+        if (rc.status !== 'success') throw new Error(`top-up of ${t.a.name} reverted, tx ${hash}`)
+        out(`  topped up ${t.a.name} +${fmtEth(t.wei)} ETH from the deployer, tx ${hash}`)
+      }
+      short = false
+    } else out('  (would be sent with --yes-testnet)')
   }
   for (const [n, a] of [['win', poolList[0]], ['tie', poolList[1]], ['one', poolList[2]]] as const) {
     const cfg = await read<any>(rounds, R_ABI, 'pools', [a])
@@ -789,7 +815,7 @@ async function mainTestnet() {
   out(`plan: ${mintable ? 'mint stand-in WETH to' : 'wrap ETH for'} p1 and p2, approve, 5 bets in the next 300 s window (A ${fmtEth(st.winStake)} each side, TIE ${fmtEth(st.tieStake)} each side, ONE ${fmtEth(st.oneStake)} one side),`)
   out('      claim ONE at closeAt, wait strikeEnd (+10 min) for fixStrike, ONE pushTick on the win pool, wait settleAt (+5 min) for settle,')
   out('      4 claims, claimReferral, withdrawFees if anything is left. About 25 minutes; about 2.5 million gas in total for the players and the push.')
-  if (short) throw new Error('a wallet is short of testnet ETH (gas, and the stakes to wrap when the WETH is deposit-backed): fund it from the faucet first (see ROUNDS-DEPLOY.md)')
+  if (short && !(FUND && !YES)) throw new Error('a wallet is short of testnet ETH (gas, and the stakes to wrap when the WETH is deposit-backed): fund it from the faucet, or add --fund-from-deployer (see ROUNDS-DEPLOY.md)')
   if (!YES) {
     out('\nnothing sent. To run it: add --yes-testnet')
     return
