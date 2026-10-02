@@ -6,6 +6,7 @@ import { TARGET_CHAIN_ID } from '../lib/chain'
 import { usePools } from '../hooks/usePools'
 import { shortAddr } from '../lib/symbols'
 import { ROUNDS_CONFIG } from './roundsAbi'
+import { PREVIOUS_ROUNDS } from './legacyRounds'
 import { createRoundsClient, OUTCOME_REFUND, TICKET_NONE, TICKET_PLACED, type PoolDepth, type RoundsClient, type RoundState, type TicketState } from './roundsClient'
 import { currentIndex, decodeRoundId, roundIdOf } from './roundMath'
 
@@ -145,6 +146,7 @@ export function useCurrentRounds(markets: RoundMarkets | undefined, nowSec: numb
 // ── the connected player's bets ─────────────────────────────────────────────
 
 export interface MyBet {
+  contract: Address
   roundId: bigint
   round: RoundState
   ticket: TicketState
@@ -160,32 +162,42 @@ export interface MyBets {
 
 export function useMyBets(player: Address | undefined) {
   const rounds = useRoundsClient()
+  const client = usePublicClient({ chainId: TARGET_CHAIN_ID }) as PublicClient | undefined
   return useQuery<MyBets>({
     queryKey: ['rounds', 'mine', rounds?.address, player?.toLowerCase()],
-    enabled: !!rounds && !!player,
+    enabled: !!rounds && !!client && !!player,
     refetchInterval: 10_000,
     refetchOnWindowFocus: true,
     queryFn: async () => {
-      const c = rounds as RoundsClient
       const who = player as Address
-      const history = await c.history(who)
-      const bets = await Promise.all(
-        history.roundIds.map(async (roundId): Promise<MyBet | undefined> => {
-          try {
-            const [ticket, round] = await Promise.all([c.ticket(roundId, who), c.round(roundId)])
-            if (ticket.status === TICKET_NONE) return undefined
-            // A refund says why; the reason is only in the RoundSettled event.
-            if (round.outcome === OUTCOME_REFUND) round.reason = await c.settleReason(roundId)
-            const previewPayout = ticket.status === TICKET_PLACED && round.bookFinal ? await c.previewClaim(roundId, who) : undefined
-            return { roundId, round, ticket, previewPayout, claimedPayout: history.claimed.get(roundId.toString()) }
-          } catch {
-            return undefined
-          }
-        }),
-      )
-      const list = bets.filter((b): b is MyBet => !!b)
+      const current = rounds as RoundsClient
+      const previous = createRoundsClient(client as PublicClient, PREVIOUS_ROUNDS.address, PREVIOUS_ROUNDS.deployBlock)
+      const errors: string[] = []
+      const groups = await Promise.all([current, previous].map(async (c) => {
+        try {
+          const history = await c.history(who)
+          if (history.scanError) errors.push(`${c.address}: ${history.scanError}`)
+          const bets = await Promise.all(history.roundIds.map(async (roundId): Promise<MyBet | undefined> => {
+            try {
+              const [ticket, round] = await Promise.all([c.ticket(roundId, who), c.round(roundId)])
+              if (ticket.status === TICKET_NONE) return undefined
+              if (round.outcome === OUTCOME_REFUND) round.reason = await c.settleReason(roundId)
+              const previewPayout = ticket.status === TICKET_PLACED && round.bookFinal ? await c.previewClaim(roundId, who) : undefined
+              return { contract: c.address, roundId, round, ticket, previewPayout, claimedPayout: history.claimed.get(roundId.toString()) }
+            } catch (e) {
+              errors.push(`Could not read ticket ${roundId} on ${c.address}: ${e instanceof Error ? e.message : String(e)}`)
+              return undefined
+            }
+          }))
+          return bets.filter((b): b is MyBet => !!b)
+        } catch (e) {
+          errors.push(`${c.address}: ${e instanceof Error ? e.message : String(e)}`)
+          return [] as MyBet[]
+        }
+      }))
+      const list = groups.flat()
       list.sort((a, b) => b.round.times.closeAt - a.round.times.closeAt)
-      return { bets: list, scanError: history.scanError }
+      return { bets: list, scanError: errors.join('; ') || undefined }
     },
   })
 }

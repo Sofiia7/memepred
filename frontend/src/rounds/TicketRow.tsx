@@ -76,13 +76,21 @@ export function TicketRow(p: TicketRowProps) {
   )
 
   return (
-    <div className={'rnd-ticket' + (v.action ? ' urgent' : '')} id={`round-${p.bet.roundId.toString()}`} data-kind={v.kind}>
+    <div className={'rnd-ticket' + (v.action ? ' urgent' : '')} id={`round-${p.bet.contract}-${p.bet.roundId.toString()}`} data-kind={v.kind}>
       <div className="rnd-ticket-head">
         <span>
           <b>{p.symbol}</b> · {side} · <b>{amt(stake)}</b>
         </span>
         <span className={'rnd-ticket-state ' + label.tone}>{label.text}</span>
       </div>
+
+      {p.bet.contract.toLowerCase() !== ROUNDS_CONFIG.address?.toLowerCase() && (
+        <div className="rnd-ticket-body rnd-tone-warn">
+          Previous contract: this bet cannot match bets on the current contract. Any refund or payout remains here and can
+          be collected separately.{' '}
+          <a href={`https://explorer.testnet.chain.robinhood.com/address/${p.bet.contract}`} target="_blank" rel="noreferrer">View contract</a>
+        </div>
+      )}
 
       {v.kind === 'open' && (
         <div className="rnd-ticket-body">

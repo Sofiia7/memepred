@@ -10,6 +10,8 @@ import { TICKET_NONE } from './roundsClient'
 import type { RoundSide } from './roundMath'
 import { explainRoundError } from './roundErrors'
 import { useRoundsClient, type MyBet, type MyBets } from './useRoundsData'
+import { createRoundsClient } from './roundsClient'
+import { PREVIOUS_ROUNDS } from './legacyRounds'
 import { ROUNDS_CONFIG } from './roundsAbi'
 import { GAS_RESERVE_WEI } from '../lib/rules'
 
@@ -148,7 +150,7 @@ export function useRoundTx() {
         void Promise.all([rounds.round(snap.roundId), rounds.ticket(snap.roundId, snap.player)])
           .then(([round, ticket]) => {
             queryClient.setQueryData<MyBets>(['rounds', 'mine', rounds.address, snap.player.toLowerCase()], (old) => ({
-              bets: [{ roundId: snap.roundId, round, ticket }, ...(old?.bets ?? []).filter((b) => b.roundId !== snap.roundId)],
+              bets: [{ contract: snap.contract, roundId: snap.roundId, round, ticket }, ...(old?.bets ?? []).filter((b) => b.contract.toLowerCase() !== snap.contract.toLowerCase() || b.roundId !== snap.roundId)],
               scanError: old?.scanError,
             }))
           })
@@ -161,18 +163,21 @@ export function useRoundTx() {
   const claim = useCallback(
     (b: MyBet) =>
       run(async () => {
-        if (!address || !rounds) throw new Error('Connect a wallet first.')
+        if (!address || !rounds || !client) throw new Error('Connect a wallet first.')
         const roundId = b.roundId
         const chain = await ensureChain()
         if (!chain.ok) throw new Error(chain.error)
         setState({ step: 'claiming' })
-        const req = ROUNDS_CONFIG.nativeEth ? rounds.claimAsEthRequest(roundId) : rounds.claimRequest(roundId)
+        const source = b.contract.toLowerCase() === rounds.address.toLowerCase()
+          ? rounds
+          : createRoundsClient(client, b.contract, PREVIOUS_ROUNDS.deployBlock)
+        const req = ROUNDS_CONFIG.nativeEth ? source.claimAsEthRequest(roundId) : source.claimRequest(roundId)
         const hash = await writeContractAsync({ ...req, account: address, chainId: TARGET_CHAIN_ID } as never)
         setState({ step: 'claiming', hash })
         await waitOk(hash, 'Collecting')
         return { step: 'done', hash, note: ROUNDS_CONFIG.nativeEth ? 'Collected as ETH.' : 'Collected.' }
       }),
-    [address, rounds, ensureChain, run, waitOk, writeContractAsync],
+    [address, rounds, client, ensureChain, run, waitOk, writeContractAsync],
   )
 
   const wrap = useCallback(

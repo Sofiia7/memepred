@@ -78,7 +78,7 @@ function RoundsScreen() {
     list.sort((a, b) => urgency(viewOf(a, now, ratio).kind) - urgency(viewOf(b, now, ratio).kind) || b.round.times.closeAt - a.round.times.closeAt)
     return list
   }, [mine.data, now, ratio])
-  const myRounds = useMemo(() => new Map((mine.data?.bets ?? []).map((b) => [b.roundId.toString(), b])), [mine.data])
+  const myRounds = useMemo(() => new Map((mine.data?.bets ?? []).filter((b) => b.contract.toLowerCase() === ROUNDS_CONFIG.address?.toLowerCase()).map((b) => [b.roundId.toString(), b])), [mine.data])
 
   useEffect(() => {
     if (!hash || !mine.data) return
@@ -86,7 +86,7 @@ function RoundsScreen() {
   }, [hash, mine.data])
 
   const onClaim = (b: MyBet) => {
-    setActingId(b.roundId.toString())
+    setActingId(`${b.contract}:${b.roundId}`)
     void tx.claim(b)
   }
 
@@ -125,7 +125,7 @@ function RoundsScreen() {
           {mine.data && bets.length === 0 && <p className="rnd-note">No bets from this wallet yet.</p>}
           <div className="rnd-list">
             {bets.map((bet) => {
-              const id = bet.roundId.toString()
+              const id = `${bet.contract}:${bet.roundId}`
               return (
                 <TicketRow
                   key={id}
