@@ -16,7 +16,6 @@ const READY: BetGateInput = {
   insufficientWeth: false,
   poolTooThin: false,
   depthBlocked: false,
-  acknowledged: true,
   stakeText: '0.01',
   symbol: 'WETH',
 }
@@ -28,10 +27,6 @@ describe('betGate', () => {
 
   it('asks to connect first, and that is pressable', () => {
     expect(betGate({ ...READY, isConnected: false })).toEqual({ disabled: false, label: 'CONNECT WALLET' })
-  })
-
-  it('refuses until the player confirms what the bet is on', () => {
-    expect(betGate({ ...READY, acknowledged: false })).toEqual({ disabled: true, label: 'CONFIRM WHAT YOU BET ON FIRST' })
   })
 
   it('refuses when the texts do not describe the contract', () => {

@@ -9,7 +9,7 @@ import { useEnsureChain } from '../hooks/useEnsureChain'
 import { TICKET_NONE } from './roundsClient'
 import type { RoundSide } from './roundMath'
 import { explainRoundError } from './roundErrors'
-import { useRoundsClient, type MyBet } from './useRoundsData'
+import { useRoundsClient, type MyBet, type MyBets } from './useRoundsData'
 import { ROUNDS_CONFIG } from './roundsAbi'
 import { GAS_RESERVE_WEI } from '../lib/rules'
 
@@ -143,9 +143,19 @@ export function useRoundTx() {
         const hash = await writeContractAsync({ ...req, account: snap.player, chainId: snap.chainId } as never)
         setState({ step: 'betting', hash })
         await waitOk(hash, 'The bet')
+        // A full Bet-log history scan can lag behind the receipt. Read this
+        // ticket directly so "Your bets" appears as soon as the chain has it.
+        void Promise.all([rounds.round(snap.roundId), rounds.ticket(snap.roundId, snap.player)])
+          .then(([round, ticket]) => {
+            queryClient.setQueryData<MyBets>(['rounds', 'mine', rounds.address, snap.player.toLowerCase()], (old) => ({
+              bets: [{ roundId: snap.roundId, round, ticket }, ...(old?.bets ?? []).filter((b) => b.roundId !== snap.roundId)],
+              scanError: old?.scanError,
+            }))
+          })
+          .catch(() => { /* The normal event scan still picks it up. */ })
         return { step: 'done', hash, note: 'Bet placed. It is listed under Your bets.' }
       }),
-    [address, client, rounds, ensureChain, run, waitOk, writeContractAsync],
+    [address, client, rounds, ensureChain, run, waitOk, writeContractAsync, queryClient],
   )
 
   const claim = useCallback(

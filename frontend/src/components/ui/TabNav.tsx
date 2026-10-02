@@ -24,7 +24,7 @@ export function TabNav() {
   else tabs.push({ to: '/genesis', label: 'GENESIS', ico: <StarIcon /> })
   // Only in builds that turn the rounds screen on (VITE_ROUNDS_ENABLED=1); otherwise the tabs are unchanged.
   if (ROUNDS_ENABLED && !roundsFirst) tabs.splice(1, 0, { to: '/rounds', label: 'ROUNDS', ico: <RoundsIcon /> })
-  if (isConnected) tabs.push({ to: '/portfolio', label: 'PORTFOLIO', ico: <WalletIcon /> })
+  if (isConnected) tabs.push({ to: '/portfolio', label: roundsFirst ? 'MY BETS' : 'PORTFOLIO', ico: <WalletIcon /> })
 
   return (
     <nav className="tabnav" style={{ ['--tabs' as any]: tabs.length }}>

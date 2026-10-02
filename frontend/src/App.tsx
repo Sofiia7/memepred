@@ -49,7 +49,7 @@ export function App() {
           <Route path="/market/:address" element={<Market />} />
           <Route path="/order/:address/:orderId" element={<OrderPage />} />
           <Route path="/leaderboard" element={<Leaderboard />} />
-          <Route path="/portfolio" element={<Portfolio />} />
+          <Route path="/portfolio" element={ROUNDS_ENABLED && IS_POOL_BACKED ? <Navigate to="/rounds#your-bets" replace /> : <Portfolio />} />
           <Route path="/genesis" element={IS_POOL_BACKED ? <Navigate to="/pools" replace /> : <GenesisPage />} />
           <Route path="/refer" element={<ReferPage />} />
           <Route path="/how-it-works" element={<HowItWorksPage />} />

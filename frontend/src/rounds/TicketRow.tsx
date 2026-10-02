@@ -1,6 +1,6 @@
 import { countdownFrom } from '../hooks/useNow'
 import { formatAmount } from '../lib/money'
-import { clockTime, durationLabel, percentOf, sideLabel } from './roundMath'
+import { clockTime, percentOf, sideLabel } from './roundMath'
 import { describeTicket, outcomeLabel, refundReasonText, type TicketView } from './ticketState'
 import { OUTCOME_REFUND, OUTCOME_TIE } from './roundsClient'
 import type { MyBet } from './useRoundsData'
@@ -47,7 +47,7 @@ const STATE_LABEL: Record<TicketView['kind'], { text: string; tone: string }> = 
   none: { text: 'no bet', tone: 'rnd-tone-dim' },
   open: { text: 'bets open', tone: 'rnd-tone-dim' },
   closing: { text: 'closed', tone: 'rnd-tone-dim' },
-  refund: { text: 'did not play', tone: 'rnd-tone-warn' },
+  refund: { text: 'refunded', tone: 'rnd-tone-warn' },
   pause: { text: 'pause', tone: 'rnd-tone-dim' },
   strike: { text: 'strike', tone: 'rnd-tone-warn' },
   exit: { text: 'to the exit', tone: 'rnd-tone-dim' },
@@ -64,7 +64,7 @@ const STATE_LABEL: Record<TicketView['kind'], { text: string; tone: string }> = 
  */
 export function TicketRow(p: TicketRowProps) {
   const v = viewOf(p.bet, p.now, p.ratio)
-  const { times, duration, index, outcome, up, down, playFloor } = p.bet.round
+  const { times, outcome, up, down, playFloor } = p.bet.round
   const label = STATE_LABEL[v.kind]
   const side = sideLabel(p.bet.ticket.side)
   const stake = p.bet.ticket.stake
@@ -79,7 +79,7 @@ export function TicketRow(p: TicketRowProps) {
     <div className={'rnd-ticket' + (v.action ? ' urgent' : '')} id={`round-${p.bet.roundId.toString()}`} data-kind={v.kind}>
       <div className="rnd-ticket-head">
         <span>
-          <b>{p.symbol}</b> · {durationLabel(duration)} #{index.toString()} · {amt(stake)} · {side}
+          <b>{p.symbol}</b> · {side} · <b>{amt(stake)}</b>
         </span>
         <span className={'rnd-ticket-state ' + label.tone}>{label.text}</span>
       </div>
@@ -96,8 +96,7 @@ export function TicketRow(p: TicketRowProps) {
       {v.kind === 'refund' && (
         <>
           <div className="rnd-ticket-body">
-            The round did not play: it needed bets on both sides and a matched bank of at least {amt(playFloor)} (UP {amt(up)}, DOWN{' '}
-            {amt(down)}). Your whole stake comes back, without a fee: <b>{amt(v.payout)}</b>.
+            {up > 0n && down > 0n ? 'Both sides had bets, but only ' : 'There was no bet on the other side, so only '}{amt(2n * (up < down ? up : down))} was matched (UP {amt(up)}, DOWN {amt(down)}). This round needed {amt(playFloor)} matched. Your full stake is refundable without a fee: <b>{amt(v.payout)}</b>.
           </div>
           <ClaimButton {...p} payout={v.payout} />
         </>

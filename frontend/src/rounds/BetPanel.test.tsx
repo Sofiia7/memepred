@@ -64,9 +64,7 @@ describe('before the signature the player sees what the bet is on', () => {
   it('a plain statement next to the button that it is not a bet on the price now', () => {
     renderPanel()
     const note = screen.getByRole('note')
-    expect(note.textContent).toMatch(
-      /^You bet on the move from the strike to the exit, not on the price now\. The strike is the average price over 5 minutes that start 5 minutes after bets close/,
-    )
+    expect(note.textContent).toMatch(/^Important: The price you see now does not count\. The strike is the average price over 5 minutes/)
   })
 
   it('both sums, in the open', () => {
@@ -78,6 +76,9 @@ describe('before the signature the player sees what the bet is on', () => {
 
   it('the rules: 1:1 matching, 1.96x, fees, minimum bank, unaudited', () => {
     renderPanel()
+    expect(screen.queryByRole('checkbox')).toBeNull()
+    expect(screen.getByRole('button', { name: /Detailed rules/ }).getAttribute('aria-expanded')).toBe('false')
+    fireEvent.click(screen.getByRole('button', { name: /Detailed rules/ }))
     const text = [...document.querySelectorAll('.rules-list li')].map((li) => li.textContent).join('\n')
     expect(text).toContain('Sides are matched 1:1')
     expect(text).toContain('1.96x of the part that plays')
@@ -120,13 +121,10 @@ describe('the estimate of the part that plays', () => {
 })
 
 describe('the bet button', () => {
-  it('stays off until a side is picked and the timing is confirmed, then bets exactly that', () => {
+  it('bets the chosen side and amount without a second risk checkbox', () => {
     renderPanel()
     expect(cta().textContent).toBe('PICK UP OR DOWN')
     fireEvent.click(screen.getByRole('button', { name: 'DOWN' }))
-    expect(cta().disabled).toBe(true)
-    expect(cta().textContent).toBe('CONFIRM WHAT YOU BET ON FIRST')
-    fireEvent.click(screen.getByRole('checkbox'))
     expect(cta().disabled).toBe(false)
     expect(cta().textContent).toBe('BET 0.01 WETH DOWN')
     fireEvent.click(cta())
@@ -137,7 +135,6 @@ describe('the bet button', () => {
   it('refuses a stake outside the contract limits', () => {
     renderPanel()
     fireEvent.click(screen.getByRole('button', { name: 'UP' }))
-    fireEvent.click(screen.getByRole('checkbox'))
     fireEvent.change(screen.getByLabelText('WETH'), { target: { value: '0.05' } })
     expect(cta().textContent).toBe('STAKE 0.005-0.04 WETH')
   })
@@ -145,7 +142,6 @@ describe('the bet button', () => {
   it('signs nothing when the contract reports a side cap other than 1:1', () => {
     renderPanel({ constants: { ...T_CONSTANTS, chainSideRatio: 4 } })
     fireEvent.click(screen.getByRole('button', { name: 'UP' }))
-    fireEvent.click(screen.getByRole('checkbox'))
     expect(cta().textContent).toBe('RULES OUT OF DATE - SIGNING OFF')
     expect(screen.getByRole('alert').textContent).toMatch(/caps sides at 4:1/)
   })
@@ -162,7 +158,6 @@ describe('the bet button', () => {
     wethBalance = 0n
     renderPanel()
     fireEvent.click(screen.getByRole('button', { name: 'UP' }))
-    fireEvent.click(screen.getByRole('checkbox'))
     expect(cta().textContent).toBe('NOT ENOUGH WETH - WRAP FIRST')
     expect(screen.getByRole('button', { name: 'WRAP 0.01 ETH' })).toBeTruthy()
   })
@@ -180,7 +175,6 @@ describe('the pool depth limits the round (maxBankOf, BankTooLargeForPool, PoolT
   it('blocks a stake that would push the bank past it, says why, and names the largest stake that fits', () => {
     renderPanel({ depth: { depth: 75n * 10n ** 18n, maxBank: milli(30) } })
     fireEvent.click(screen.getByRole('button', { name: 'DOWN' }))
-    fireEvent.click(screen.getByRole('checkbox'))
     fireEvent.click(screen.getByRole('button', { name: '0.02' }))
     expect(cta().disabled).toBe(true)
     expect(cta().textContent).toBe('POOL DEPTH LIMITS THIS ROUND - LOWER THE STAKE')
@@ -194,7 +188,6 @@ describe('the pool depth limits the round (maxBankOf, BankTooLargeForPool, PoolT
   it('never limits the bigger side', () => {
     renderPanel({ depth: { depth: 75n * 10n ** 18n, maxBank: milli(30) } })
     fireEvent.click(screen.getByRole('button', { name: 'UP' }))
-    fireEvent.click(screen.getByRole('checkbox'))
     fireEvent.click(screen.getByRole('button', { name: '0.04' }))
     expect(cta().disabled).toBe(false)
   })
@@ -202,13 +195,13 @@ describe('the pool depth limits the round (maxBankOf, BankTooLargeForPool, PoolT
   it('takes no bets while the pool is below the depth gate, and says collecting still works', () => {
     renderPanel({ depth: { depth: 40n * 10n ** 18n, maxBank: milli(16) } })
     fireEvent.click(screen.getByRole('button', { name: 'UP' }))
-    fireEvent.click(screen.getByRole('checkbox'))
     expect(cta().textContent).toBe('POOL TOO THIN FOR NEW BETS')
     expect(screen.getByLabelText('Pool depth').textContent).toMatch(/below the 50 WETH a pool needs to take bets\. No new bets until it is deeper; bets already placed can still be collected\./)
   })
 
   it('states the depth rule before the signature', () => {
     renderPanel()
+    fireEvent.click(screen.getByRole('button', { name: /Detailed rules/ }))
     const text = [...document.querySelectorAll('.rules-list li')].map((li) => li.textContent).join('\n')
     expect(text).toContain("The pool's depth limits the round.")
     expect(text).toContain('a pool needs 50 WETH of depth to take bets at all')

@@ -27,8 +27,6 @@ export interface BetGateInput {
   poolTooThin: boolean
   /** This stake would raise the round's bank past what the pool's depth backs (BankTooLargeForPool). */
   depthBlocked: boolean
-  /** The player ticked "I bet on the move from the strike to the exit". */
-  acknowledged: boolean
   stakeText: string
   symbol: string
 }
@@ -56,6 +54,5 @@ export function betGate(i: BetGateInput): BetGate {
   if (!i.stakeOk) return { disabled: true, label: `STAKE ${i.limitsText}` }
   if (i.depthBlocked) return { disabled: true, label: 'POOL DEPTH LIMITS THIS ROUND - LOWER THE STAKE' }
   if (i.insufficientWeth) return { disabled: true, label: i.nativeEth ? 'NOT ENOUGH ETH FOR STAKE AND GAS' : `NOT ENOUGH ${i.symbol} - WRAP FIRST` }
-  if (!i.acknowledged) return { disabled: true, label: 'CONFIRM WHAT YOU BET ON FIRST' }
   return { disabled: false, label: `BET ${i.stakeText} ${i.symbol} ${i.side}` }
 }

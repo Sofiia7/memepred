@@ -56,9 +56,21 @@ describe('collecting', () => {
   it('a round that did not play returns the whole stake at once, without a fee', () => {
     const bet = makeBet({ previewPayout: milli(20) }, { bookFinal: true, activated: false, down: 0n })
     const { props } = renderRow({ bet, now: T_TIMES.closeAt + 1 })
-    expect(screen.getByText(/The round did not play/).textContent).toMatch(/Your whole stake comes back, without a fee/)
+    expect(screen.getByText(/There was no bet on the other side/).textContent).toMatch(/Your full stake is refundable without a fee/)
     fireEvent.click(screen.getByRole('button', { name: 'COLLECT 0.02 WETH' }))
     expect(props.onClaim).toHaveBeenCalledWith(bet)
+  })
+
+  it('explains why two opposing 0.005 stakes still refund under a 0.02 minimum bank', () => {
+    const bet = makeBet(
+      { ticket: { stake: milli(5), side: 1, status: 1 }, previewPayout: milli(5) },
+      { bookFinal: true, activated: false, up: milli(5), down: milli(5) },
+    )
+    renderRow({ bet, now: T_TIMES.closeAt + 1 })
+    const body = document.querySelector('.rnd-ticket-body')?.textContent ?? ''
+    expect(body).toContain('only 0.01 WETH was matched')
+    expect(body).toContain('needed 0.02 WETH matched')
+    expect(body).toContain('full stake is refundable without a fee: 0.005 WETH')
   })
 
   it('a winner sees the previewed amount', () => {

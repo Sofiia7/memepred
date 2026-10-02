@@ -70,7 +70,7 @@ export interface BetPanelProps {
  * The bet form for the round of one pool and duration that takes bets now:
  * the visible sums, the timeline, side and stake within the contract's limits,
  * an estimate of the part of the stake that would play at the current sums,
- * the rules, and one button that approves the exact stake and bets.
+ * a short explanation, optional detailed rules, and the transaction button.
  */
 export function BetPanel(p: BetPanelProps) {
   const { address, isConnected } = useAccount()
@@ -83,16 +83,17 @@ export function BetPanel(p: BetPanelProps) {
   const [stakeInput, setStakeInput] = useState<string>(() =>
     c ? formatUnits(c.minStake * 2n <= c.maxStake ? c.minStake * 2n : c.minStake, 18) : '0.01',
   )
-  const [ack, setAck] = useState(false)
-
   const stakeWei = safeParse(stakeInput)
-  const stakeOk = !!c && stakeWei >= c.minStake && stakeWei <= c.maxStake
-  const chips = useMemo(() => (c ? stakeChips(c.minStake, c.maxStake) : []), [c])
   const up = p.round?.up ?? 0n
   const down = p.round?.down ?? 0n
   // The smallest matched bank with which this round plays: its own snapshot once it has
   // a bet, the current contract values before that.
   const playFloor = p.round && p.round.minBank > 0n ? p.round.playFloor : c ? activationFloor(c.minBank, c.costAllowance) : 0n
+  // A pair of minimum-size contract bets cannot activate this deployment.
+  // For the public ETH flow, recommend enough for a single opposing wallet.
+  const suggestedMin = c && ROUNDS_CONFIG.nativeEth && playFloor / 2n > c.minStake ? (playFloor + 1n) / 2n : c?.minStake ?? 0n
+  const stakeOk = !!c && stakeWei >= suggestedMin && stakeWei <= c.maxStake
+  const chips = useMemo(() => (c ? stakeChips(suggestedMin, c.maxStake) : []), [c, suggestedMin])
 
   const { data: wethBalance } = useReadContract({
     address: c?.weth,
@@ -110,7 +111,7 @@ export function BetPanel(p: BetPanelProps) {
   const ethTooLow = shortfall > 0n && eth !== undefined && eth.value < shortfall
 
   const secondsLeft = p.times.closeAt - p.now
-  const limitsText = c ? `${formatAmount(c.minStake, 18)}-${formatAmount(c.maxStake, 18)} ${SYMBOL}` : ''
+  const limitsText = c ? `${formatAmount(suggestedMin, 18)}-${formatAmount(c.maxStake, 18)} ${SYMBOL}` : ''
   const mismatch = sideCapMismatch(c?.chainSideRatio)
   const sideName = side === SIDE_UP ? 'UP' : side === SIDE_DOWN ? 'DOWN' : undefined
   // The depth rule, as the contract applies it in bet(): below the gate no bet at all;
@@ -138,7 +139,6 @@ export function BetPanel(p: BetPanelProps) {
     nativeEth: ROUNDS_CONFIG.nativeEth,
     poolTooThin,
     depthBlocked,
-    acknowledged: ack,
     stakeText: stakeOk ? formatAmount(stakeWei, 18) : stakeInput,
     symbol: SYMBOL,
   })
@@ -166,8 +166,15 @@ export function BetPanel(p: BetPanelProps) {
 
   return (
     <div className="rnd-bet" aria-label={`Bet on ${p.pool.symbol} ${durationLabel(p.duration)} round`}>
+      {tx.state.step === 'done' && tx.state.hash && (
+        <div className="rnd-confirm" role="status">
+          <b>Bet confirmed: {p.pool.symbol} {sideName}, {amt(stakeWei)}</b>
+          <span>It is on chain. Your bets may take a moment to refresh.</span>
+          <a href={`${TARGET_CHAIN.blockExplorers?.default.url}/tx/${tx.state.hash}`} target="_blank" rel="noopener noreferrer">View transaction</a>
+        </div>
+      )}
       <div className="rnd-bet-head">
-        <b>{p.pool.symbol}</b> · {durationLabel(p.duration)} round #{p.index.toString()} · bets close {clockTime(p.times.closeAt)}{' '}
+        <b>{p.pool.symbol}</b> · {durationLabel(p.duration)} round · bets close {clockTime(p.times.closeAt)}{' '}
         (in <b>{countdownFrom(p.times.closeAt, p.now)}</b>)
       </div>
 
@@ -180,6 +187,7 @@ export function BetPanel(p: BetPanelProps) {
         </div>
       </div>
 
+      <details className="rnd-more"><summary>Timing and pool limits</summary>
       {c && p.depth && (
         <p className={'rnd-note' + (poolTooThin ? ' bad' : '')} aria-label="Pool depth">
           {poolTooThin ? (
@@ -197,6 +205,7 @@ export function BetPanel(p: BetPanelProps) {
       )}
 
       <RoundTimeline times={p.times} now={p.now} />
+      </details>
 
       <div className="rnd-sides" role="group" aria-label="Side">
         <button type="button" className={'rnd-side up' + (side === SIDE_UP ? ' on' : '')} aria-pressed={side === SIDE_UP} disabled={locked} onClick={() => setSide(SIDE_UP)}>
@@ -216,6 +225,7 @@ export function BetPanel(p: BetPanelProps) {
         </div>
       </div>
       <div className="stake-hint">{c ? `${limitsText} per bet · one bet per wallet per round` : 'Reading limits from the contract…'}</div>
+      {c && <p className="rnd-core">At least {amt(playFloor)} total must be matched before betting closes (usually {amt(suggestedMin)} on each side). Otherwise both bets are refunded. Result around {clockTime(p.times.settleAt)}.</p>}
       {chips.length > 0 && (
         <div className="chips">
           {chips.map((v) => (
@@ -285,19 +295,7 @@ export function BetPanel(p: BetPanelProps) {
         </p>
       )}
 
-      {timing && (
-        <p className="rnd-key" role="note">
-          <b>You bet on the move from the strike to the exit, not on the price now.</b> {strikeAndExit(timing)}
-        </p>
-      )}
-
-      <label className="rnd-ack">
-        <input type="checkbox" checked={ack} disabled={locked} onChange={(e) => setAck(e.target.checked)} />
-        <span>
-          I understand: this bet is decided by the move from the strike average ({clockTime(p.times.strikeStart)}-
-          {clockTime(p.times.strikeEnd)}) to the exit ({clockTime(p.times.settleAt)}), not by the price now.
-        </span>
-      </label>
+      {timing && <p className="rnd-key" role="note"><b>Important:</b> The price you see now does not count. {strikeAndExit(timing)}</p>}
 
       <button className={'cta' + (gate.disabled ? ' disabled' : '')} disabled={gate.disabled} onClick={onCta}>
         {locked && <span className="spinner" />}

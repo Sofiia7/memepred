@@ -10,7 +10,7 @@ import { TARGET_CHAIN } from '../lib/chain'
 import { formatAmount } from '../lib/money'
 import { shortAddr } from '../lib/symbols'
 import { ROUNDS_CONFIG } from './roundsAbi'
-import { bpsToPct, currentIndex, durationLabel, roundIdOf, roundTimes } from './roundMath'
+import { bpsToPct, currentIndex, durationLabel, roundIdOf, roundTimes, sideLabel } from './roundMath'
 import type { RoundsConstants, RoundState } from './roundsClient'
 import { urgency } from './ticketState'
 import { BetPanel } from './BetPanel'
@@ -48,7 +48,7 @@ export function RoundsPage() {
   return <RoundsScreen />
 }
 
-const SYMBOL = 'WETH'
+const SYMBOL = ROUNDS_CONFIG.nativeEth ? 'ETH' : 'WETH'
 const amt = (v: bigint) => `${formatAmount(v, 18)} ${SYMBOL}`
 
 function RoundsScreen() {
@@ -78,7 +78,7 @@ function RoundsScreen() {
     list.sort((a, b) => urgency(viewOf(a, now, ratio).kind) - urgency(viewOf(b, now, ratio).kind) || b.round.times.closeAt - a.round.times.closeAt)
     return list
   }, [mine.data, now, ratio])
-  const myRoundIds = useMemo(() => new Set((mine.data?.bets ?? []).map((b) => b.roundId.toString())), [mine.data])
+  const myRounds = useMemo(() => new Map((mine.data?.bets ?? []).map((b) => [b.roundId.toString(), b])), [mine.data])
 
   useEffect(() => {
     if (!hash || !mine.data) return
@@ -104,9 +104,8 @@ function RoundsScreen() {
         }
       />
       <p className="rnd-lead">
-        Everyone in a round shares one bank. Bet UP or DOWN on a pool's price, in the open: both sides' totals are public
-        and matched one for one. The bet is decided by the move from a strike price measured after bets close to an exit
-        price measured later, not by the price now. The contract is unaudited.
+        Pick a coin and bet UP or DOWN with test ETH. Both sides need enough stake for the round to play; otherwise you
+        can collect a full refund. The result uses prices measured after betting closes.
       </p>
 
       {c?.paused && (
@@ -118,7 +117,7 @@ function RoundsScreen() {
 
       {isConnected ? (
         <>
-          <div className="rnd-section">Your bets</div>
+          <div className="rnd-section" id="your-bets">Your bets</div>
           {mine.data?.scanError && (
             <p className="rnd-note warn">Could not read your bets from the chain ({mine.data.scanError}).</p>
           )}
@@ -173,7 +172,7 @@ function RoundsScreen() {
             now={now}
             rounds={current.data}
             constants={c}
-            myRoundIds={myRoundIds}
+            myRounds={myRounds}
             openKey={openKey}
             onToggle={(k) => setOpenKey((cur) => (cur === k ? null : k))}
           />
@@ -189,7 +188,7 @@ function PoolCard(p: {
   now: number
   rounds?: Map<string, RoundState>
   constants?: RoundsConstants
-  myRoundIds: Set<string>
+  myRounds: Map<string, MyBet>
   openKey: string | null
   onToggle: (key: string) => void
 }) {
@@ -201,13 +200,7 @@ function PoolCard(p: {
         <span className="rnd-pool-sym">{p.pool.symbol}</span>
         <span className="rnd-pool-addr">{shortAddr(p.pool.pool)}</span>
       </div>
-      {depth && (
-        <div className={'rnd-round-sub' + (thin ? ' rnd-tone-bad' : '')}>
-          {thin
-            ? `Depth ${amt(depth.depth)}: too thin for new bets right now`
-            : `Depth ${amt(depth.depth)} · a round can take a matched bank up to ${amt(depth.maxBank)}`}
-        </div>
-      )}
+      {thin && <div className="rnd-round-sub rnd-tone-bad">Pool liquidity is too low for new bets</div>}
       {p.durations.map((d) => {
         const index = currentIndex(p.now, d)
         const roundId = roundIdOf(p.pool.pool, d, index)
@@ -216,23 +209,23 @@ function PoolCard(p: {
         const times = round?.times ?? roundTimes(d, index, p.constants?.strikePause ?? 0, p.constants?.strikeWindow ?? 0)
         const key = `${p.pool.pool}:${d}`
         const open = p.openKey === key
-        const alreadyIn = p.myRoundIds.has(roundId.toString())
+        const myBet = p.myRounds.get(roundId.toString())
+        const alreadyIn = !!myBet
         return (
           <div key={d}>
             <div className="rnd-round">
               <div className="rnd-round-main">
                 <div className="rnd-round-top">
-                  <span className="rnd-dur">{durationLabel(d)}</span>
-                  <span>#{index.toString()}</span>
+                  <span className="rnd-dur">{durationLabel(d)} round</span>
                   <span>bets close in {countdownFrom(times.closeAt, p.now)}</span>
                 </div>
                 <div className="rnd-round-sub">
                   {round ? `UP ${amt(round.up)} · DOWN ${amt(round.down)}` : 'reading…'}
-                  {alreadyIn ? ' · you are in' : ''}
+                  {myBet ? ` · YOUR ${sideLabel(myBet.ticket.side)} ${amt(myBet.ticket.stake)}` : ''}
                 </div>
               </div>
               <button className={'rnd-btn' + (open ? ' ghost' : '')} aria-expanded={open} onClick={() => p.onToggle(key)}>
-                {open ? 'CLOSE' : alreadyIn ? 'VIEW' : 'BET'}
+                {open ? 'CLOSE' : alreadyIn ? 'YOUR BET' : 'BET'}
               </button>
             </div>
             {open && (
