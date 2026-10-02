@@ -524,6 +524,9 @@ input[type=number]{-moz-appearance:textfield}
   --up-strong:rgba(200,255,0,.22);
   --testnet:#d9ff63;
   --text-faint:#85868a;
+  /* Robinhood Chain: acid green, black and silver. Warnings are silver here, not orange. */
+  --warn:#c9ccd1;
+  --text-dim:#9a9ea6;
   --surface:rgba(25,27,22,.82);
   --surface-solid:#11130e;
   --surface-2:rgba(34,37,29,.9);
@@ -531,6 +534,7 @@ input[type=number]{-moz-appearance:textfield}
   --bg:#080a06;
 }
 .app.rhc::before{background:radial-gradient(600px 320px at 65% 0%,rgba(200,255,0,.07),transparent 72%)}
+.app.rhc .risk-strip{background:rgba(201,204,209,.06);border-bottom-color:rgba(201,204,209,.18)}
 .app.rhc .logo .sq::after{background:#101309}
 .app.rhc .connect:not(.ghost),.app.rhc .cta:not(:disabled),.app.rhc .rnd-btn:not(:disabled):not(.ghost),
 .app.rhc .seg button.on,.app.rhc .ftab.on,.app.rhc .g-cta,.app.rhc .osc-btn{color:#101309}

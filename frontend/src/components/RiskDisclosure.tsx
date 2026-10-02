@@ -31,6 +31,7 @@ import { PRICE_JUMP_REFUND_PCT, REFUND_GRACE_HOURS } from '../lib/rules'
 import { restrictedNames } from '../lib/restrictedRegions'
 import { NetworkPill } from './ui/NetworkPill'
 import { ROUNDS_CONFIG } from '../rounds/roundsAbi'
+import { TARGET_CHAIN } from '../lib/chain'
 
 const ACK_KEY = 'ftm_risk_ack_v1'
 
@@ -75,6 +76,9 @@ function readAck(): boolean {
 export function RiskStrip() {
   const { pathname } = useLocation()
   const symbol = ROUNDS_CONFIG.nativeEth && isRoundsRoute(pathname) ? 'ETH' : CURRENCY_SYMBOL
+  // Test money needs no permanent warning strip: the first-visit notice (RiskGate) still says the
+  // contracts are unaudited. On a chain with real money the strip stays on every screen.
+  if (TARGET_CHAIN.testnet) return null
   return (
     <div className="risk-strip" role="note">
       <b>UNAUDITED</b>
