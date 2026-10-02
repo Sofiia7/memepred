@@ -4,7 +4,7 @@
 
 FlipTheMeme is for people who enjoy betting on outcomes but cannot find a short market for the specific meme coin they follow. They pick UP or DOWN without buying the coin. The coin's own on-chain pool supplies the price, so no listed price feed is needed. The current product is a **Robinhood Chain testnet prototype**: players stake and collect test ETH directly, while the contract uses a redeemable WETH internally.
 
-[Try the public rounds demo](https://rhc.flipthememe.com/rounds) · [Verified PoolRounds contract](https://explorer.testnet.chain.robinhood.com/address/0xb70fa41f1ad30235ff580c33e76f3490272bcd97) · [Keeper health](https://api-rhc.flipthememe.com/api/rounds/health) · [Buildathon application text](docs/rhc/buildathon-application.md) · [Demo recording plan](docs/rhc/ROUNDS-DEMO-RUNBOOK.md)
+[Try the public rounds demo](https://rhc.flipthememe.com/rounds) · [Verified PoolRounds contract](https://explorer.testnet.chain.robinhood.com/address/0x1e928adc9de612b08f78824417d4f5ef354c66d7) · [Keeper health](https://api-rhc.flipthememe.com/api/rounds/health) · [Buildathon application text](docs/rhc/buildathon-application.md) · [Demo recording plan](docs/rhc/ROUNDS-DEMO-RUNBOOK.md)
 
 For this hackathon entry, use **Rounds** at the demo link above. Looking needs no wallet. Betting needs test ETH from the linked faucet; one transaction wraps and stakes it inside the contract, without a swap or token approval. Collect returns ETH. The legacy Markets tab retains its earlier, non-redeemable fixture WETH and is labeled accordingly.
 
@@ -20,7 +20,7 @@ For this hackathon entry, use **Rounds** at the demo link above. Looking needs n
 ## One round in 30 seconds
 
 1. Traders stake 0.005–0.04 test ETH on UP or DOWN during a five-minute betting window. The contract wraps ETH internally into a redeemable WETH and accepts equal amounts on both sides. Unmatched stake is returned without a fee; a round without enough opposing stake does not activate and refunds everyone in full.
-2. After betting closes there is a five-minute pause. The strike is averaged over the next five minutes from the coin's v3 pool, then compared with an exit price five minutes later. The bet is on the move **from that future strike**, not the displayed price when the trader clicks.
+2. After betting closes there is a five-minute pause. The strike is averaged over the next minute from the coin's v3 pool, then compared with an exit price five minutes later, so the result is due about 11 minutes after betting closes. The bet is on the move **from that future strike**, not the displayed price when the trader clicks.
 3. A winner collects 1.96× the accepted stake. The contract keeps 2% of the matched bank on a win. A tie or an unpriceable active round returns matched stakes minus 1%. Players call **Collect** to receive ETH; payouts are not pushed automatically.
 
 The pool must pass depth and price-history checks. The accepted bank is also limited by the pool's WETH depth. These checks reduce the amount exposed to price manipulation; they cannot make a thin coin safe.
