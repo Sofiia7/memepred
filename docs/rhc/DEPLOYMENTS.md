@@ -1,6 +1,34 @@
 # Адреса развёрнутого
 
-## Robinhood Chain testnet, direct ETH Rounds, 2026-10-02 (CURRENT)
+## Robinhood Chain testnet, PoolRounds с окном страйка 60 с, деплой 2026-10-02 (ТЕКУЩИЙ)
+
+Решение 26 (`DECISIONS.md`): результат через 11 минут после закрытия вместо 15, банк раунда от 0.01 ETH. Развёрнуто
+`contracts/script/DeployPoolRounds.s.sol` через `scripts/rhc/rounds-deploy.mts` из коммита `50f567b`
+(записан в `contracts/broadcast/DeployPoolRounds.s.sol/46630/run-latest.json`), блок 127536773, 9 транзакций,
+6 784 125 газа, 0.00006784 ETH. Стенд-ин пулы, фабрика и `TestWETH` деплоя ниже переиспользованы; контракты демо от
+29.09 не тронуты.
+
+| Контракт | Адрес |
+|---|---|
+| `PoolRounds` | `0x1e928adc9de612b08f78824417d4f5ef354c66d7` |
+| `ReferralRegistry` (новый, фабрика и допуск - `PoolRounds`) | `0xf13bc372ed27bcdcf9b39f05d659e952071ef9d8` |
+| `TestWETH` (тот же) | `0x702431c8ef4e21fc4180c8395a4b0f3464b7d5a3` |
+| стенд-ин фабрика (та же) | `0x297d37ae9ef9747b2f040ddfb16cb694bb73034b` |
+| пулы MOONCAT, PEPE, FROGGO (те же) | `0x923a9486cd5cfa7a2929af09ee3082c9b411c37c`, `0x5daf9bbd4a52d90a963e5f4e9a9c7df56673d25c`, `0xa8b93b1c1e89ad2f1fe127efd37cc30e28d8f7b4` |
+
+Параметры: кап 1, пауза 300 с, **окно страйка 60 с**, `depthPerBank` 2500 (гейт листинга 25 WETH при банке 0.01),
+кольцо 900, **`minBank` 0.01 ETH, `costAllowance` 45 000 gwei**, ставка 0.005-0.04, длительность 300 с. Владелец -
+деплойер, права мультисигу не переданы; `pauser` - кипер.
+
+Старый `PoolRounds` `0xb70fa41f1ad30235ff580c33e76f3490272bcd97` остаётся на цепочке: его порог банка был снижен до
+0.01 транзакциями `0x194e5b55...` и `0xbf709f60...` в тот же день; открытые на нём раунды дорабатывают, выплаты по
+нему забираются и после переключения.
+
+Верификация исходников: <заполнить: is_verified по API обозревателя>. Кипер раундов: <заполнить: когда переключён
+`ROUNDS_ADDRESS` в `.env.rhc`>. Сайт: <заполнить: деплой Vercel с новым адресом и блоком>. Сквозная проверка:
+<заполнить: `rounds-e2e.mts --testnet`>.
+
+## Robinhood Chain testnet, direct ETH Rounds, 2026-10-02 (заменён деплоем выше в тот же день)
 
 The current [public Rounds site](https://rhc.flipthememe.com/rounds) stakes test ETH in one `betWithEth` transaction and pays native ETH through `claimAsEth`. The contract wraps and unwraps internally. The earlier mintable `MockWETH` cannot be withdrawn; the legacy markets and the 30 September Rounds run below remain historical evidence, not the current staking path.
 
