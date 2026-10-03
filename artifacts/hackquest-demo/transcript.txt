@@ -46,7 +46,7 @@ The contract settled UP and paid the winner. That swap was local simulation, not
 
 Only matched trader stakes fund payouts. Pool depth limits how large a round can be.
 
-The direct ETH path passed contract tests. A complete browser-wallet wager is still unrecorded.
+A browser-wallet round also completed: 0.005 test ETH staked, a tie, and 0.00495 ETH collected.
 
 This is an unaudited testnet prototype. Its development transactions do not prove user demand.
 

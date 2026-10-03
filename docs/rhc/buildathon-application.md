@@ -1,8 +1,8 @@
 # FlipTheMeme — Arbitrum Open House Singapore application
 
-Draft updated 2026-10-02 for the deployed **PoolRounds** testnet product. The public rounds release is live with direct test ETH staking; a fresh-wallet browser transaction and video upload remain. Copy the English sections into the HackQuest project form, adapting to its actual fields. Check every link and the video before submission. This document does not record a HackQuest submission. A [one-page English entry point](../../README.md) is available for judges.
+Draft checked 2026-10-03 for the deployed **PoolRounds** testnet product. The public rounds release is live, and a browser-wallet ETH stake, settlement and collection have been verified. Before submission, Sofia must open the repository and upload the final video to an accessible URL. Copy the English sections into the HackQuest project form, adapting to its actual fields. This document does not record a HackQuest submission. A [one-page English entry point](../../README.md) is available for judges.
 
-The [published buildathon page](https://www.hackquest.io/hackathons/Arbitrum-Open-House-Singapore-Online-Buildathon) accepts an existing project deployed on an Arbitrum chain; Robinhood Chain is named as an example, and Arbitrum Sepolia establishes that testnet deployment can qualify. The page does not explicitly confirm whether **Robinhood Chain testnet** receives the Robinhood-reserved prize. Submission closes **4 October 2026, 23:59 Singapore time** (17:59 Budapest). Registration was completed 11 September. The proposed track is **Promising Products**.
+The [published buildathon page](https://www.hackquest.io/hackathons/Arbitrum-Open-House-Singapore-Online-Buildathon) accepts an existing project deployed on an Arbitrum chain; Robinhood Chain is named as an example, and Arbitrum Sepolia establishes that testnet deployment can qualify. The page does not explicitly confirm whether **Robinhood Chain testnet** receives the Robinhood-reserved prize. Submission closes **4 October 2026, 23:59 Singapore time** (**17:59 Belgrade / Budapest**, UTC+2). The official timeline stores `2026-10-04T15:59:00.000Z`. Registration was completed 11 September. The proposed track is **Promising Products**.
 
 ## Project name
 
@@ -26,7 +26,7 @@ The round contract reads both price windows from the token pool's on-chain obser
 
 ## Why Robinhood Chain?
 
-Launchpad tokens on Robinhood Chain graduate into on-chain liquidity pools before a conventional asset-specific oracle exists. Our price source is the token's own pool; WETH is the internal pool asset, while players enter and exit in ETH. During an earlier one-day scan, we found 496 new v3 pools, 292 paired with WETH; only 5 of those 292 met the current round depth gate of 50 WETH. That is a measured coverage limitation, not a claim that every memecoin is eligible. We use v3 pools because the oracle reads their observations directly; v4-only tokens need a different price source.
+Launchpad tokens on Robinhood Chain graduate into on-chain liquidity pools before a conventional asset-specific oracle exists. Our price source is the token's own pool; WETH is the internal pool asset, while players enter and exit in ETH. During an earlier one-day scan, we found 496 new v3 pools, 292 paired with WETH; only 5 of those 292 met the scan's 50 WETH depth threshold. The current testnet parameters imply a 25 WETH gate; coverage at this lower threshold has not been remeasured. We use v3 pools because the oracle reads their observations directly; v4-only tokens need a different price source.
 
 ## What exists today?
 
@@ -38,7 +38,7 @@ On **1 October**, we separately ran the current PoolRounds code on a local fork 
 
 In a second fork test, a local 0.1 WETH swap through that canonical pool changed its price after the strike. PoolRounds read the pool's observations, settled **UP**, and paid **0.0196 WETH** to the simulated 0.01 WETH UP trader. This tests the winner path against real pool code and liquidity; the price-moving swap was made inside the fork, **not by an organic mainnet trader**. [Captured result](measurements/rounds/mainnet-fork-swap-2026-10-01.log).
 
-The [public browser rounds screen](https://rhc.flipthememe.com/rounds) now has a desktop layout and Robinhood Chain colors. It shows both sides' totals, a timeline from bets to exit, pool depth, the maximum bank, predicted accepted stake and payout, the refund fee and explicit acknowledgement before betting. On 2 October the public site showed all three new pools, and keeper health reported the new contract with no warnings. A fresh-wallet public-browser ETH wager and settlement on the new contract remain unrecorded. The `/rounds` route is the entry for this submission.
+The [public browser rounds screen](https://rhc.flipthememe.com/rounds) has a desktop layout and Robinhood Chain colors. It shows both sides' totals, optional timing and detailed rules, pool depth, the maximum bank, predicted accepted stake and payout, and the refund fee. The public-browser ETH path was verified on 2 October: [0.005 ETH UP stake](https://explorer.testnet.chain.robinhood.com/tx/0x9764763bf13585ed072aff0e3ddeea315b4c8a59a642791eb857ec7c05cdd029), [tie settlement](https://explorer.testnet.chain.robinhood.com/tx/0xf97856ce5f40eb0387d4b7e56e89bec7f1e39319ddf97699c1d8539431b97a75), and [0.00495 ETH collection](https://explorer.testnet.chain.robinhood.com/tx/0x68686c9d7aab92f6fdcc35af1cdb9ce3382bdf8b546da72f4376968e90982ae4). On 3 October the site showed all three pools and keeper health was `ok`, caught up, with no warnings. No continuous test-price mover is running, so unchanged test-pool prices produce ties. The `/rounds` route is the entry for this submission.
 
 ## What is innovative?
 
@@ -46,7 +46,7 @@ The price rule and market capacity are tied to the same on-chain pool. A pool wh
 
 ## Who is it for, and what have you learned about demand?
 
-The intended user already likes Polymarket-style outcome betting and wants a fast wager on a specific Robinhood Chain meme coin that general prediction markets do not list. The first distribution channel to test is that coin's community, with a direct link to its round and visible, verifiable outcomes. We have **no demonstrated organic user demand yet**. Volume and bets visible on the testnet were generated by development scripts and should be read as reliability tests. The next milestone is to observe whether real participants understand the strike timing, return for another round, and provide enough opposing flow to activate rounds without synthetic stakes.
+The intended user already likes Polymarket-style outcome betting and wants a fast wager on a specific Robinhood Chain meme coin that general prediction markets do not list. The first distribution channel to test is that coin's community, with a direct link to its round and visible, verifiable outcomes. We have **no demonstrated organic user demand yet**. Development scripts and founder testing account for the visible testnet activity. The next milestone is to observe whether real participants understand the strike timing, return for another round, and provide enough opposing flow to activate rounds without synthetic stakes.
 
 ## Safety and limitations
 
@@ -74,13 +74,14 @@ Recording plan and verified transaction links: [`ROUNDS-DEMO-RUNBOOK.md`](ROUNDS
 
 1. State the problem plainly: outcome bettors want a quick UP/DOWN market on the Robinhood Chain meme coin they follow. Show the testnet label, three round pools, visible UP/DOWN totals and depth limit. Say that the demo pools have scripted prices and activity is test traffic.
 2. Open a round. Show the 5-minute betting window, pause, strike average and exit. Explain that the bet is on strike-to-exit, not on today's displayed spot price; show accepted stake, 1.96× payout and both refund cases.
-3. Use a prepared wallet and a prepared round to show the placed bet and a completed round, then Collect. Show the actual transaction in the explorer. Edit across the waiting interval and make the edit visible; do not imply the 20-minute result happened immediately.
+3. Use a prepared wallet and a prepared round to show the placed bet and a completed round, then Collect. Show the actual transaction in the explorer. Edit across the waiting interval and make the edit visible; the current result is due 16 minutes after the round opens, 11 minutes after betting closes.
 4. Show the verified contract, `/api/rounds/health` and the real-pool fork check. Explain why matching equal stakes makes payouts funded by players. End with the actual risks and the next experiment with organic users.
 
 ## Submit checklist
 
 - [x] Public `/rounds`, Terms and How it works describe the separate contracts and fees.
-- [x] Fresh-wallet path on the public site: test ETH, bet, result, Collect as ETH (FROGGO UP 0.005, tie, 0.00495 ETH collected, 2 October).
-- [ ] Final branch pushed; source reachable by judges after Sofia opens the repository.
+- [x] Browser-wallet path on the public site: test ETH, bet, result, Collect as ETH (FROGGO UP 0.005, tie, 0.00495 ETH collected, 2 October).
+- [x] Submission code pushed to `robinhood-chain`; CI passed on 3 October.
+- [ ] Repository opened by Sofia and source reachable by judges without signing in.
 - [ ] Video uploaded and accessible in a signed-out browser; transaction and demo links checked.
 - [ ] HackQuest project created, text pasted, track and links checked, submission completed before deadline.

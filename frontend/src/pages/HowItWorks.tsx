@@ -35,12 +35,12 @@ export function HowItWorksPage() {
           <p>
             In <Link to="/rounds">Rounds</Link>, traders publicly stake UP or DOWN during a 5-minute betting window.
             The two sides play only up to the smaller side's total, one for one. The rest of each stake is returned without a fee.
-            A round plays only when both sides stake enough for a matched bank of at least 0.02 WETH; otherwise every stake
+            A round plays only when both sides stake enough for a matched bank of at least 0.01 {ROUNDS_CONFIG.nativeEth ? 'ETH' : 'WETH'}; otherwise every stake
             is returned in full after bets close.
           </p>
           <p>
-            After betting closes, there is a 5-minute pause. The strike is averaged over the next 5 minutes, and the exit
-            price is read 5 minutes later. The result is due about 20 minutes after betting opened. Your bet is on the move
+            After betting closes, there is a 5-minute pause. The strike is averaged over the next minute, and the exit
+            price is read 5 minutes later. The result is due about 16 minutes after betting opened, 11 minutes after bets close. Your bet is on the move
             from that future strike to the exit, not on the price when you bet.
           </p>
           <p>

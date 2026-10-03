@@ -88,12 +88,12 @@ export function TermsPage() {
           <p>
             Rounds are a separate testnet contract. Each wallet may place one UP or DOWN stake of 0.005-0.04 {ROUNDS_CONFIG.nativeEth ? 'ETH' : 'WETH'} in a
             round. Both sides' totals are public. Only equal amounts from the two sides play; each side's excess is
-            returned without a fee. A round needs both sides and a matched bank of at least 0.02 WETH. If it does not
+            returned without a fee. A round needs both sides and a matched bank of at least 0.01 {ROUNDS_CONFIG.nativeEth ? 'ETH' : 'WETH'}. If it does not
             activate, every stake is returned in full after bets close.
           </p>
           <p>
-            The 5-minute betting window is followed by a 5-minute pause, a 5-minute strike average, and an exit price
-            5 minutes later. The result is due about 20 minutes after bets opened. The price when you place your bet does
+            The 5-minute betting window is followed by a 5-minute pause, a 1-minute strike average, and an exit price
+            5 minutes later. The result is due about 16 minutes after bets opened, 11 minutes after bets close. The price when you place your bet does
             not set the strike. If your side wins, you receive 1.96 times your matched stake plus any excess. The contract
             keeps 2% of the matched bank when there is a winner. On a tie or when an active round cannot be priced, it
             keeps 1% of the matched bank and returns the rest. If settlement is not completed within 24 hours of its due

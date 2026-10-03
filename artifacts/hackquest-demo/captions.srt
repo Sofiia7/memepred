@@ -95,13 +95,13 @@ The contract settled UP and paid the winner. That swap was local simulation, not
 Only matched trader stakes fund payouts. Pool depth limits how large a round can be.
 
 25
-00:02:35,952 --> 00:02:42,576
-The direct ETH path passed contract tests. A complete browser-wallet wager is still unrecorded.
+00:02:35,952 --> 00:02:46,584
+A browser-wallet round also completed: 0.005 test ETH staked, a tie, and 0.00495 ETH collected.
 
 26
-00:02:42,806 --> 00:02:49,286
+00:02:46,814 --> 00:02:53,294
 This is an unaudited testnet prototype. Its development transactions do not prove user demand.
 
 27
-00:02:49,516 --> 00:02:57,316
+00:02:53,524 --> 00:03:01,324
 Try the public Rounds preview, inspect the verified contract, and reproduce the fork test. The links are below.

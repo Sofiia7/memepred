@@ -1,6 +1,6 @@
 # Robinhood Chain Rounds: demo script
 
-The ready-to-upload video is [`artifacts/hackquest-demo/flipthememe-hackquest-demo.mp4`](../../artifacts/hackquest-demo/flipthememe-hackquest-demo.mp4). It uses Ava neural narration. Its captions and transcript keep token names intact, including WETH. The video uses illustrations for the public ETH flow and labels the current-contract scripted WETH run separately; it does **not** claim a browser-wallet wager.
+The ready-to-upload video is [`artifacts/hackquest-demo/flipthememe-hackquest-demo.mp4`](../../artifacts/hackquest-demo/flipthememe-hackquest-demo.mp4), updated 3 October. It uses Ava neural narration and lasts about three minutes. Its captions and transcript keep token names intact, including WETH. Product-flow screens are illustrations. The current-contract scripted WETH run and the confirmed browser-wallet ETH stake and collection are presented separately, with transaction links in the description.
 
 ## If recording a fresh live browser walkthrough
 
@@ -10,4 +10,4 @@ The ready-to-upload video is [`artifacts/hackquest-demo/flipthememe-hackquest-de
 4. Show the round's actual timestamps. If recording settlement, keep the 11-minute wait after betting closes honest with a visible time jump. The keeper fixes the strike and settles after the exit window. Show the ticket, `Collect ETH` and the transaction on the explorer. Do not script a win before its outcome is known.
 5. Show the [current verified PoolRounds contract](https://explorer.testnet.chain.robinhood.com/address/0x1e928adc9de612b08f78824417d4f5ef354c66d7) and [keeper health](https://api-rhc.flipthememe.com/api/rounds/health). The [current-contract scripted WETH run](measurements/rounds/e2e-testnet-60s.log) and [local mainnet fork](measurements/rounds/mainnet-fork-2026-10-01.md) are separately labeled evidence, not browser transactions on the public ETH entry path.
 
-If no fresh live round is available, use the existing video and its precise evidence labels. A fully recorded new-deployment ETH wager and settlement remains an open verification item.
+The public-browser ETH path was completed on 2 October: [stake](https://explorer.testnet.chain.robinhood.com/tx/0x9764763bf13585ed072aff0e3ddeea315b4c8a59a642791eb857ec7c05cdd029), [tie settlement](https://explorer.testnet.chain.robinhood.com/tx/0xf97856ce5f40eb0387d4b7e56e89bec7f1e39319ddf97699c1d8539431b97a75), and [ETH collection](https://explorer.testnet.chain.robinhood.com/tx/0x68686c9d7aab92f6fdcc35af1cdb9ce3382bdf8b546da72f4376968e90982ae4). The existing video presents these as receipts; its product-flow screens are illustrations, rather than a continuous browser recording.
