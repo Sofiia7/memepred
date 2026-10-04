@@ -34,7 +34,7 @@ UP or DOWN on the meme coin you follow. FlipTheMeme brings pool-priced predictio
 https://github.com/Sofiia7/memepred/tree/robinhood-chain
 ```
 
-Перед отправкой открой репозиторий, как планировала. Указана именно ветка `robinhood-chain`, в которой лежит версия для заявки.
+Перед отправкой открой репозиторий, как планировала. По подсказке формы существующий репозиторий подходит; альтернативно можно оставить его приватным и пригласить GitHub-пользователя `engineering-AF`. Указана именно ветка `robinhood-chain`, в которой лежит версия для заявки.
 
 ### Product Category
 
@@ -109,6 +109,16 @@ Solo founder building FlipTheMeme's product and Robinhood Chain implementation, 
 
 ## 2. Submission
 
+### What is your contract address?
+
+Вставь основной адрес без дополнительных подписей:
+
+```text
+0x1e928adc9de612b08f78824417d4f5ef354c66d7
+```
+
+Сеть — Robinhood Chain testnet (46630). В списках ниже `Robinhood Chain` — название сети в формате подсказки; там оно явно обозначено как testnet.
+
 ### Which Prize Track Do You Belong To (select all that apply)
 
 Выбери **Overall Prize**, **Promising Products Track**, **Grants**. Форма допускает несколько вариантов; опубликованные правила позволяют оценивать развёрнутый проект в первых двух направлениях. Grants — отдельное рассмотрение поддержки по этапам. Это выбор направления оценки, не утверждение о выигранном гранте.
@@ -122,9 +132,8 @@ https://rhc.flipthememe.com/rounds
 ### List your Core Protocol/Smart Contract Addresses
 
 ```text
-Robinhood Chain testnet (46630)
-PoolRounds: 0x1e928adc9de612b08f78824417d4f5ef354c66d7
-ReferralRegistry: 0xbd68ee0f3c7ef3bc8df701e1557895526358c6a7
+Robinhood Chain: 0x1e928adc9de612b08f78824417d4f5ef354c66d7 - PoolRounds
+Robinhood Chain: 0xf13bc372ed27bcdcf9b39f05d659e952071ef9d8 - ReferralRegistry
 ```
 
 ### List your Factory/Pool Contracts (if applicable)
@@ -132,20 +141,19 @@ ReferralRegistry: 0xbd68ee0f3c7ef3bc8df701e1557895526358c6a7
 Это действующие пулы, а не снятые с приёма ставок старые адреса:
 
 ```text
-Demo factory: 0x297d37aE9eF9747B2F040DDfB16Cb694Bb73034B
-FROGGO: 0x9935aef7659f1c30843f0c959c349304f1bccfbe
-MOONCAT: 0x0cc364d14046c3096ac247a7cc8bbb092024d186
-PEPE: 0xc6dea87acb96a968cac414ebf9d98fc9092478d9
+Robinhood Chain: 0x297d37aE9eF9747B2F040DDfB16Cb694Bb73034B - Demo factory
+Robinhood Chain: 0x9935aef7659f1c30843f0c959c349304f1bccfbe - FROGGO pool
+Robinhood Chain: 0x0cc364d14046c3096ac247a7cc8bbb092024d186 - MOONCAT pool
+Robinhood Chain: 0xc6dea87acb96a968cac414ebf9d98fc9092478d9 - PEPE pool
 ```
 
 ### List your Token Contract Address (if applicable)
 
 ```text
-Testnet demo tokens; no project token.
-TestWETH: 0x702431c8Ef4E21Fc4180C8395A4B0f3464b7d5A3
-FROGGO: 0xa1cF709d63f5C1f3e9E81Fd7abFA56ef3F8c0B94
-MOONCAT: 0xDf1F40c97e6F191f1cEbd5Bec7678136a24522Cc
-PEPE: 0xC12B7F3F9667c69075a89d3151153CE8E1EE6B4B
+Robinhood Chain: 0x702431c8Ef4E21Fc4180C8395A4B0f3464b7d5A3 - TestWETH
+Robinhood Chain: 0xa1cF709d63f5C1f3e9E81Fd7abFA56ef3F8c0B94 - FROGGO demo
+Robinhood Chain: 0xDf1F40c97e6F191f1cEbd5Bec7678136a24522Cc - MOONCAT demo
+Robinhood Chain: 0xC12B7F3F9667c69075a89d3151153CE8E1EE6B4B - PEPE demo
 ```
 
 ### Which parts of your code have been produced during the Buildathon?
@@ -160,7 +168,7 @@ Built PoolRounds, native ETH entry/collection, pool-depth and oracle checks, kee
 
 ## 3. Перед Submit
 
-1. Репозиторий открыт и указанная ветка доступна без авторизации.
+1. Репозиторий открыт и указанная ветка доступна без авторизации; либо, по подсказке формы, предоставлен доступ `engineering-AF` к приватному репозиторию.
 2. Оба видео загружены и воспроизводятся без аккаунта автора.
 3. Проект сохранён, обязательные поля заполнены, кошелёк подключён.
 4. Ссылки и адреса скопированы полностью; сайт — `rhc.flipthememe.com/rounds`.
