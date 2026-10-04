@@ -1,0 +1,18 @@
+{
+  "pools": [
+    {
+      "symbol": "FROGGO",
+      "pool": "0x9935aef7659f1c30843f0c959c349304f1bccfbe"
+    },
+    {
+      "symbol": "MOONCAT",
+      "pool": "0x0cc364d14046c3096ac247a7cc8bbb092024d186"
+    },
+    {
+      "symbol": "PEPE",
+      "pool": "0xc6dea87acb96a968cac414ebf9d98fc9092478d9"
+    }
+  ],
+  "rounds": "0x1e928adc9de612b08f78824417d4f5ef354c66d7",
+  "chainId": 46630
+}

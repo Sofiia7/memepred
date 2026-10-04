@@ -1,7 +1,7 @@
 /** Testnet-only deployment/activation of immutable demo oracles. No PoolRounds redeploy.
- * node ...                 read-only balances and plan
- * node ... --deploy        deploy and register three pools at fee tier 3000
- * node ... --activate      list them, then retire only new betting on the old pools
+ * tsx ...                 read-only balances and plan
+ * tsx ... --deploy        deploy and register three pools at fee tier 3000
+ * tsx ... --activate      list them, then retire only new betting on the old pools
  */
 import { readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { createPublicClient, createWalletClient, defineChain, encodeAbiParameters, formatEther, http, keccak256, parseAbi, parseEther, stringToHex, type Address } from 'viem'

@@ -9,8 +9,9 @@
  *   scripts\node_modules\.bin\tsx scripts\rhc\rounds-play.mts --yes-testnet   play it
  *
  * Wallets: the first two keys of scripts/rhc/.soak-wallets.json (p1 bets UP, p2 DOWN); keys never printed.
- * Options: --pool 0x... (default the FROGGO stand-in of the 2 October deployment), --stake ETH (default the
- * contract's minStake), --no-push (do not move the stand-in price: the round then ends in a tie).
+ * Options: --pool 0x... (default the continuous FROGGO demo pool of 4 October), --stake ETH (default the
+ * contract's minStake), --no-push (disable an injected step on legacy controllable stand-ins).
+ * ContinuousDemoPool prices move by themselves; this script never forces their winner.
  * Needs the keeper running on ROUNDS_ADDRESS (rounds-keeper-local.mts or the server one). Testnet only.
  */
 import { createPublicClient, createWalletClient, defineChain, formatEther, http, parseAbi, parseEther, type Address, type Hex } from 'viem'
@@ -26,7 +27,7 @@ const ZERO = '0x0000000000000000000000000000000000000000' as Address
 const GAS_RESERVE = 2n * 10n ** 14n
 const rounds = (process.env.ROUNDS_ADDRESS ?? '') as Address
 if (!/^0x[0-9a-fA-F]{40}$/.test(rounds)) throw new Error('set ROUNDS_ADDRESS=0x... (PoolRounds) first')
-const pool = (opt('--pool') ?? '0xa8B93b1C1E89ad2F1FE127EFD37cc30E28D8F7B4') as Address
+const pool = (opt('--pool') ?? '0x9935aef7659f1c30843f0c959c349304f1bccfbe') as Address
 
 const rpcUrl = process.env.RHC_RPC_URL ?? TESTNET_RPC
 if (/mainnet/i.test(rpcUrl)) throw new Error(`refusing an RPC that names mainnet: ${rpcUrl}`)
@@ -37,6 +38,8 @@ if (id !== TESTNET_ID) throw new Error(`chain ${id} is not the testnet ${TESTNET
 
 const R_ABI = artifact('PoolRounds.sol/PoolRounds.json').abi
 const POOL_ABI = parseAbi(['function pushTick(uint32 startTs, int24 tick)', 'function slot0() view returns (uint160,int24,uint16,uint16,uint16,uint8,bool)'])
+const DEMO_ABI = parseAbi(['function STEP_SECONDS() view returns (uint256)'])
+const continuousDemo = await pub.readContract({ address: pool, abi: DEMO_ABI, functionName: 'STEP_SECONDS' }).then((s) => s === 20n).catch(() => false)
 const OUT = ['NONE', 'UP', 'DOWN', 'TIE', 'REFUND']
 const stamp = () => new Date().toISOString().replace('T', ' ').slice(11, 19)
 const say = (m: string) => console.log(`[${stamp()}] ${m}`)
@@ -122,7 +125,7 @@ for (;;) {
 }
 const sf = await eventTs('StrikeFixed', roundId, startBlock)
 say(`strike fixed ${sf ? `${sf.ts - tm.strikeEnd} s after strikeEnd (allowed ${fixStrikeBy - tm.strikeEnd}), tx ${sf.hash}` : 'before the strike window ended (settled early)'}`)
-if (PUSH && Number(v.outcome) === 0) {
+if (PUSH && !continuousDemo && Number(v.outcome) === 0) {
   // UP means the meme token dearer in WETH: a higher tick when WETH is token1, a lower one when it is token0.
   const tick = Number((await read<any>(pool, POOL_ABI, 'slot0'))[1])
   const next = wethIsToken0 ? tick - 200 : tick + 200

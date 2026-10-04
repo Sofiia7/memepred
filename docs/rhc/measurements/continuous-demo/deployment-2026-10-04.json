@@ -1,0 +1,139 @@
+{
+  "chainId": 46630,
+  "rounds": "0x1e928adc9de612b08f78824417d4f5ef354c66d7",
+  "factory": "0x297d37aE9eF9747B2F040DDfB16Cb694Bb73034B",
+  "pools": [
+    {
+      "symbol": "FROGGO",
+      "oldPool": "0xa8b93b1c1e89ad2f1fe127efd37cc30e28d8f7b4",
+      "pool": "0x9935aef7659f1c30843f0c959c349304f1bccfbe",
+      "token0": "0x702431c8Ef4E21Fc4180C8395A4B0f3464b7d5A3",
+      "token1": "0xa1cF709d63f5C1f3e9E81Fd7abFA56ef3F8c0B94",
+      "seed": "0xc9063f5a753e8468022ca5272de814ca6a5c08a84185ede44e89b099c036132f",
+      "deployTx": "0x838d4a7559f59b58a5ceab216c73a50ba0804251f2fa2d2e616a85ebde9b177a",
+      "constructorArgs": "0x000000000000000000000000702431c8ef4e21fc4180c8395a4b0f3464b7d5a3000000000000000000000000a1cf709d63f5c1f3e9e81fd7abfa56ef3f8c0b94c9063f5a753e8468022ca5272de814ca6a5c08a84185ede44e89b099c036132f"
+    },
+    {
+      "symbol": "MOONCAT",
+      "oldPool": "0x923a9486cd5cfa7a2929af09ee3082c9b411c37c",
+      "pool": "0x0cc364d14046c3096ac247a7cc8bbb092024d186",
+      "token0": "0x702431c8Ef4E21Fc4180C8395A4B0f3464b7d5A3",
+      "token1": "0xDf1F40c97e6F191f1cEbd5Bec7678136a24522Cc",
+      "seed": "0x7d756b2826b5d12690f79b3f0b4cc765810b9616b36ee828c4a2bc193af1d0fc",
+      "deployTx": "0xdb46c357beb867bf0a7f718413914353875fa7ccba567e990a66f956386e221f",
+      "constructorArgs": "0x000000000000000000000000702431c8ef4e21fc4180c8395a4b0f3464b7d5a3000000000000000000000000df1f40c97e6f191f1cebd5bec7678136a24522cc7d756b2826b5d12690f79b3f0b4cc765810b9616b36ee828c4a2bc193af1d0fc"
+    },
+    {
+      "symbol": "PEPE",
+      "oldPool": "0x5daf9bbd4a52d90a963e5f4e9a9c7df56673d25c",
+      "pool": "0xc6dea87acb96a968cac414ebf9d98fc9092478d9",
+      "token0": "0x702431c8Ef4E21Fc4180C8395A4B0f3464b7d5A3",
+      "token1": "0xC12B7F3F9667c69075a89d3151153CE8E1EE6B4B",
+      "seed": "0xac7c0683bc9343807a115af67bc7dbeeb416a63aa19d1d5437866607344e224a",
+      "deployTx": "0x2fd87c669391d360f92c3ce874b2aa1b1af56ed4b6fb7367169f23b40d234d4a",
+      "constructorArgs": "0x000000000000000000000000702431c8ef4e21fc4180c8395a4b0f3464b7d5a3000000000000000000000000c12b7f3f9667c69075a89d3151153ce8e1ee6b4bac7c0683bc9343807a115af67bc7dbeeb416a63aa19d1d5437866607344e224a"
+    }
+  ],
+  "transactions": [
+    {
+      "label": "deploy FROGGO",
+      "hash": "0x838d4a7559f59b58a5ceab216c73a50ba0804251f2fa2d2e616a85ebde9b177a",
+      "block": "128719195",
+      "gas": "3589463"
+    },
+    {
+      "label": "register FROGGO",
+      "hash": "0xe56b8c740120952ef0154ade45082d5e87d2495eaac81846d7adaa7543824427",
+      "block": "128719214",
+      "gas": "56112"
+    },
+    {
+      "label": "deploy MOONCAT",
+      "hash": "0xdb46c357beb867bf0a7f718413914353875fa7ccba567e990a66f956386e221f",
+      "block": "128719233",
+      "gas": "3589366"
+    },
+    {
+      "label": "register MOONCAT",
+      "hash": "0xe36bca907e8697025720ad491a29f6aebac5c7c6237f358ba54d9338a0e9daed",
+      "block": "128719254",
+      "gas": "56112"
+    },
+    {
+      "label": "deploy PEPE",
+      "hash": "0x2fd87c669391d360f92c3ce874b2aa1b1af56ed4b6fb7367169f23b40d234d4a",
+      "block": "128719273",
+      "gas": "3589334"
+    },
+    {
+      "label": "register PEPE",
+      "hash": "0x98597f8497826cf91ee123f35bb6421fee8d65a9c568cffaab0dd7bd51a38ad1",
+      "block": "128719292",
+      "gas": "56112"
+    },
+    {
+      "label": "list FROGGO",
+      "hash": "0xeaabcd04efb74c74bbda267a9199f3baa3dae1952caac3942ffcf3923a75cf59",
+      "block": "128719995",
+      "gas": "93135"
+    },
+    {
+      "label": "list MOONCAT",
+      "hash": "0xff48807fbbfd0db9ad6a0869135214b040d916f4bff58f7187c416e847aa73df",
+      "block": "128720011",
+      "gas": "93303"
+    },
+    {
+      "label": "list PEPE",
+      "hash": "0x7fb5560648726c2b6100cdf1448b1a583a14f0837de29e50bcac9bb07412e08c",
+      "block": "128720029",
+      "gas": "93215"
+    },
+    {
+      "label": "retire new betting FROGGO",
+      "hash": "0x40c445085bbe4593983d609162c70e6a1a513e9a70ebcd5ffbfb61fb35c643b7",
+      "block": "128720044",
+      "gas": "35000"
+    },
+    {
+      "label": "retire new betting MOONCAT",
+      "hash": "0x92fb1b5599a3a7d9e80b56c0c3151127d9e950869bed075686952c64a36438ce",
+      "block": "128720063",
+      "gas": "35000"
+    },
+    {
+      "label": "retire new betting PEPE",
+      "hash": "0x26ecc05bd6bcbdb35357a28f45d2647f4a77bfd5064db48deb35dc440142648d",
+      "block": "128720078",
+      "gas": "35000"
+    }
+  ],
+  "activatedAt": "2026-10-04T12:59:27.040Z",
+  "sourceCommit": "ef75a3c",
+  "verification": [
+    {
+      "symbol": "FROGGO",
+      "pool": "0x9935aef7659f1c30843f0c959c349304f1bccfbe",
+      "isVerified": true,
+      "name": "ContinuousDemoPool",
+      "verifiedAt": "2026-10-04T12:58:41.637472Z",
+      "compilerVersion": "v0.8.24+commit.e11b9ed9"
+    },
+    {
+      "symbol": "MOONCAT",
+      "pool": "0x0cc364d14046c3096ac247a7cc8bbb092024d186",
+      "isVerified": true,
+      "name": "ContinuousDemoPool",
+      "verifiedAt": "2026-10-04T12:58:41.680841Z",
+      "compilerVersion": "v0.8.24+commit.e11b9ed9"
+    },
+    {
+      "symbol": "PEPE",
+      "pool": "0xc6dea87acb96a968cac414ebf9d98fc9092478d9",
+      "isVerified": true,
+      "name": "ContinuousDemoPool",
+      "verifiedAt": "2026-10-04T12:58:41.799781Z",
+      "compilerVersion": "v0.8.24+commit.e11b9ed9"
+    }
+  ]
+}
