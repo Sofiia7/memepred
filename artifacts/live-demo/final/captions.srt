@@ -1,0 +1,51 @@
+1
+00:00:00,000 --> 00:00:04,536
+FlipTheMeme brings short UP or DOWN rounds on meme coins to Robinhood Chain.
+
+2
+00:00:07,000 --> 00:00:13,264
+For people who enjoy outcome betting, this is a way to call a meme coin’s next move without buying or shorting it.
+
+3
+00:00:18,000 --> 00:00:25,104
+This is a testnet prototype. The demo pools use simulated prices, and every stake uses test ETH.
+
+4
+00:00:25,554 --> 00:00:32,802
+First, connect the browser wallet. This recording uses two founder wallets to demonstrate both sides of one round.
+
+5
+00:00:33,252 --> 00:00:44,316
+The first wallet stakes 0.005 ETH on UP. One transaction is enough: the contract wraps ETH internally, so there is no separate swap or approval.
+
+6
+00:00:46,252 --> 00:00:55,396
+The second wallet takes DOWN with another 0.005 ETH. Both sides fund the round; the protocol does not need a house bankroll.
+
+7
+00:00:57,252 --> 00:00:59,988
+Confirm the DOWN transaction in the wallet.
+
+8
+00:01:00,952 --> 00:01:09,832
+A new betting round opens every five minutes. An active round finishes sixteen minutes after opening, rather than immediately after the click.
+
+9
+00:01:10,282 --> 00:01:17,218
+The result compares a future strike average with the exit price. Movement before that strike does not decide the outcome.
+
+10
+00:01:17,668 --> 00:01:29,404
+In this recorded round, DOWN won. The winning 0.005 ETH stake can collect 0.0098 ETH: a 1.96 times payout.
+
+11
+00:01:29,854 --> 00:01:34,678
+Press Collect and confirm the transaction to receive the payout in native ETH.
+
+12
+00:01:35,128 --> 00:01:44,416
+The position now shows Collected: 0.0098 ETH. This is a real testnet transaction, shown in the live browser recording.
+
+13
+00:01:44,866 --> 00:01:53,218
+FlipTheMeme is a working, unaudited testnet prototype. Try the rounds, inspect the verified contract, and explore the source code.

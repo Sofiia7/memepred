@@ -50,7 +50,8 @@ describe('a round that plays: countdowns to the strike and to the settlement', (
   it('exit: counts down to the settlement', () => {
     renderRow({ bet: makeBet({}, on), now: T_TIMES.strikeEnd + 30 })
     expect(screen.getByText(/the exit is read at/).textContent).toContain('(in 04:30)')
-    expect(screen.queryByRole('button')).toBeNull()
+    expect(screen.queryByRole('button', { name: /COLLECT/ })).toBeNull()
+    expect(screen.getByRole('link', { name: 'SHARE ON X' })).toBeTruthy()
   })
 })
 
@@ -89,7 +90,7 @@ describe('collecting', () => {
     )
     renderRow({ bet, now: T_TIMES.settleAt + 30 })
     expect(screen.getByText(/Nothing to collect/)).toBeTruthy()
-    expect(screen.queryByRole('button')).toBeNull()
+    expect(screen.queryByRole('button', { name: /COLLECT/ })).toBeNull()
   })
 
   it('a loser whose stake was partly unmatched collects that part', () => {
@@ -117,7 +118,7 @@ describe('collecting', () => {
   it('is locked while another transaction is in the wallet', () => {
     const bet = makeBet({ previewPayout: milli(20) }, { bookFinal: true, activated: false, down: 0n })
     renderRow({ bet, now: T_TIMES.closeAt + 1, busy: true })
-    expect((screen.getByRole('button') as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByRole('button', { name: /COLLECT/ }) as HTMLButtonElement).disabled).toBe(true)
   })
 
   it('collected', () => {

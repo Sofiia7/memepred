@@ -27,7 +27,12 @@ describe('challenge link', () => {
   it('share links carry the text and the url', () => {
     const l = shareLinks('hi there', 'https://x.test/rounds?round=1&take=up')
     expect(l.x).toContain('https://x.com/intent/post?text=hi%20there&url=')
-    expect(l.telegram).toContain('t.me/share/url?url=https%3A%2F%2Fx.test%2Frounds%3Fround%3D1%26take%3Dup')
-    expect(l.farcaster).toContain('warpcast.com/~/compose?text=hi%20there&embeds[]=')
+    expect(Object.keys(l)).toEqual(['x'])
+  })
+  it('does not invite a bet into a closed round', () => {
+    const text = challengeText({ symbol: 'PEPE', mySide: SIDE_UP, stake: '0.01 ETH', minutesLeft: 0, network: 'n', closed: true })
+    expect(text).toContain('This round is closed.')
+    expect(text).toContain('next available round')
+    expect(text).not.toContain('Bets close any moment')
   })
 })

@@ -1,0 +1,71 @@
+{
+  "voice": "en-US-AvaNeural",
+  "duration": 63.263999999999996,
+  "scenes": [
+    {
+      "chapter": "THE COIN YOU FOLLOW · THE CALL YOU WANT",
+      "recording": 1,
+      "sourceStart": 0,
+      "sourceEnd": 7,
+      "outputStart": 0,
+      "duration": 7.194,
+      "caption": "People who enjoy outcome betting want more than a handful of coins. They want a market on the meme coin they actually follow.",
+      "crop": null
+    },
+    {
+      "chapter": "POOL-PRICED ROUNDS ON ROBINHOOD CHAIN",
+      "recording": 1,
+      "sourceStart": 7,
+      "sourceEnd": 18,
+      "outputStart": 7.194,
+      "duration": 11,
+      "caption": "FlipTheMeme brings UP or DOWN rounds to Robinhood Chain. The coin’s own on-chain pool supplies its price history, without a separately listed price feed.",
+      "crop": null
+    },
+    {
+      "chapter": "ONE TRANSACTION · PLAYER-FUNDED PAYOUTS",
+      "recording": 2,
+      "sourceStart": 16,
+      "sourceEnd": 29,
+      "outputStart": 18.194,
+      "duration": 13,
+      "caption": "Players enter in ETH with one transaction. Opposing stakes fund the payouts. Matching equal stakes keeps the promise within the round’s bank, while pool depth limits exposure.",
+      "crop": null
+    },
+    {
+      "chapter": "LATER · A REAL TESTNET WINNER",
+      "recording": 4,
+      "sourceStart": 9,
+      "sourceEnd": 16,
+      "outputStart": 31.194,
+      "duration": 11.874,
+      "caption": "This live founder test shows a winning DOWN position: 0.005 ETH becomes 0.0098 ETH to collect. Waiting has been cut from the recording.",
+      "crop": [
+        325,
+        350,
+        415,
+        230
+      ]
+    },
+    {
+      "chapter": "WORKING PRODUCT · REPRODUCIBLE VALIDATION",
+      "recording": 4,
+      "sourceStart": 28,
+      "sourceEnd": 34,
+      "outputStart": 43.068,
+      "duration": 9.618,
+      "caption": "The prototype includes the browser app, verified contracts and a server keeper. We also tested settlement against a real pool on a local mainnet fork.",
+      "crop": null
+    },
+    {
+      "chapter": "NEXT · INDEPENDENT COMMUNITY TESTING",
+      "recording": null,
+      "sourceStart": 0,
+      "sourceEnd": 0,
+      "outputStart": 52.686,
+      "duration": 10.578,
+      "caption": "Our next step is testing with independent meme-coin communities. Today this is an unaudited testnet prototype, with simulated demo prices and founder activity.",
+      "crop": null
+    }
+  ]
+}

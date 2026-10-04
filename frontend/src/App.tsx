@@ -49,12 +49,13 @@ export function App() {
           <Route path="/market/:address" element={<Market />} />
           <Route path="/order/:address/:orderId" element={<OrderPage />} />
           <Route path="/leaderboard" element={<Leaderboard />} />
-          <Route path="/portfolio" element={ROUNDS_ENABLED && IS_POOL_BACKED ? <Navigate to="/rounds#your-bets" replace /> : <Portfolio />} />
+          <Route path="/portfolio" element={ROUNDS_ENABLED && IS_POOL_BACKED ? <Navigate to="/bets" replace /> : <Portfolio />} />
           <Route path="/genesis" element={IS_POOL_BACKED ? <Navigate to="/pools" replace /> : <GenesisPage />} />
           <Route path="/refer" element={<ReferPage />} />
           <Route path="/how-it-works" element={<HowItWorksPage />} />
           <Route path="/terms" element={<TermsPage />} />
           {RoundsPage && <Route path="/rounds" element={<Suspense fallback={<p className="empty-state">Loading…</p>}><RoundsPage /></Suspense>} />}
+          {RoundsPage && <Route path="/bets" element={<Suspense fallback={<p className="empty-state">Loading…</p>}><RoundsPage betsOnly /></Suspense>} />}
         </Routes>
       </AppShell>
       </RiskGate>

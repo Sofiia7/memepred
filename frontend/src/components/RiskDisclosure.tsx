@@ -60,7 +60,7 @@ export function isReadableBeforeAck(pathname: string): boolean {
  */
 export function isRoundsRoute(pathname: string): boolean {
   const p = pathname.toLowerCase().replace(/\/+$/, '')
-  return p === '/rounds' || p.startsWith('/rounds/')
+  return p === '/rounds' || p.startsWith('/rounds/') || p === '/bets' || p.startsWith('/bets/')
 }
 
 function readAck(): boolean {

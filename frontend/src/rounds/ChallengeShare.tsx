@@ -15,6 +15,8 @@ export interface ChallengeShareProps {
   symbol: string
   closeAt: number
   now: number
+  /** The currently listed replacement pool's round, when the original pool was retired. */
+  nextRoundId?: bigint
   /** The challenger's wallet: the link names it as referrer. */
   me?: Address
 }
@@ -27,13 +29,15 @@ export interface ChallengeShareProps {
  */
 export function ChallengeShare(p: ChallengeShareProps) {
   const [copied, setCopied] = useState(false)
-  const url = challengeUrl(window.location.origin, p.roundId, p.mySide, p.me)
+  const closed = p.now >= p.closeAt || p.nextRoundId !== undefined
+  const url = challengeUrl(window.location.origin, p.nextRoundId ?? p.roundId, p.mySide, p.me)
   const text = challengeText({
     symbol: p.symbol,
     mySide: p.mySide,
     stake: `${formatAmount(p.stake, 18)} ${SYMBOL}`,
     minutesLeft: Math.max(0, Math.round((p.closeAt - p.now) / 60)),
     network: TARGET_CHAIN.name,
+    closed,
   })
   const links = shareLinks(text, url)
   const take = sideLabel(otherSide(p.mySide))
@@ -47,34 +51,16 @@ export function ChallengeShare(p: ChallengeShareProps) {
       // no clipboard (an old browser, a denied permission): the links below still work
     }
   }
-  async function share() {
-    if (typeof navigator.share === 'function') {
-      try {
-        await navigator.share({ text, url })
-        return
-      } catch {
-        return // the sheet was closed
-      }
-    }
-    await copy()
-  }
-
   return (
     <div className="rnd-share" aria-label="Challenge a friend">
       <p>
-        <b>Dare someone to take {take}.</b> The link opens this round with {take} preselected; their bets count as your
-        referrals, and the round needs the other side to play.
+        {closed ? `Share your ${p.symbol} call. The link opens the next available round with ${take} selected.` : `Dare someone to take ${take}. The link opens this round with ${take} selected.`}
       </p>
       <div className="rnd-share-row">
-        <button type="button" className="rnd-btn" onClick={() => void share()}>
-          {copied ? 'COPIED' : 'SHARE'}
-        </button>
+        <a className="rnd-btn ghost" href={links.x} target="_blank" rel="noopener noreferrer">SHARE ON X</a>
         <button type="button" className="rnd-btn ghost" onClick={() => void copy()}>
-          COPY LINK
+          {copied ? 'COPIED' : 'COPY LINK'}
         </button>
-        <a className="rnd-btn ghost" href={links.x} target="_blank" rel="noopener noreferrer">X</a>
-        <a className="rnd-btn ghost" href={links.telegram} target="_blank" rel="noopener noreferrer">TELEGRAM</a>
-        <a className="rnd-btn ghost" href={links.farcaster} target="_blank" rel="noopener noreferrer">FARCASTER</a>
       </div>
     </div>
   )

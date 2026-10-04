@@ -31,7 +31,7 @@ import './rounds.css'
  * same GeoGate and RiskGate as every other screen, so the region check and the
  * unaudited-contracts notice apply here unchanged.
  */
-export function RoundsPage() {
+export function RoundsPage({ betsOnly = false }: { betsOnly?: boolean }) {
   const cfg = ROUNDS_CONFIG
   if (!cfg.address || cfg.problems.length > 0) {
     return (
@@ -48,13 +48,13 @@ export function RoundsPage() {
       </>
     )
   }
-  return <RoundsScreen />
+  return <RoundsScreen betsOnly={betsOnly} />
 }
 
 const SYMBOL = ROUNDS_CONFIG.nativeEth ? 'ETH' : 'WETH'
 const amt = (v: bigint) => `${formatAmount(v, 18)} ${SYMBOL}`
 
-function RoundsScreen() {
+function RoundsScreen({ betsOnly }: { betsOnly: boolean }) {
   const { address, isConnected } = useAccount()
   const { connectWallet } = useConnectWallet()
   const { hash, search } = useLocation()
@@ -115,7 +115,7 @@ function RoundsScreen() {
   return (
     <>
       <ScreenTitle
-        title="Rounds"
+        title={betsOnly ? 'My bets' : 'Rounds'}
         live
         liveLabel={TARGET_CHAIN.testnet ? 'testnet preview' : 'preview'}
         icon={
@@ -125,12 +125,13 @@ function RoundsScreen() {
           </svg>
         }
       />
-      <p className="rnd-lead">
+      {!betsOnly && <p className="rnd-lead">
         Call the next move of a meme coin: UP or DOWN, a new round every 5 minutes, the winning side takes{' '}
         {c ? formatMultiplier(winMultiplier(c.normalFeeBps)) : '1.96x'}. Both sides must be in for a round to play; if not,
         every stake comes back. The result compares prices measured after betting closes.
         {TARGET_CHAIN.testnet ? ' Test ETH; these test pools move on scripted prices.' : ''}
-      </p>
+      </p>}
+      {betsOnly && <p className="rnd-lead">Your open bets, results and collections from this wallet.</p>}
 
       {c?.paused && (
         <p className="rnd-note warn" role="status">
@@ -161,6 +162,9 @@ function RoundsScreen() {
           <div className="rnd-list">
             {bets.map((bet) => {
               const id = `${bet.contract}:${bet.roundId}`
+              const originalPool = poolOfRound(bet.roundId)
+              const replacement = delisted.has(originalPool.toLowerCase())
+                ? markets.data?.pools.find((p) => p.symbol === symbolOf(originalPool)) : undefined
               return (
                 <TicketRow
                   key={id}
@@ -173,6 +177,7 @@ function RoundsScreen() {
                   poolDelisted={delisted.has(poolOfRound(bet.roundId).toLowerCase())}
                   voidFeePct={c ? bpsToPct(c.voidFeeBps) : undefined}
                   me={address}
+                  nextRoundId={replacement ? roundIdOf(replacement.pool, bet.round.duration, currentIndex(now, bet.round.duration)) : undefined}
                   wethIsToken0={orientation.get(poolOfRound(bet.roundId).toLowerCase())}
                   onClaim={onClaim}
                 />
@@ -189,6 +194,7 @@ function RoundsScreen() {
         </p>
       )}
 
+      {!betsOnly && <>
       <div className="rnd-section">Pools</div>
       {markets.isLoading && <p className="rnd-note">Reading the chain…</p>}
       {markets.isError && <ApiError message="Couldn't load the pools" onRetry={() => void markets.refetch()} />}
@@ -216,6 +222,7 @@ function RoundsScreen() {
           />
         ))}
       </div>
+      </>}
     </>
   )
 }

@@ -1,0 +1,11 @@
+People who enjoy outcome betting want more than a handful of coins. They want a market on the meme coin they actually follow.
+
+FlipTheMeme brings UP or DOWN rounds to Robinhood Chain. The coin’s own on-chain pool supplies its price history, without a separately listed price feed.
+
+Players enter in ETH with one transaction. Opposing stakes fund the payouts. Matching equal stakes keeps the promise within the round’s bank, while pool depth limits exposure.
+
+This live founder test shows a winning DOWN position: 0.005 ETH becomes 0.0098 ETH to collect. Waiting has been cut from the recording.
+
+The prototype includes the browser app, verified contracts and a server keeper. We also tested settlement against a real pool on a local mainnet fork.
+
+Our next step is testing with independent meme-coin communities. Today this is an unaudited testnet prototype, with simulated demo prices and founder activity.

@@ -100,3 +100,23 @@ workers/.wrangler/
 !docs/rhc/measurements/pool-toxicity/summary.json
 # Raw logs behind docs/rhc/ROUNDS-CONTRACT.md and ROUNDS-DEPLOY.md (forge gas, vectors, local end-to-end)
 !docs/rhc/measurements/rounds/*.log
+
+# Original founder recordings and local rendering intermediates stay local.
+artifacts/live-demo/*
+!artifacts/live-demo/render_live_demo.py
+!artifacts/live-demo/render_pitch.py
+!artifacts/live-demo/validate_submission.py
+!artifacts/live-demo/make_delivery_assets.py
+!artifacts/live-demo/final/
+artifacts/live-demo/final/*
+!artifacts/live-demo/final/FlipTheMeme-live-demo-Ava.mp4
+!artifacts/live-demo/final/FlipTheMeme-pitch-Ava.mp4
+!artifacts/live-demo/final/captions.srt
+!artifacts/live-demo/final/transcript.txt
+!artifacts/live-demo/final/pitch-captions.srt
+!artifacts/live-demo/final/pitch-transcript.txt
+!artifacts/live-demo/final/edit-manifest.json
+!artifacts/live-demo/final/pitch-edit-manifest.json
+!artifacts/live-demo/final/description.md
+!artifacts/live-demo/final/project-logo.png
+!artifacts/live-demo/final/my-bets-page.png

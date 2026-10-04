@@ -3,7 +3,7 @@ import type { Address } from 'viem'
 import { countdownFrom } from '../hooks/useNow'
 import { clockTime, type RoundTimes } from './roundMath'
 import { OUTCOME_REFUND, OUTCOME_TIE } from './roundsClient'
-import { fmtPct, pctFromTicks, referenceOf, vsReference, yRange, type TickSample } from './strikeMath'
+import { fmtPct, pctFromTicks, referenceOf, signedTick, vsReference, yRange, type TickSample } from './strikeMath'
 import { usePoolTicks } from './usePoolTicks'
 
 export interface StrikeChartProps {
@@ -31,7 +31,8 @@ const PAD = { l: 44, r: 12, t: 10, b: 22 }
  */
 export function StrikeChart(p: StrikeChartProps) {
   const samples = usePoolTicks(p.pool, p.wethIsToken0, p.now)
-  const ref = referenceOf({ times: p.times, now: p.now, strikeFixed: p.strikeFixed, entryTick: p.entryTick, exitTick: p.exitTick, outcome: p.outcome, samples })
+  // Samples are already in coin/WETH orientation; contract ticks remain raw pool ticks.
+  const ref = referenceOf({ times: p.times, now: p.now, strikeFixed: p.strikeFixed, entryTick: signedTick(p.entryTick, p.wethIsToken0), exitTick: signedTick(p.exitTick, p.wethIsToken0), outcome: p.outcome, samples })
   const latest = samples[samples.length - 1]
   const nowPct = vsReference(latest, ref)
   const [hover, setHover] = useState<number | null>(null)

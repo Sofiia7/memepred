@@ -57,16 +57,16 @@ export interface ChallengeTextInput {
   /** Minutes until bets close, already rounded; 0 or less means "about to close". */
   minutesLeft: number
   network: string
+  closed?: boolean
 }
 
 /** The message a challenger posts; the link follows it. */
 export function challengeText(i: ChallengeTextInput): string {
+  if (i.closed) return `I bet ${sideWord(i.mySide)} ${i.stake} on ${i.symbol} on FlipTheMeme (${i.network}). This round is closed. Make your call in the next available round:`
   const closes = i.minutesLeft > 0 ? `Bets close in ${i.minutesLeft} min.` : 'Bets close any moment.'
   return `I just bet ${sideWord(i.mySide)} ${i.stake} on ${i.symbol} on FlipTheMeme (${i.network}). ${closes} Think it goes ${sideWord(otherSide(i.mySide))}? Take the other side:`
 }
 
 export const shareLinks = (text: string, url: string) => ({
   x: `https://x.com/intent/post?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`,
-  telegram: `https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`,
-  farcaster: `https://warpcast.com/~/compose?text=${encodeURIComponent(text)}&embeds[]=${encodeURIComponent(url)}`,
 })

@@ -1,0 +1,151 @@
+{
+  "voice": "en-US-AvaNeural",
+  "duration": 113.668,
+  "scenes": [
+    {
+      "chapter": "FLIPTHEMEME · LIVE BROWSER DEMO",
+      "recording": 1,
+      "sourceStart": 0,
+      "sourceEnd": 7,
+      "outputStart": 0,
+      "duration": 7,
+      "caption": "FlipTheMeme brings short UP or DOWN rounds on meme coins to Robinhood Chain.",
+      "crop": null
+    },
+    {
+      "chapter": "CHOOSE A COIN AND A SIDE",
+      "recording": 1,
+      "sourceStart": 7,
+      "sourceEnd": 18,
+      "outputStart": 7,
+      "duration": 11,
+      "caption": "For people who enjoy outcome betting, this is a way to call a meme coin’s next move without buying or shorting it.",
+      "crop": null
+    },
+    {
+      "chapter": "ROBINHOOD CHAIN TESTNET · SIMULATED PRICES",
+      "recording": 1,
+      "sourceStart": 18,
+      "sourceEnd": 24,
+      "outputStart": 18,
+      "duration": 7.554,
+      "caption": "This is a testnet prototype. The demo pools use simulated prices, and every stake uses test ETH.",
+      "crop": null
+    },
+    {
+      "chapter": "CONNECT WALLET",
+      "recording": 2,
+      "sourceStart": 6,
+      "sourceEnd": 13,
+      "outputStart": 25.554,
+      "duration": 7.698,
+      "caption": "First, connect the browser wallet. This recording uses two founder wallets to demonstrate both sides of one round.",
+      "crop": null
+    },
+    {
+      "chapter": "WALLET ONE · UP · 0.005 ETH",
+      "recording": 2,
+      "sourceStart": 16,
+      "sourceEnd": 29,
+      "outputStart": 33.252,
+      "duration": 13,
+      "caption": "The first wallet stakes 0.005 ETH on UP. One transaction is enough: the contract wraps ETH internally, so there is no separate swap or approval.",
+      "crop": null
+    },
+    {
+      "chapter": "WALLET TWO · DOWN · 0.005 ETH",
+      "recording": 3,
+      "sourceStart": 53,
+      "sourceEnd": 64,
+      "outputStart": 46.252,
+      "duration": 11,
+      "caption": "The second wallet takes DOWN with another 0.005 ETH. Both sides fund the round; the protocol does not need a house bankroll.",
+      "crop": null
+    },
+    {
+      "chapter": "CONFIRM THE OPPOSITE SIDE",
+      "recording": 3,
+      "sourceStart": 66.5,
+      "sourceEnd": 70.2,
+      "outputStart": 57.252,
+      "duration": 3.7,
+      "caption": "Confirm the DOWN transaction in the wallet.",
+      "crop": null
+    },
+    {
+      "chapter": "ROUND TIMING · WAITING SHORTENED IN THIS EDIT",
+      "recording": 3,
+      "sourceStart": 79,
+      "sourceEnd": 85.5,
+      "outputStart": 60.952,
+      "duration": 9.33,
+      "caption": "A new betting round opens every five minutes. An active round finishes sixteen minutes after opening, rather than immediately after the click.",
+      "crop": null
+    },
+    {
+      "chapter": "LATER · AFTER THE STRIKE AND EXIT",
+      "recording": 4,
+      "sourceStart": 0,
+      "sourceEnd": 5,
+      "outputStart": 70.282,
+      "duration": 7.386,
+      "caption": "The result compares a future strike average with the exit price. Movement before that strike does not decide the outcome.",
+      "crop": [
+        325,
+        414,
+        415,
+        185
+      ]
+    },
+    {
+      "chapter": "ACTUAL RESULT · DOWN WON · 1.96×",
+      "recording": 4,
+      "sourceStart": 9,
+      "sourceEnd": 16,
+      "outputStart": 77.668,
+      "duration": 12.186,
+      "caption": "In this recorded round, DOWN won. The winning 0.005 ETH stake can collect 0.0098 ETH: a 1.96 times payout.",
+      "crop": [
+        325,
+        350,
+        415,
+        230
+      ]
+    },
+    {
+      "chapter": "COLLECT THE WINNINGS",
+      "recording": 4,
+      "sourceStart": 24,
+      "sourceEnd": 26.8,
+      "outputStart": 89.854,
+      "duration": 5.274,
+      "caption": "Press Collect and confirm the transaction to receive the payout in native ETH.",
+      "crop": [
+        1520,
+        0,
+        398,
+        810
+      ]
+    },
+    {
+      "chapter": "PAYOUT COLLECTED · 0.0098 ETH",
+      "recording": 4,
+      "sourceStart": 28,
+      "sourceEnd": 34,
+      "outputStart": 95.128,
+      "duration": 9.738,
+      "caption": "The position now shows Collected: 0.0098 ETH. This is a real testnet transaction, shown in the live browser recording.",
+      "crop": null
+    },
+    {
+      "chapter": "TRY FLIPTHEMEME",
+      "recording": null,
+      "sourceStart": 0,
+      "sourceEnd": 0,
+      "outputStart": 104.866,
+      "duration": 8.802,
+      "caption": "FlipTheMeme is a working, unaudited testnet prototype. Try the rounds, inspect the verified contract, and explore the source code.",
+      "crop": null
+    }
+  ]
+}

@@ -27,6 +27,7 @@ export interface TicketRowProps {
   poolDelisted?: boolean
   /** The connected wallet, named as referrer in the challenge link of an open bet. */
   me?: Address
+  nextRoundId?: bigint
   /** The pool's orientation; with it the row shows the price against the strike. */
   wethIsToken0?: boolean
   onClaim: (bet: MyBet) => void
@@ -105,7 +106,6 @@ export function TicketRow(p: TicketRowProps) {
             Bets close at <b>{clockTime(times.closeAt)}</b> (in {countdownFrom(times.closeAt, p.now)}). Now UP {amt(up)}, DOWN{' '}
             {amt(down)}: at these sums {matchedLine}. This changes until the close.
           </div>
-          <ChallengeShare roundId={p.bet.roundId} mySide={p.bet.ticket.side as RoundSide} stake={stake} symbol={p.symbol} closeAt={times.closeAt} now={p.now} me={p.me} />
         </>
       )}
 
@@ -189,9 +189,16 @@ export function TicketRow(p: TicketRowProps) {
 
       {p.poolDelisted && v.kind !== 'claimed' && v.kind !== 'lost' && (
         <div className="rnd-ticket-body rnd-tone-dim">
-          This pool no longer takes new bets (it fell below the depth needed). This bet still runs to the end and can be
+          This pool no longer takes new bets. This bet still runs to the end and can be
           collected as usual.
         </div>
+      )}
+
+      {v.kind !== 'none' && (
+        <details className="rnd-more" open={v.kind === 'open'}>
+          <summary>Share this bet</summary>
+          <ChallengeShare roundId={p.bet.roundId} mySide={p.bet.ticket.side as RoundSide} stake={stake} symbol={p.symbol} closeAt={times.closeAt} now={p.now} me={p.me} nextRoundId={p.nextRoundId} />
+        </details>
       )}
 
       {p.tx.step === 'error' && v.action && (
