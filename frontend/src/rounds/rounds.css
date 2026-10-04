@@ -136,16 +136,18 @@
 .rnd-pool-move{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.04em;color:var(--text-dim);margin-left:auto}
 .rnd-pool-move.up{color:var(--up)}
 .rnd-pool-move.down{color:var(--down)}
-.rnd-spark{width:84px;height:24px;flex:0 0 auto}
-.rnd-spark-line{fill:none;stroke:var(--text-dim);stroke-width:1.5;stroke-linejoin:round}
+.rnd-spark{display:block;width:100%;height:110px;margin:8px 0 12px}
+.rnd-spark-line{fill:none;stroke:var(--up);stroke-width:2;stroke-linejoin:round;stroke-linecap:round}
+.rnd-spark-grid{stroke:var(--line-2);stroke-width:1}
+.rnd-spark-axis{fill:var(--text-faint);font-family:var(--mono);font-size:10px}
+.rnd-demo-feed{font-family:var(--mono);font-size:10px;color:var(--text-dim);margin:4px 0}
 .rnd-spark-dot{fill:var(--text-dim)}
 .rnd-spark-dot.up{fill:var(--up)}
 .rnd-spark-dot.down{fill:var(--down)}
 .rnd-round-live{align-items:stretch}
 .rnd-count-row{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
 .rnd-count{font-family:var(--mono);font-size:28px;font-weight:800;letter-spacing:.02em;color:#fff;line-height:1;font-variant-numeric:tabular-nums}
-.rnd-count.soon{color:var(--down);animation:rnd-pulse 1s ease-in-out infinite}
-@keyframes rnd-pulse{0%,100%{opacity:1}50%{opacity:.45}}
+.rnd-count.soon{color:var(--warn)}
 .rnd-count-label{font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--text-dim)}
 .rnd-progress{height:3px;margin:6px 0;border-radius:2px;background:var(--line-2);overflow:hidden}
 .rnd-progress span{display:block;height:100%;background:var(--up);transition:width 1s linear}

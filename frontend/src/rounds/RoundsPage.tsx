@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useId, useMemo, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { useAccount } from 'wagmi'
 import type { Address } from 'viem'
@@ -246,8 +246,9 @@ function PoolCard(p: {
         <span className={'rnd-pool-move ' + moveTone} aria-label="Price move over the last 5 minutes">
           {move === null ? (ticks.length ? 'price steady' : 'reading price…') : `${fmtPct(move)} · 5 min`}
         </span>
-        <Sparkline ticks={ticks} now={p.now} />
       </div>
+      {TARGET_CHAIN.id === 46630 && <div className="rnd-demo-feed">TESTNET DEMO FEED · simulated pool prices</div>}
+      <Sparkline ticks={ticks} now={p.now} />
       {thin && <div className="rnd-round-sub rnd-tone-bad">Pool liquidity is too low for new bets</div>}
       {p.durations.map((d) => {
         const index = currentIndex(p.now, d)
@@ -353,23 +354,30 @@ function moveOver(ticks: TickSample[], now: number, window: number): number | nu
 
 /** The last ten minutes of the pool's price as a small line, the latest point marked. */
 function Sparkline(p: { ticks: TickSample[]; now: number }) {
-  const w = 84
-  const h = 24
+  const gradient = useId().replace(/:/g, '')
+  const w = 600
+  const h = 110
   const pts = p.ticks.filter((s) => s.t >= p.now - 600)
-  if (pts.length < 2) return <svg className="rnd-spark" viewBox={`0 0 ${w} ${h}`} aria-hidden="true" />
+  if (pts.length < 2) return <div className="rnd-demo-feed">Loading recent pool prices…</div>
   const base = pts[0].tick
   const ys = pts.map((s) => pctFromTicks(s.tick, base))
   const lo = Math.min(...ys), hi = Math.max(...ys)
-  const span = Math.max(hi - lo, 0.05)
+  const mid = (lo + hi) / 2
+  const span = Math.max(hi - lo, 0.4)
   const t0 = pts[0].t, t1 = Math.max(pts[pts.length - 1].t, t0 + 1)
-  const X = (t: number) => 2 + ((t - t0) / (t1 - t0)) * (w - 8)
-  const Y = (v: number) => 3 + ((hi - v) / span) * (h - 6)
+  const X = (t: number) => 8 + ((t - t0) / (t1 - t0)) * (w - 20)
+  const Y = (v: number) => 8 + ((mid + span / 2 - v) / span) * (h - 32)
   const d = pts.map((s, i) => `${i ? 'L' : 'M'}${X(s.t).toFixed(1)},${Y(ys[i]).toFixed(1)}`).join(' ')
   const last = ys[ys.length - 1]
   return (
-    <svg className="rnd-spark" viewBox={`0 0 ${w} ${h}`} aria-hidden="true">
+    <svg className="rnd-spark" viewBox={`0 0 ${w} ${h}`} role="img" aria-label="Recent pool price history: historical averages and live prices">
+      <defs><linearGradient id={gradient} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="var(--up)" stopOpacity=".18" /><stop offset="100%" stopColor="var(--up)" stopOpacity="0" /></linearGradient></defs>
+      {[16, 47, 78].map((y) => <line key={y} x1="8" x2={w - 12} y1={y} y2={y} className="rnd-spark-grid" />)}
+      <path d={`${d} L${X(t1)},${h - 24} L${X(t0)},${h - 24} Z`} fill={`url(#${gradient})`} />
       <path d={d} className="rnd-spark-line" />
-      <circle cx={X(pts[pts.length - 1].t)} cy={Y(last)} r="2.5" className={'rnd-spark-dot ' + (last > 0 ? 'up' : last < 0 ? 'down' : '')} />
+      <circle cx={X(pts[pts.length - 1].t)} cy={Y(last)} r="3.5" className={'rnd-spark-dot ' + (last > 0 ? 'up' : last < 0 ? 'down' : '')} />
+      <text x="8" y={h - 3} className="rnd-spark-axis">{clockTime(t0)}</text>
+      <text x={w - 12} y={h - 3} className="rnd-spark-axis" textAnchor="end">{clockTime(t1)}</text>
     </svg>
   )
 }
